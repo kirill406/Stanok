@@ -26,21 +26,21 @@ class AggregationFunction(str, Enum):
 
 @dataclass
 class FieldMapping:
-    type: FieldType
-    value: Optional[str] = None         # constant value
-    file: Optional[str] = None          # Excel filename for table
-    column: Optional[str] = None        # column name in Excel
-    linked_to: Optional[str] = None     # field name this is linked to
-    start: int = 1                      # counter start
-    step: int = 1                       # counter step
-    format: str = '0001'               # counter or date format
-    multiplier: Optional[float] = None  # for sum_multiply
+    type: FieldType = FieldType.CONSTANT     # default to constant
+    value: Optional[str] = None
+    file: Optional[str] = None
+    column: Optional[str] = None
+    linked_to: Optional[str] = None
+    start: int = 1
+    step: int = 1
+    format: str = '0001'
+    multiplier: Optional[float] = None
 
 
 @dataclass
 class CycleMapping:
-    table: str                          # Excel filename
-    columns: Dict[str, str]             # field_name -> column_name
+    table: str
+    columns: Dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -143,8 +143,6 @@ class Project:
 
 
 def create_project(project_dir: str) -> str:
-    """Create a new project directory with required structure.
-    Returns path to .docxforge file."""
     os.makedirs(os.path.join(project_dir, 'Данные'), exist_ok=True)
     os.makedirs(os.path.join(project_dir, 'Шаблоны'), exist_ok=True)
     project_file = os.path.join(project_dir, 'проект.docxforge')

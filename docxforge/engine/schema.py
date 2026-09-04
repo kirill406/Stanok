@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """.docxforge project file schema — defines the JSON structure and defaults."""
 
 import json
@@ -22,6 +22,13 @@ class AggregationFunction(str, Enum):
     COUNT = 'count'
     MAX = 'max'
     MIN = 'min'
+
+
+class BatchMode(str, Enum):
+    SINGLE = 'single'           # константная строка (один документ)
+    ALL_ROWS = 'all_rows'       # итерироваться по строкам до конца
+    N_ROWS = 'n_rows'           # итерироваться до заданного числа
+    CIRCULAR = 'circular'       # итерироваться по кругу
 
 
 @dataclass
@@ -52,10 +59,23 @@ class AggregationMapping:
 
 
 @dataclass
+class BatchSourceConfig:
+    file: str = ''
+    mode: BatchMode = BatchMode.SINGLE
+    n_rows: int = 1  # used when mode == N_ROWS or CIRCULAR
+    # For SINGLE mode: how to pick the row
+    row_index: int = 0  # explicit row number (0-based), -1 means use lookup
+    lookup_column: Optional[str] = None  # column to search value in
+    lookup_value: Optional[str] = None   # value to find in lookup_column
+
+
+@dataclass
 class TemplateConfig:
     fields: Dict[str, FieldMapping] = field(default_factory=dict)
     cycles: List[CycleMapping] = field(default_factory=list)
     aggregations: Dict[str, AggregationMapping] = field(default_factory=dict)
+    batch_sources: Dict[str, BatchSourceConfig] = field(default_factory=dict)
+    max_docs: Optional[int] = None  # limit total number of documents
 
 
 @dataclass
@@ -98,6 +118,17 @@ class Project:
                     column=adata['column'],
                     multiplier=adata.get('multiplier'),
                 )
+            # Batch sources
+            for bname, bdata in tpl_data.get('batch', {}).get('sources', {}).items():
+                tc.batch_sources[bname] = BatchSourceConfig(
+                    file=bdata.get('file', ''),
+                    mode=BatchMode(bdata.get('mode', 'single')),
+                    n_rows=bdata.get('n_rows', 1),
+                    row_index=bdata.get('row_index', 0),
+                    lookup_column=bdata.get('lookup_column'),
+                    lookup_value=bdata.get('lookup_value'),
+                )
+            tc.max_docs = tpl_data.get('batch', {}).get('max_docs')
             project.templates[tpl_name] = tc
         return project
 
@@ -137,6 +168,26 @@ class Project:
                     advanced['aggregations'][aname] = ad
             if advanced:
                 td['advanced'] = advanced
+
+            # Batch config
+            batch = {}
+            if tc.batch_sources:
+                batch['sources'] = {}
+                for bname, bsc in tc.batch_sources.items():
+                    bd = {'file': bsc.file, 'mode': bsc.mode.value}
+                    if bsc.mode == BatchMode.N_ROWS or bsc.mode == BatchMode.CIRCULAR:
+                        bd['n_rows'] = bsc.n_rows
+                    if bsc.mode == BatchMode.SINGLE:
+                        bd['row_index'] = bsc.row_index
+                        if bsc.lookup_column is not None:
+                            bd['lookup_column'] = bsc.lookup_column
+                        if bsc.lookup_value is not None:
+                            bd['lookup_value'] = bsc.lookup_value
+                    batch['sources'][bname] = bd
+            if tc.max_docs is not None:
+                batch['max_docs'] = tc.max_docs
+            if batch:
+                td['batch'] = batch
 
             result['templates'][tpl_name] = td
         return result

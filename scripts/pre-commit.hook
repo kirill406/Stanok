@@ -1,16 +1,30 @@
 ﻿#!/bin/sh
-# pre-commit hook: проверка секретов через trufflehog3
+# pre-commit hook: run tests + secrets scan
 
-echo "Выполняется поиск секретов (trufflehog3)..."
+# 1. Run pytest — all tests must pass
+echo "Running tests (pytest)..."
+python -m pytest tests/ -q 2>&1
+if [ $? -ne 0 ]; then
+  echo ""
+  echo "❌ Tests FAILED! Commit rejected."
+  echo "   Fix the failing tests or use: git commit --no-verify"
+  exit 1
+fi
+
+echo "✓ All tests passed."
+
+# 2. Scan for secrets via trufflehog3
+echo "Scanning for secrets (trufflehog3)..."
 
 trufflehog3 --no-history --no-entropy . 2>&1
 if [ $? -ne 0 ]; then
   echo ""
-  echo "⚠ Найдены подозрительные секреты! Коммит отклонён."
-  echo "   Проверьте файлы above в вашем репозитории."
-  echo "   Если это ложное срабатывание, используйте: git commit --no-verify"
+  echo "⚠ Suspicious secrets detected! Commit rejected."
+  echo "   Check the files above in your repository."
+  echo "   If this is a false positive, use: git commit --no-verify"
   exit 1
 fi
 
-echo "✓ Секретов не найдено. Коммит разрешён."
+echo "✓ No secrets found. Commit allowed."
 exit 0
+

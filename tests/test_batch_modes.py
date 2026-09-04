@@ -1,0 +1,238 @@
+# -*- coding: utf-8 -*-
+"""Tests for BatchMode, BatchSourceConfig, and renderer batch modes."""
+
+import os, sys, tempfile, zipfile
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import openpyxl
+from docx import Document
+from lxml import etree
+
+from docxforge.engine.schema import (
+    Project, TemplateConfig, FieldMapping, FieldType,
+    BatchSourceConfig, BatchMode,
+)
+from docxforge.engine.renderer import Renderer
+from docxforge.engine.data_reader import DataReader
+
+W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+
+
+def _make_dirs(tmp):
+    os.makedirs(os.path.join(tmp, "Данные"), exist_ok=True)
+    os.makedirs(os.path.join(tmp, "Шаблоны"), exist_ok=True)
+
+
+def _read_output_text(path):
+    with zipfile.ZipFile(path, "r") as zf:
+        doc = etree.parse(zf.open("word/document.xml"))
+        lines = []
+        for p in doc.findall(".//{%s}p" % W):
+            text = ""
+            for r in p.findall("{%s}r" % W):
+                for t in r.findall("{%s}t" % W):
+                    if t.text:
+                        text += t.text
+            if text:
+                lines.append(text)
+        return "\n".join(lines)
+
+
+class TestBatchSourceConfig:
+
+    def test_batch_mode_enum_values(self):
+        assert BatchMode.SINGLE.value == "single"
+        assert BatchMode.ALL_ROWS.value == "all_rows"
+        assert BatchMode.N_ROWS.value == "n_rows"
+        assert BatchMode.CIRCULAR.value == "circular"
+
+    def test_batch_source_config_defaults(self):
+        bsc = BatchSourceConfig()
+        assert bsc.file == ""
+        assert bsc.mode == BatchMode.SINGLE
+        assert bsc.n_rows == 1
+
+    def test_batch_source_config_round_trip(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            prj = Project()
+            tc = TemplateConfig()
+            tc.batch_sources["clients.xlsx"] = BatchSourceConfig(
+                file="clients.xlsx", mode=BatchMode.ALL_ROWS)
+            tc.batch_sources["staff.xlsx"] = BatchSourceConfig(
+                file="staff.xlsx", mode=BatchMode.N_ROWS, n_rows=5)
+            tc.batch_sources["cities.xlsx"] = BatchSourceConfig(
+                file="cities.xlsx", mode=BatchMode.CIRCULAR, n_rows=10)
+            tc.max_docs = 50
+            prj.templates["t.docx"] = tc
+            path = os.path.join(tmp, "proj.docxforge")
+            prj.to_file(path)
+            prj2 = Project.from_file(path)
+            tc2 = prj2.templates["t.docx"]
+            assert len(tc2.batch_sources) == 3
+            assert tc2.batch_sources["clients.xlsx"].mode == BatchMode.ALL_ROWS
+            assert tc2.batch_sources["staff.xlsx"].mode == BatchMode.N_ROWS
+            assert tc2.batch_sources["staff.xlsx"].n_rows == 5
+            assert tc2.batch_sources["cities.xlsx"].mode == BatchMode.CIRCULAR
+            assert tc2.batch_sources["cities.xlsx"].n_rows == 10
+            assert tc2.max_docs == 50
+
+    def test_max_docs_default_none(self):
+        tc = TemplateConfig()
+        assert tc.max_docs is None
+
+    def test_batch_config_no_max_docs_when_not_set(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            prj = Project()
+            tc = TemplateConfig()
+            prj.templates["t.docx"] = tc
+            path = os.path.join(tmp, "proj.docxforge")
+            prj.to_file(path)
+            prj2 = Project.from_file(path)
+            assert prj2.templates["t.docx"].max_docs is None
+
+
+class TestRendererBatchModes:
+
+    def test_batch_single_uses_first_row(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _make_dirs(tmp)
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.append(["name"])
+            ws.append(["Anna"])
+            ws.append(["Boris"])
+            ws.append(["Vera"])
+            wb.save(os.path.join(tmp, "Данные", "people.xlsx"))
+            doc = Document()
+            doc.add_paragraph("Name: {{ name }}")
+            doc.save(os.path.join(tmp, "Шаблоны", "t.docx"))
+            prj = Project()
+            tc = TemplateConfig()
+            tc.fields["name"] = FieldMapping(type=FieldType.TABLE, file="people.xlsx", column="name")
+            prj.templates["t.docx"] = tc
+            prj.to_file(os.path.join(tmp, "проект.docxforge"))
+            reader = DataReader()
+            renderer = Renderer(tmp, reader)
+            renderer.load_project()
+            bsc = BatchSourceConfig(file="people.xlsx", mode=BatchMode.SINGLE)
+            outputs = renderer.render("t.docx", {},
+                batch_table="people.xlsx",
+                batch_configs={"people.xlsx": bsc})
+            assert len(outputs) == 1
+            text = _read_output_text(outputs[0])
+            assert "Anna" in text
+
+    def test_batch_n_rows_limits_docs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _make_dirs(tmp)
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.append(["name"])
+            ws.append(["Anna"])
+            ws.append(["Boris"])
+            ws.append(["Vera"])
+            wb.save(os.path.join(tmp, "Данные", "people.xlsx"))
+            doc = Document()
+            doc.add_paragraph("Name: {{ name }}")
+            doc.save(os.path.join(tmp, "Шаблоны", "t.docx"))
+            prj = Project()
+            tc = TemplateConfig()
+            tc.fields["name"] = FieldMapping(type=FieldType.TABLE, file="people.xlsx", column="name")
+            prj.templates["t.docx"] = tc
+            prj.to_file(os.path.join(tmp, "проект.docxforge"))
+            reader = DataReader()
+            renderer = Renderer(tmp, reader)
+            renderer.load_project()
+            bsc = BatchSourceConfig(file="people.xlsx", mode=BatchMode.N_ROWS, n_rows=2)
+            outputs = renderer.render("t.docx", {},
+                batch_table="people.xlsx",
+                batch_configs={"people.xlsx": bsc})
+            assert len(outputs) == 2
+            texts = [_read_output_text(o) for o in outputs]
+            assert "Anna" in texts[0]
+            assert "Boris" in texts[1]
+
+    def test_batch_circular_repeats_rows(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _make_dirs(tmp)
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.append(["name"])
+            ws.append(["A"])
+            ws.append(["B"])
+            wb.save(os.path.join(tmp, "Данные", "data.xlsx"))
+            doc = Document()
+            doc.add_paragraph("Name: {{ name }}")
+            doc.save(os.path.join(tmp, "Шаблоны", "t.docx"))
+            prj = Project()
+            tc = TemplateConfig()
+            tc.fields["name"] = FieldMapping(type=FieldType.TABLE, file="data.xlsx", column="name")
+            prj.templates["t.docx"] = tc
+            prj.to_file(os.path.join(tmp, "проект.docxforge"))
+            reader = DataReader()
+            renderer = Renderer(tmp, reader)
+            renderer.load_project()
+            bsc = BatchSourceConfig(file="data.xlsx", mode=BatchMode.CIRCULAR, n_rows=5)
+            outputs = renderer.render("t.docx", {},
+                batch_table="data.xlsx",
+                batch_configs={"data.xlsx": bsc})
+            assert len(outputs) == 5
+            texts = [_read_output_text(o) for o in outputs]
+            assert "A" in texts[0]
+            assert "B" in texts[1]
+            assert "A" in texts[2]
+            assert "B" in texts[3]
+            assert "A" in texts[4]
+
+    def test_max_docs_limits_batch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _make_dirs(tmp)
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.append(["name"])
+            for i in range(10):
+                ws.append(["Person %d" % (i + 1)])
+            wb.save(os.path.join(tmp, "Данные", "people.xlsx"))
+            doc = Document()
+            doc.add_paragraph("Hello, {{ name }}")
+            doc.save(os.path.join(tmp, "Шаблоны", "t.docx"))
+            prj = Project()
+            tc = TemplateConfig()
+            tc.fields["name"] = FieldMapping(type=FieldType.TABLE, file="people.xlsx", column="name")
+            prj.templates["t.docx"] = tc
+            prj.to_file(os.path.join(tmp, "проект.docxforge"))
+            reader = DataReader()
+            renderer = Renderer(tmp, reader)
+            renderer.load_project()
+            outputs = renderer.render("t.docx", {},
+                batch_table="people.xlsx",
+                max_docs=3)
+            assert len(outputs) == 3
+
+    def test_batch_all_rows_same_as_legacy(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _make_dirs(tmp)
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.append(["name"])
+            ws.append(["X"])
+            ws.append(["Y"])
+            wb.save(os.path.join(tmp, "Данные", "data.xlsx"))
+            doc = Document()
+            doc.add_paragraph("Name: {{ name }}")
+            doc.save(os.path.join(tmp, "Шаблоны", "t.docx"))
+            prj = Project()
+            tc = TemplateConfig()
+            tc.fields["name"] = FieldMapping(type=FieldType.TABLE, file="data.xlsx", column="name")
+            prj.templates["t.docx"] = tc
+            prj.to_file(os.path.join(tmp, "проект.docxforge"))
+            reader = DataReader()
+            renderer = Renderer(tmp, reader)
+            renderer.load_project()
+            bsc = BatchSourceConfig(file="data.xlsx", mode=BatchMode.ALL_ROWS)
+            outputs_new = renderer.render("t.docx", {},
+                batch_table="data.xlsx",
+                batch_configs={"data.xlsx": bsc})
+            outputs_legacy = renderer.render("t.docx", {},
+                batch_table="data.xlsx")
+            assert len(outputs_new) == len(outputs_legacy) == 2

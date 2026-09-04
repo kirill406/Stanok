@@ -12,6 +12,7 @@ from lxml import etree
 from .schema import (
     Project, TemplateConfig, FieldMapping, CycleMapping,
     AggregationMapping, FieldType, AggregationFunction,
+    BatchSourceConfig, BatchMode,
 )
 from .data_reader import DataReader
 
@@ -19,10 +20,6 @@ W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
 XML_NS = '{http://www.w3.org/XML/1998/namespace}'
 W_NS = '{%s}' % W
 
-
-# ============================================================
-# XML helpers
-# ============================================================
 
 def run_text(run) -> str:
     return ''.join(t.text or '' for t in run.findall(W_NS + 't'))
@@ -71,16 +68,9 @@ def row_has_placeholders(row) -> bool:
     return False
 
 
-# ============================================================
-# merge + replace — CORRECT text order
-# ============================================================
-
 def merge_and_replace_paragraph(paragraph, field_values: Dict[str, str]):
     """Merge XML runs in a paragraph and replace {{ placeholders }} with values.
-
-    Uses addnext() in forward order to preserve text ordering:
-    'Label: {{ field }}' → 'Label: VALUE' (not 'VALUELabel: ').
-    """
+    Uses addnext() in forward order to preserve text ordering."""
     runs = paragraph.findall(W_NS + 'r')
     if not runs:
         return
@@ -115,7 +105,6 @@ def merge_and_replace_paragraph(paragraph, field_values: Dict[str, str]):
     if cursor < len(merged):
         segments.append(('text', cursor, len(merged), None))
 
-    # Build new runs in FORWARD order
     new_runs = []
     for seg_type, start, end, repl in segments:
         run_ids = {char_to_run[i] for i in range(start, end) if i < len(char_to_run)}
@@ -126,24 +115,16 @@ def merge_and_replace_paragraph(paragraph, field_values: Dict[str, str]):
         if text:
             new_runs.append(clone_run_with_text(template_run, text))
 
-    # Insert new runs AFTER the last old run, in forward order
-    # Then remove old runs. This preserves text order.
     if new_runs:
         last_old = runs[-1]
-        # Insert each new run after the previous one
         prev = last_old
         for nr in new_runs:
             prev.addnext(nr)
             prev = nr
 
-    # Remove all old runs
     for run in runs:
         paragraph.remove(run)
 
-
-# ============================================================
-# Table cycles
-# ============================================================
 
 def expand_table_cycle(table_element, cycle: CycleMapping,
                        table_data: List[Dict[str, str]],
@@ -161,13 +142,11 @@ def expand_table_cycle(table_element, cycle: CycleMapping,
         if row_contains_placeholder(row, first_cycle_field):
             template_row = row
             break
-
     if template_row is None:
         for row in reversed(rows):
             if row_has_placeholders(row):
                 template_row = row
                 break
-
     if template_row is None:
         return
 
@@ -183,10 +162,6 @@ def expand_table_cycle(table_element, cycle: CycleMapping,
     table_element.remove(template_row)
 
 
-# ============================================================
-# Aggregation
-# ============================================================
-
 def compute_aggregation(agg: AggregationMapping,
                         table_data: List[Dict[str, str]]) -> str:
     try:
@@ -199,7 +174,6 @@ def compute_aggregation(agg: AggregationMapping,
                 continue
         if not values:
             return '0'
-
         if agg.function == AggregationFunction.SUM:
             result = sum(values)
         elif agg.function == AggregationFunction.COUNT:
@@ -210,20 +184,14 @@ def compute_aggregation(agg: AggregationMapping,
             result = min(values)
         else:
             result = sum(values)
-
         if agg.function == AggregationFunction.SUM_MULTIPLY and agg.multiplier:
             result *= agg.multiplier
-
         if result == int(result):
             return str(int(result))
         return '{:.2f}'.format(result).replace('.', ',')
     except Exception:
         return '0'
 
-
-# ============================================================
-# Formatting
-# ============================================================
 
 def format_counter(value: int, fmt: str) -> str:
     if fmt and fmt.startswith('0'):
@@ -278,12 +246,39 @@ class Renderer:
         path = os.path.join(self.project_dir, 'Данные', table_file)
         if os.path.exists(path):
             return self.data_reader.read_excel(path)
-        return []
+
+    def _resolve_single_row(self, table_file: str,
+                            batch_configs: Optional[Dict[str, BatchSourceConfig]] = None) -> Optional[Dict[str, str]]:
+        """Resolve a specific row for a SINGLE-mode table.
+
+        If batch_configs has a SINGLE entry for table_file, use its
+        row_index or lookup_column/lookup_value to pick a row.
+        Otherwise return None (caller should fall back to rows[0]).
+        """
+        if not batch_configs:
+            return None
+        bsc = batch_configs.get(table_file)
+        if not bsc or bsc.mode != BatchMode.SINGLE:
+            return None
+        all_rows = self._read_table_data(table_file)
+        if not all_rows:
+            return None
+        if bsc.lookup_column and bsc.lookup_value:
+            for row in all_rows:
+                if str(row.get(bsc.lookup_column, '')).strip() == bsc.lookup_value.strip():
+                    return row
+            return all_rows[0]
+        elif bsc.row_index >= 0:
+            idx = min(bsc.row_index, len(all_rows) - 1)
+            return all_rows[idx]
+        return all_rows[0]
 
     def render(self, template_rel_path: str,
                user_values: Dict[str, str],
                batch_table: Optional[str] = None,
-               output_dir: str = None) -> List[str]:
+               output_dir: str = None,
+               batch_configs: Optional[Dict[str, BatchSourceConfig]] = None,
+               max_docs: Optional[int] = None) -> List[str]:
         template_path = self.get_template_path(template_rel_path)
         config = self.project.templates.get(template_rel_path, TemplateConfig()) if self.project else TemplateConfig()
 
@@ -294,6 +289,10 @@ class Renderer:
         with zipfile.ZipFile(template_path, 'r') as zf:
             zdata = {name: zf.read(name) for name in zf.namelist()}
 
+        # Keep a pristine copy so each batch iteration starts from the original template
+        zdata_orig = {name: data for name, data in zdata.items()}
+
+        # Scan raw placeholders
         merged_all = ''
         doc_for_scan = etree.fromstring(zdata['word/document.xml'])
         for p in doc_for_scan.findall('.//' + W_NS + 'p'):
@@ -302,39 +301,75 @@ class Renderer:
                     if t.text:
                         merged_all += t.text
             merged_all += '\n'
-
         all_raw_phs = re.findall(r'\{\{(.+?)\}\}', merged_all)
 
+        # Batch rows — support new batch_configs or legacy batch_table
         batch_rows = [None]
-        if batch_table:
+        if batch_configs and batch_table:
+            # New system: use batch_configs to determine iteration
+            bsc = batch_configs.get(batch_table)
+            if bsc:
+                all_rows = self._read_table_data(batch_table)
+                if bsc.mode == BatchMode.SINGLE:
+                    if not all_rows:
+                        batch_rows = [None]
+                    elif bsc.lookup_column and bsc.lookup_value:
+                        # Find row by lookup value
+                        found = None
+                        for row in all_rows:
+                            if str(row.get(bsc.lookup_column, '')).strip() == bsc.lookup_value.strip():
+                                found = row
+                                break
+                        batch_rows = [found if found else all_rows[0]]
+                    elif bsc.row_index >= 0:
+                        # Use explicit row index
+                        idx = min(bsc.row_index, len(all_rows) - 1)
+                        batch_rows = [all_rows[idx]]
+                    else:
+                        batch_rows = [all_rows[0]]
+                elif bsc.mode == BatchMode.ALL_ROWS:
+                    batch_rows = all_rows
+                elif bsc.mode == BatchMode.N_ROWS:
+                    batch_rows = all_rows[:bsc.n_rows]
+                elif bsc.mode == BatchMode.CIRCULAR:
+                    if all_rows:
+                        target = max(bsc.n_rows, len(all_rows))
+                        batch_rows = [all_rows[i % len(all_rows)] for i in range(target)]
+                    else:
+                        batch_rows = [None]
+                else:
+                    batch_rows = all_rows
+            else:
+                batch_rows = self._read_table_data(batch_table)
+        elif batch_table:
+            # Legacy: iterate all rows
             batch_rows = self._read_table_data(batch_table)
 
+        # Apply max_docs limit
+        if max_docs is not None and max_docs > 0:
+            batch_rows = batch_rows[:max_docs]
+
+        # Pre-read cycle data (once, shared)
         cycle_data = {}
         for cycle in config.cycles:
             cycle_data[cycle.table] = self._read_table_data(cycle.table)
 
-        table_primary_rows = {}
-        for fn, fm in config.fields.items():
-            if fm.type == FieldType.TABLE and fm.file and not fm.linked_to:
-                if fm.file not in table_primary_rows:
-                    table_primary_rows[fm.file] = self._read_table_data(fm.file)
-
         outputs = []
 
         for batch_idx, batch_row in enumerate(batch_rows):
+            # Reset zdata from pristine copy for each iteration
+            zdata = {name: data for name, data in zdata_orig.items()}
             effective = dict(user_values)
             now = datetime.now()
 
-            if batch_row is not None:
-                for key, val in batch_row.items():
-                    effective[key] = str(val)
-
+            # 1. today from raw template
             for raw_ph in all_raw_phs:
                 stripped = raw_ph.strip()
                 if stripped.startswith('today'):
                     fmt = stripped[len('today:'):] if stripped.startswith('today:') else 'dd.MM.yyyy'
                     effective[stripped] = format_today(fmt, now)
 
+            # 2. Counter
             counter_field = next(
                 (fn for fn, fm in config.fields.items() if fm.type == FieldType.COUNTER), None)
             if counter_field:
@@ -342,27 +377,60 @@ class Renderer:
                 fmt = config.fields[counter_field].format
                 effective[counter_field] = format_counter(start + batch_idx, fmt)
 
+            # 3. Today from config
             for fn, fm in config.fields.items():
                 if fm.type == FieldType.TODAY:
                     effective[fn] = format_today(fm.format or 'dd.MM.yyyy', now)
 
+            # 4. Constants
             for fn, fm in config.fields.items():
                 if fm.type == FieldType.CONSTANT:
                     effective[fn] = fm.value or ''
 
+            # 5. TABLE — primary (not linked)
+            # Priority:  batch_row (batch iteration) > SINGLE batch_config > rows[0]
             for fn, fm in config.fields.items():
                 if fm.type == FieldType.TABLE and not fm.linked_to:
-                    rows = table_primary_rows.get(fm.file, [])
-                    if rows and fm.column in rows[0]:
-                        effective[fn] = str(rows[0][fm.column])
+                    rows = self._read_table_data(fm.file)
+                    if fm.file == batch_table and batch_row is not None and fm.column in batch_row:
+                        # Batch iteration: this field maps to the batch table's column
+                        effective[fn] = str(batch_row[fm.column])
+                    else:
+                        # Check SINGLE batch_config for this table
+                        single_row = self._resolve_single_row(fm.file, batch_configs)
+                        if single_row and fm.column in single_row:
+                            effective[fn] = str(single_row[fm.column])
+                        elif rows and fm.column in rows[0]:
+                            effective[fn] = str(rows[0][fm.column])
 
+            # 6. TABLE — linked. Use the same row as the primary field.
+            # A linked field shares the same table and row as its primary.
+            # When the primary got its value from batch_row or SINGLE config,
+            # the linked field must use that same row's column.
             for fn, fm in config.fields.items():
                 if fm.type == FieldType.TABLE and fm.linked_to:
-                    primary_val = effective.get(fm.linked_to)
-                    if primary_val and fm.file:
-                        rows = self._read_table_data(fm.file)
-                        primary_fm = config.fields.get(fm.linked_to)
-                        if primary_fm:
+                    primary_fm = config.fields.get(fm.linked_to)
+                    if not primary_fm or not fm.file:
+                        continue
+                    # Same table as primary? Use the same row resolution.
+                    if primary_fm.file == fm.file:
+                        # Resolve the row for this table the same way as primary
+                        if primary_fm.file == batch_table and batch_row is not None:
+                            if fm.column in batch_row:
+                                effective[fn] = str(batch_row[fm.column])
+                        else:
+                            single_row = self._resolve_single_row(fm.file, batch_configs)
+                            if single_row and fm.column in single_row:
+                                effective[fn] = str(single_row[fm.column])
+                            else:
+                                rows = self._read_table_data(fm.file)
+                                if rows and fm.column in rows[0]:
+                                    effective[fn] = str(rows[0][fm.column])
+                    else:
+                        # Different table: find row by primary value
+                        primary_val = effective.get(fm.linked_to)
+                        if primary_val:
+                            rows = self._read_table_data(fm.file)
                             primary_col = primary_fm.column
                             found = False
                             for row in rows:
@@ -373,10 +441,12 @@ class Renderer:
                             if not found and rows:
                                 effective[fn] = str(rows[0].get(fm.column, ''))
 
+            # 7. Aggregations
             for aname, agg in config.aggregations.items():
                 data = cycle_data.get(agg.table, [])
                 effective[aname] = compute_aggregation(agg, data)
 
+            # ---- XML ----
             doc_xml = etree.fromstring(zdata['word/document.xml'])
             body = doc_xml.find(W_NS + 'body')
 

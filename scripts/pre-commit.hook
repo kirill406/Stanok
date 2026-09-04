@@ -1,4 +1,4 @@
-#!/bin/sh
+﻿#!/bin/sh
 # pre-commit hook: проверка секретов через trufflehog3
 
 echo "Выполняется поиск секретов (trufflehog3)..."

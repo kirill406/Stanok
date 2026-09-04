@@ -55,7 +55,6 @@ def clone_element(original):
 
 
 def row_contains_placeholder(row, field_name: str) -> bool:
-    """Check if a table row contains a specific {{ field_name }} placeholder."""
     for p in row.findall('.//' + W_NS + 'p'):
         for r in p.findall(W_NS + 'r'):
             text = run_text(r)
@@ -65,7 +64,6 @@ def row_contains_placeholder(row, field_name: str) -> bool:
 
 
 def row_has_placeholders(row) -> bool:
-    """Check if a table row contains ANY {{ }} placeholder."""
     for p in row.findall('.//' + W_NS + 'p'):
         for r in p.findall(W_NS + 'r'):
             if re.search(r'\{\{.+?\}\}', run_text(r)):
@@ -74,12 +72,14 @@ def row_has_placeholders(row) -> bool:
 
 
 # ============================================================
-# merge + replace
+# merge + replace — CORRECT text order
 # ============================================================
 
 def merge_and_replace_paragraph(paragraph, field_values: Dict[str, str]):
     """Merge XML runs in a paragraph and replace {{ placeholders }} with values.
-    Preserves run-level formatting by cloning the source run of each segment.
+
+    Uses addnext() in forward order to preserve text ordering:
+    'Label: {{ field }}' → 'Label: VALUE' (not 'VALUELabel: ').
     """
     runs = paragraph.findall(W_NS + 'r')
     if not runs:
@@ -115,6 +115,7 @@ def merge_and_replace_paragraph(paragraph, field_values: Dict[str, str]):
     if cursor < len(merged):
         segments.append(('text', cursor, len(merged), None))
 
+    # Build new runs in FORWARD order
     new_runs = []
     for seg_type, start, end, repl in segments:
         run_ids = {char_to_run[i] for i in range(start, end) if i < len(char_to_run)}
@@ -125,9 +126,17 @@ def merge_and_replace_paragraph(paragraph, field_values: Dict[str, str]):
         if text:
             new_runs.append(clone_run_with_text(template_run, text))
 
-    anchor = runs[0]
-    for nr in reversed(new_runs):
-        anchor.addprevious(nr)
+    # Insert new runs AFTER the last old run, in forward order
+    # Then remove old runs. This preserves text order.
+    if new_runs:
+        last_old = runs[-1]
+        # Insert each new run after the previous one
+        prev = last_old
+        for nr in new_runs:
+            prev.addnext(nr)
+            prev = nr
+
+    # Remove all old runs
     for run in runs:
         paragraph.remove(run)
 
@@ -139,16 +148,10 @@ def merge_and_replace_paragraph(paragraph, field_values: Dict[str, str]):
 def expand_table_cycle(table_element, cycle: CycleMapping,
                        table_data: List[Dict[str, str]],
                        field_values: Dict[str, str]):
-    """Expand a table with cycle rows.
-
-    Finds the row that contains the first cycle field placeholder
-    and replaces it with one row per data entry.
-    """
     rows = table_element.findall(W_NS + 'tr')
     if len(rows) < 2:
         return
 
-    # Find the template row: first row that has any cycle field placeholder
     first_cycle_field = next(iter(cycle.columns.keys()), None)
     if not first_cycle_field:
         return
@@ -160,7 +163,6 @@ def expand_table_cycle(table_element, cycle: CycleMapping,
             break
 
     if template_row is None:
-        # Fallback: last row with any placeholder
         for row in reversed(rows):
             if row_has_placeholders(row):
                 template_row = row
@@ -169,7 +171,6 @@ def expand_table_cycle(table_element, cycle: CycleMapping,
     if template_row is None:
         return
 
-    # Process after all other paragraphs so we don't re-process
     for row_data in table_data:
         new_row = clone_element(template_row)
         for p in new_row.findall('.//' + W_NS + 'p'):
@@ -235,7 +236,6 @@ def format_today(fmt: str, dt: datetime = None) -> str:
         dt = datetime.now()
     months_ru = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
                  'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря']
-
     result = fmt
     result = result.replace('MM:название_месяца', months_ru[dt.month - 1])
     result = result.replace('dd', dt.strftime('%d'))
@@ -294,7 +294,6 @@ class Renderer:
         with zipfile.ZipFile(template_path, 'r') as zf:
             zdata = {name: zf.read(name) for name in zf.namelist()}
 
-        # Scan ALL raw placeholders from template
         merged_all = ''
         doc_for_scan = etree.fromstring(zdata['word/document.xml'])
         for p in doc_for_scan.findall('.//' + W_NS + 'p'):
@@ -306,17 +305,14 @@ class Renderer:
 
         all_raw_phs = re.findall(r'\{\{(.+?)\}\}', merged_all)
 
-        # Determine batch rows
         batch_rows = [None]
         if batch_table:
             batch_rows = self._read_table_data(batch_table)
 
-        # Pre-read cycle data
         cycle_data = {}
         for cycle in config.cycles:
             cycle_data[cycle.table] = self._read_table_data(cycle.table)
 
-        # Pre-read table data for all TABLE fields
         table_primary_rows = {}
         for fn, fm in config.fields.items():
             if fm.type == FieldType.TABLE and fm.file and not fm.linked_to:
@@ -329,19 +325,16 @@ class Renderer:
             effective = dict(user_values)
             now = datetime.now()
 
-            # 1. Batch row overrides
             if batch_row is not None:
                 for key, val in batch_row.items():
                     effective[key] = str(val)
 
-            # 2. today: variants (from raw template scan — auto-resolved)
             for raw_ph in all_raw_phs:
                 stripped = raw_ph.strip()
                 if stripped.startswith('today'):
                     fmt = stripped[len('today:'):] if stripped.startswith('today:') else 'dd.MM.yyyy'
                     effective[stripped] = format_today(fmt, now)
 
-            # 3. doc_number from config counter
             counter_field = next(
                 (fn for fn, fm in config.fields.items() if fm.type == FieldType.COUNTER), None)
             if counter_field:
@@ -349,24 +342,20 @@ class Renderer:
                 fmt = config.fields[counter_field].format
                 effective[counter_field] = format_counter(start + batch_idx, fmt)
 
-            # 4. Today config fields
             for fn, fm in config.fields.items():
                 if fm.type == FieldType.TODAY:
                     effective[fn] = format_today(fm.format or 'dd.MM.yyyy', now)
 
-            # 5. Constant fields
             for fn, fm in config.fields.items():
                 if fm.type == FieldType.CONSTANT:
                     effective[fn] = fm.value or ''
 
-            # 6. Table fields: resolve from data (first row by default)
             for fn, fm in config.fields.items():
                 if fm.type == FieldType.TABLE and not fm.linked_to:
                     rows = table_primary_rows.get(fm.file, [])
                     if rows and fm.column in rows[0]:
                         effective[fn] = str(rows[0][fm.column])
 
-            # 7. Linked table fields
             for fn, fm in config.fields.items():
                 if fm.type == FieldType.TABLE and fm.linked_to:
                     primary_val = effective.get(fm.linked_to)
@@ -384,26 +373,21 @@ class Renderer:
                             if not found and rows:
                                 effective[fn] = str(rows[0].get(fm.column, ''))
 
-            # 8. Aggregations
             for aname, agg in config.aggregations.items():
                 data = cycle_data.get(agg.table, [])
                 effective[aname] = compute_aggregation(agg, data)
 
-            # ---- XML transformation ----
             doc_xml = etree.fromstring(zdata['word/document.xml'])
             body = doc_xml.find(W_NS + 'body')
 
-            # (A) Expand table cycles FIRST
             for cycle in config.cycles:
                 data = cycle_data.get(cycle.table, [])
                 for tbl in body.findall('.//' + W_NS + 'tbl'):
                     expand_table_cycle(tbl, cycle, data, effective)
 
-            # (B) Text-level replacements in ALL paragraphs (including new cycle rows)
             for p in body.findall('.//' + W_NS + 'p'):
                 merge_and_replace_paragraph(p, effective)
 
-            # (C) Headers/footers
             for part_name in list(zdata.keys()):
                 if 'header' in part_name or 'footer' in part_name:
                     part_xml = etree.fromstring(zdata[part_name])
@@ -416,8 +400,7 @@ class Renderer:
                 doc_xml, xml_declaration=True, encoding='UTF-8', standalone=True)
 
             if batch_table:
-                out_name = '%s_%04d.docx' % (
-                    os.path.splitext(template_rel_path)[0], batch_idx + 1)
+                out_name = '%s_%04d.docx' % (os.path.splitext(template_rel_path)[0], batch_idx + 1)
             else:
                 out_name = os.path.basename(template_rel_path).replace('.docx', '_заполнен.docx')
             out_path = os.path.join(output_dir, out_name)

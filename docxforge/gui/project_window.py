@@ -5,13 +5,11 @@ import os
 from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                               QPushButton, QLabel, QTreeWidget, QTreeWidgetItem,
                               QListWidget, QListWidgetItem, QFileDialog,
-                              QMessageBox, QSplitter)
+                              QMessageBox, QSplitter, QApplication)
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont
 
 from docxforge.gui.fill_form import FillForm
-from docxforge.engine.template_parser import scan_template
-from docxforge.engine.schema import Project, TemplateConfig, FieldMapping, FieldType
 from docxforge.engine.data_reader import DataReader
 
 
@@ -22,7 +20,7 @@ class ProjectWindow(QMainWindow):
         self.main_window = main_window
         self.data_reader = DataReader()
 
-        self.setWindowTitle(f'DocxForge — {os.path.basename(project_dir)}')
+        self.setWindowTitle('DocxForge — %s' % os.path.basename(project_dir))
         self.resize(800, 550)
         self._build_ui()
         self._scan_project()
@@ -30,7 +28,7 @@ class ProjectWindow(QMainWindow):
 
     def _center(self):
         frame = self.frameGeometry()
-        screen = self.app().primaryScreen().availableGeometry().center()
+        screen = QApplication.instance().primaryScreen().availableGeometry().center()
         frame.moveCenter(screen)
         self.move(frame.topLeft())
 
@@ -43,7 +41,7 @@ class ProjectWindow(QMainWindow):
 
         # Header
         header = QHBoxLayout()
-        title = QLabel(f'Проект: {os.path.basename(self.project_dir)}')
+        title = QLabel('Проект: %s' % os.path.basename(self.project_dir))
         title.setFont(QFont('Segoe UI', 14, QFont.Bold))
         header.addWidget(title)
         header.addStretch()
@@ -75,7 +73,7 @@ class ProjectWindow(QMainWindow):
         self.templates_tree = QTreeWidget()
         self.templates_tree.setHeaderLabels(['Шаблон', ''])
         self.templates_tree.setColumnWidth(0, 300)
-        self.templates_tree.itemDoubleClicked.connect(self._open_fill_form)
+        self.templates_tree.itemDoubleClicked.connect(self._on_tree_double_click)
         tpl_layout.addWidget(self.templates_tree)
 
         splitter.addWidget(templates_widget)
@@ -105,82 +103,48 @@ class ProjectWindow(QMainWindow):
         layout.addWidget(splitter)
 
     def _scan_project(self):
-        """Scan template and data directories."""
-        # Templates
         self.templates_tree.clear()
         templates_dir = os.path.join(self.project_dir, 'Шаблоны')
         if os.path.exists(templates_dir):
             self._scan_dir(templates_dir, self.templates_tree, templates_dir)
 
-        # Data
         self.data_list.clear()
         data_dir = os.path.join(self.project_dir, 'Данные')
         if os.path.exists(data_dir):
             for f in sorted(os.listdir(data_dir)):
                 if f.endswith(('.xlsx', '.xls')):
-                    self.data_list.addItem(f'📊 {f}')
+                    self.data_list.addItem('📊 %s' % f)
 
-    def _scan_dir(self, base_dir, parent_item, root_dir):
-        """Recursively scan directory for .docx files."""
+    def _scan_dir(self, base_dir, parent, root_dir):
         items = sorted(os.listdir(base_dir))
         for name in items:
             full = os.path.join(base_dir, name)
             rel = os.path.relpath(full, root_dir).replace('\\', '/')
             if os.path.isdir(full):
-                sub_tree = QTreeWidgetItem(parent_item if isinstance(parent_item, QTreeWidget) else [parent_item])
-                sub_tree.setText(0, f'📁 {name}')
-                sub_tree.setText(1, rel)
-                self._scan_dir(full, sub_tree, root_dir)
-            elif name.endswith('.docx'):
-                item = QTreeWidgetItem(parent_item if isinstance(parent_item, QTreeWidget) else [parent_item])
-                item.setText(0, f'📄 {name}')
+                item = QTreeWidgetItem(parent if isinstance(parent, QTreeWidget) else [parent])
+                item.setText(0, '📁 %s' % name)
                 item.setText(1, rel)
-                # Button
+                self._scan_dir(full, item, root_dir)
+            elif name.endswith('.docx'):
+                item = QTreeWidgetItem(parent if isinstance(parent, QTreeWidget) else [parent])
+                item.setText(0, '📄 %s' % name)
+                item.setText(1, rel)
                 btn = QPushButton('Заполнить')
                 btn.setFont(QFont('Segoe UI', 8))
                 btn.clicked.connect(lambda checked, p=rel: self._open_fill_form(p))
-                if isinstance(parent_item, QTreeWidget):
-                    self.templates_tree.setItemWidget(item, 1, btn)
-                else:
-                    # For nested items we need a different approach
-                    pass
+                self.templates_tree.setItemWidget(item, 1, btn)
 
-        # Add fill buttons to all leaf items
-        self._add_buttons_recursive(self.templates_tree)
-
-    def _add_buttons_recursive(self, parent):
-        for i in range(parent.topLevelItemCount() if isinstance(parent, QTreeWidget) else parent.childCount()):
-            item = parent.topLevelItem(i) if isinstance(parent, QTreeWidget) else parent.child(i)
-            if item.childCount() == 0:  # leaf = .docx file
-                if not self.templates_tree.itemWidget(item, 1):
-                    btn = QPushButton('Заполнить')
-                    btn.setFont(QFont('Segoe UI', 8))
-                    rel_path = item.text(1)
-                    btn.clicked.connect(lambda checked, p=rel_path: self._open_fill_form(p))
-                    self.templates_tree.setItemWidget(item, 1, btn)
-            else:
-                self._add_buttons_recursive(item)
+    def _on_tree_double_click(self, item):
+        if item and item.childCount() == 0 and item.text(1):
+            self._open_fill_form(item.text(1))
 
     def _open_fill_form(self, rel_path=None):
-        """Open the fill form dialog for a template."""
-        if rel_path is None:
-            # From double-click
-            current = self.templates_tree.currentItem()
-            if current and current.childCount() == 0:
-                rel_path = current.text(1)
-            else:
-                return
-
-        if isinstance(rel_path, bool):  # Clicked signal passes checked=False
-            current = self.templates_tree.currentItem()
-            if current and current.childCount() == 0:
-                rel_path = current.text(1)
-            else:
-                return
+        if rel_path is None or isinstance(rel_path, bool):
+            return
 
         full_path = os.path.join(self.project_dir, 'Шаблоны', rel_path)
         if not os.path.exists(full_path):
-            QMessageBox.warning(self, 'Ошибка', f'Шаблон не найден: {full_path}')
+            QMessageBox.warning(self, 'Ошибка', 'Шаблон не найден: %s' % full_path)
             return
 
         dlg = FillForm(self.project_dir, rel_path, self)
@@ -192,10 +156,8 @@ class ProjectWindow(QMainWindow):
             self, 'Выберите шаблон .docx',
             os.path.expanduser('~'), 'Word документы (*.docx)')
         if file:
-            # Copy to templates dir
             import shutil
-            dest = os.path.join(self.project_dir, 'Шаблоны',
-                                os.path.basename(file))
+            dest = os.path.join(self.project_dir, 'Шаблоны', os.path.basename(file))
             if not os.path.exists(dest):
                 shutil.copy2(file, dest)
             self._scan_project()
@@ -206,15 +168,13 @@ class ProjectWindow(QMainWindow):
             os.path.expanduser('~'), 'Excel файлы (*.xlsx *.xls)')
         if file:
             import shutil
-            dest = os.path.join(self.project_dir, 'Данные',
-                                os.path.basename(file))
+            dest = os.path.join(self.project_dir, 'Данные', os.path.basename(file))
             if not os.path.exists(dest):
                 shutil.copy2(file, dest)
             self._scan_project()
 
     def _go_back(self):
         self.main_window.show()
-        # Refresh recent
         self.main_window._add_recent(self.project_dir)
         self.main_window._refresh_recent_list()
         self.close()

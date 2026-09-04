@@ -11,7 +11,7 @@ from lxml import etree
 from docxforge.engine.schema import (
     Project, TemplateConfig, FieldMapping, FieldType,
     CycleMapping, AggregationMapping, AggregationFunction,
-    BatchSourceConfig, BatchMode,
+    BatchSourceConfig, RowIterationMode,
 )
 from docxforge.engine.renderer import (
     Renderer, format_counter, format_today, compute_aggregation,
@@ -214,7 +214,7 @@ class TestRendererBatchEdgeCases:
             renderer = Renderer(tmp, reader)
             renderer.load_project()
 
-            bsc = BatchSourceConfig(file="empty.xlsx", mode=BatchMode.SINGLE)
+            bsc = BatchSourceConfig(file="empty.xlsx", mode=RowIterationMode.CONSTANT)
             outputs = renderer.render("t.docx", {},
                 batch_table="empty.xlsx",
                 batch_configs={"empty.xlsx": bsc})
@@ -246,7 +246,7 @@ class TestRendererBatchEdgeCases:
             renderer.load_project()
 
             # batch_configs has OTHER file, not data.xlsx
-            bsc = BatchSourceConfig(file="other.xlsx", mode=BatchMode.SINGLE)
+            bsc = BatchSourceConfig(file="other.xlsx", mode=RowIterationMode.CONSTANT)
             outputs = renderer.render("t.docx", {},
                 batch_table="data.xlsx",
                 batch_configs={"other.xlsx": bsc})

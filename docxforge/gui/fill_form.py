@@ -8,14 +8,14 @@ from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
                               QWidget, QGroupBox, QCheckBox, QMessageBox,
                               QFileDialog, QProgressDialog, QFrame, QGridLayout,
                               QRadioButton, QSpinBox, QSizePolicy)
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QFont
 
 from docxforge.engine.template_parser import scan_template
 from docxforge.engine.schema import (
     Project, TemplateConfig, FieldMapping, FieldType,
     CycleMapping, AggregationMapping, AggregationFunction,
-    BatchSourceConfig, BatchMode,
+    BatchSourceConfig, RowIterationMode, ResumeState,
 )
 from docxforge.engine.data_reader import DataReader
 from docxforge.engine.renderer import Renderer
@@ -51,14 +51,17 @@ class FillForm(QDialog):
 
         self.setWindowTitle('Заполнение: %s' % os.path.basename(self.template_path))
         self.resize(750, 620)
-        self._form_state_path = os.path.join(
-            project_dir, '.form_state_%s.json' % template_rel_path.replace('/', '_').replace('\\', '_'))
         self._autosave_enabled = False  # will be True after _connect_autosave
+
+        self._autosave_enabled = False
+        self._save_timer = QTimer(self)
+        self._save_timer.setSingleShot(True)
+        self._save_timer.timeout.connect(self._do_save_project)
 
         self._build_ui()
         self._populate_fields()
         self._load_existing_config()
-        self._load_form_state()  # load last saved state (overrides config defaults)
+        self._connect_autosave()
 
     def _scan_data_files(self):
         data_dir = os.path.join(self.project_dir, 'Данные')
@@ -156,56 +159,46 @@ class FillForm(QDialog):
 
         main_layout.addWidget(self.advanced_group)
 
-        # Batch section
+        # Generation section
         batch_group = QGroupBox('Генерация')
         batch_layout = QVBoxLayout(batch_group)
 
-        radio_layout = QHBoxLayout()
-        self.radio_single = QRadioButton('Один документ')
-        self.radio_single.setChecked(True)
-        self.radio_single.toggled.connect(self._on_batch_mode_toggled)
+        total_row = QHBoxLayout()
+        total_row.addWidget(QLabel('Количество документов:'))
+        self.spin_total_docs = QSpinBox()
+        self.spin_total_docs.setMinimum(1)
+        self.spin_total_docs.setMaximum(99999)
+        self.spin_total_docs.setValue(1)
+        total_row.addWidget(self.spin_total_docs)
+        self.chk_auto_docs = QCheckBox('Авто')
+        self.chk_auto_docs.setChecked(True)
+        self.chk_auto_docs.toggled.connect(self._on_auto_docs_toggled)
+        total_row.addWidget(self.chk_auto_docs)
+        total_row.addStretch()
+        batch_layout.addLayout(total_row)
 
-        self.radio_batch = QRadioButton('Несколько — по строкам таблицы')
-        self.radio_single.setStyleSheet('QRadioButton { color: #000; font-weight: bold; }')
-        self.radio_batch.setStyleSheet('QRadioButton { color: #999; }')
+        self.auto_info_label = QLabel('')
+        self.auto_info_label.setStyleSheet('color: #888; font-size: 9pt;')
+        batch_layout.addWidget(self.auto_info_label)
 
-        radio_layout.addWidget(self.radio_single)
-        radio_layout.addWidget(self.radio_batch)
-        batch_layout.addLayout(radio_layout)
-
-        # Batch panel — per-source config (shown when radio_batch is checked)
-        self.batch_panel = QWidget()
-        batch_panel_layout = QVBoxLayout(self.batch_panel)
-        batch_panel_layout.setContentsMargins(0, 0, 0, 0)
-        batch_panel_layout.setSpacing(4)
-
-        # Container for per-source rows
         self.batch_sources_container = QWidget()
         self.batch_sources_layout = QVBoxLayout(self.batch_sources_container)
         self.batch_sources_layout.setContentsMargins(0, 0, 0, 0)
         self.batch_sources_layout.setSpacing(4)
-        batch_panel_layout.addWidget(self.batch_sources_container)
+        batch_layout.addWidget(self.batch_sources_container)
 
         self.batch_source_widgets = {}
         self._rebuild_batch_source_rows()
 
-        # Limit total docs
-        limit_row = QHBoxLayout()
-        self.chk_limit_docs = QCheckBox('Ограничить общее количество документов')
-        self.chk_limit_docs.setChecked(False)
-        self.chk_limit_docs.toggled.connect(self._on_limit_docs_toggled)
-        limit_row.addWidget(self.chk_limit_docs)
-        self.spin_limit_docs = QSpinBox()
-        self.spin_limit_docs.setMinimum(1)
-        self.spin_limit_docs.setMaximum(99999)
-        self.spin_limit_docs.setValue(1)
-        self.spin_limit_docs.setVisible(False)
-        limit_row.addWidget(self.spin_limit_docs)
-        limit_row.addStretch()
-        batch_panel_layout.addLayout(limit_row)
-
-        self.batch_panel.setVisible(False)
-        batch_layout.addWidget(self.batch_panel)
+        resume_row = QHBoxLayout()
+        self.chk_continue = QCheckBox('Продолжить с последней строки')
+        self.chk_continue.setChecked(True)
+        resume_row.addWidget(self.chk_continue)
+        self.resume_info_label = QLabel('')
+        self.resume_info_label.setStyleSheet('color: #888; font-size: 9pt;')
+        resume_row.addWidget(self.resume_info_label)
+        resume_row.addStretch()
+        batch_layout.addLayout(resume_row)
 
         main_layout.addWidget(batch_group)
 
@@ -397,55 +390,6 @@ class FillForm(QDialog):
                     if idx >= 0:
                         w['table_column'].setCurrentIndex(idx)
 
-    def _load_existing_config(self):
-        for field_name, fm in self.config.fields.items():
-            # Ensure widget exists
-            if field_name not in self.field_widgets:
-                preset = 'константа'
-                if fm.type == FieldType.COUNTER:
-                    preset = 'счётчик'
-                elif fm.type == FieldType.TODAY:
-                    preset = 'сегодня'
-                elif fm.type == FieldType.TABLE:
-                    preset = 'таблица'
-                elif fm.type == FieldType.IMAGE:
-                    preset = 'изображение'
-                self._add_field_row(field_name, preset_type=preset)
-
-            w = self.field_widgets.get(field_name)
-            if not w:
-                continue
-            type_name = next((k for k, v in FIELD_TYPES_ENUM.items()
-                             if v == fm.type), 'константа')
-            w['type_combo'].setCurrentText(type_name)
-
-            if fm.type == FieldType.CONSTANT:
-                w['const_value'].setText(fm.value or '')
-            elif fm.type == FieldType.TABLE:
-                idx = w['table_file'].findText(fm.file or '')
-                if idx >= 0:
-                    w['table_file'].setCurrentIndex(idx)
-                idx = w['table_column'].findText(fm.column or '')
-                if idx >= 0:
-                    w['table_column'].setCurrentIndex(idx)
-            elif fm.type == FieldType.COUNTER:
-                w['counter_start'].setText(str(fm.start))
-                idx = w['counter_format'].findText(fm.format)
-                if idx >= 0:
-                    w['counter_format'].setCurrentIndex(idx)
-            elif fm.type == FieldType.TODAY:
-                idx = w['today_format'].findText(fm.format)
-                if idx >= 0:
-                    w['today_format'].setCurrentIndex(idx)
-            elif fm.type == FieldType.IMAGE:
-                w['image_file'].setText(fm.value or fm.file or '')
-
-        for cycle in self.config.cycles:
-            self._add_cycle_row(cycle.table, cycle.columns)
-
-        for aname, agg in self.config.aggregations.items():
-            self._add_aggr_row(aname, agg.function.value, agg.table,
-                               agg.column, agg.multiplier)
 
     def _add_cycle_row(self, table='', columns=None):
         group = QGroupBox('Цикл')
@@ -541,331 +485,210 @@ class FillForm(QDialog):
         self.cycles_widget.setVisible(checked)
         self.aggr_widget.setVisible(checked)
 
-    def _on_batch_mode_toggled(self, checked_single):
-        is_batch = not checked_single
-        self.batch_panel.setVisible(is_batch)
-        if checked_single:
-            self.radio_single.setStyleSheet('QRadioButton { color: #000; font-weight: bold; }')
-            self.radio_batch.setStyleSheet('QRadioButton { color: #999; }')
+    def _on_auto_docs_toggled(self, checked):
+        self.spin_total_docs.setEnabled(not checked)
+        self._update_auto_info()
+
+    def _get_row_count(self, filename):
+        """Get number of data rows in an Excel file."""
+        path = os.path.join(self.project_dir, 'Данные', filename)
+        if os.path.exists(path):
+            return len(self.data_reader.read_excel(path))
+        return 0
+
+    def _update_auto_info(self):
+        if not self.chk_auto_docs.isChecked():
+            self.auto_info_label.setText('')
+            return
+        seq = [df for df, bw in self.batch_source_widgets.items() if bw['radio_sequential'].isChecked()]
+        if seq:
+            counts = ['%s: %d' % (df, self._get_row_count(df)) for df in seq]
+            self.auto_info_label.setText(
+                'Авто: минимальное число строк (%s)' % ', '.join(counts))
         else:
-            self.radio_single.setStyleSheet('QRadioButton { color: #999; }')
-            self.radio_batch.setStyleSheet('QRadioButton { color: #000; font-weight: bold; }')
+            self.auto_info_label.setText(
+                'Авто: нет таблиц «По строкам» - задайте количество вручную')
+
+    def _update_resume_info(self):
+        resume = self.config.resume
+        if not resume.sources:
+            self.resume_info_label.setText('')
+            return
+        parts = ['%s: строка %d' % (f, r + 1) for f, r in resume.sources.items()]
+        if resume.last_counter_value > 0:
+            parts.append('счётчик: %d' % resume.last_counter_value)
+        self.resume_info_label.setText('(%s)' % ', '.join(parts) if parts else '')
 
     def _rebuild_batch_source_rows(self):
         layout = self.batch_sources_layout
-        # Clear old rows
         while layout.count():
             item = layout.takeAt(0)
             w = item.widget()
             if w:
                 w.setParent(None)
-
         self.batch_source_widgets = {}
         for df in self.data_files:
             row_widget = QWidget()
-            row_layout = QVBoxLayout(row_widget)
-            row_layout.setContentsMargins(0, 0, 0, 0)
-            row_layout.setSpacing(2)
-
-            # Top line: file name + mode combo
+            rl = QVBoxLayout(row_widget)
+            rl.setContentsMargins(0, 0, 0, 0)
+            rl.setSpacing(2)
             top = QHBoxLayout()
             lbl = QLabel(df)
             lbl.setMinimumWidth(140)
             top.addWidget(lbl)
-
-            mode_combo = QComboBox()
-            mode_combo.addItems(['Константная строка', 'По строкам до конца',
-                                 'До заданного числа', 'По кругу'])
-            mode_combo.setCurrentIndex(0)
-            top.addWidget(mode_combo)
-
-            n_label = QLabel('строк:')
-            n_label.setVisible(False)
-            top.addWidget(n_label)
-
-            n_spin = QSpinBox()
-            n_spin.setMinimum(1)
-            n_spin.setMaximum(99999)
-            n_spin.setValue(1)
-            n_spin.setVisible(False)
-            top.addWidget(n_spin)
+            rc = QRadioButton('Константа')
+            rc.setChecked(True)
+            top.addWidget(rc)
+            rs = QRadioButton('По строкам')
+            top.addWidget(rs)
+            ry = QRadioButton('По кругу')
+            top.addWidget(ry)
             top.addStretch()
-
-            row_layout.addLayout(top)
-
-            # Single-mode panel: row selection
-            single_panel = QWidget()
-            sp_layout = QHBoxLayout(single_panel)
-            sp_layout.setContentsMargins(20, 0, 0, 0)
-            sp_layout.setSpacing(4)
-
-            # Radio: pick by row number
-            radio_rownum = QRadioButton('Номер строки:')
-            radio_rownum.setChecked(True)
-            sp_layout.addWidget(radio_rownum)
-
-            spin_rownum = QSpinBox()
-            spin_rownum.setMinimum(1)
-            spin_rownum.setMaximum(99999)
-            spin_rownum.setValue(1)
-            sp_layout.addWidget(spin_rownum)
-
-            # Radio: pick by column value
-            radio_lookup = QRadioButton('Значение столбца:')
-            sp_layout.addWidget(radio_lookup)
-
-            lookup_col_combo = QComboBox()
-            lookup_col_combo.addItems(self._get_columns(df))
-            lookup_col_combo.setMinimumWidth(100)
-            sp_layout.addWidget(lookup_col_combo)
-
-            lookup_val_combo = QComboBox()
-            lookup_val_combo.setEditable(True)
-            lookup_val_combo.setMinimumWidth(120)
-            sp_layout.addWidget(lookup_val_combo)
-
-            # When lookup column changes, fill values
-            def on_lookup_col_changed(col, vc=lookup_val_combo, fname=df):
+            rl.addLayout(top)
+            lp = QWidget()
+            lpl = QHBoxLayout(lp)
+            lpl.setContentsMargins(20, 0, 0, 0)
+            lpl.setSpacing(4)
+            lpl.addWidget(QLabel('Столбец:'))
+            lcc = QComboBox()
+            lcc.addItems(self._get_columns(df))
+            lcc.setMinimumWidth(100)
+            lpl.addWidget(lcc)
+            lpl.addWidget(QLabel('Значение:'))
+            lvc = QComboBox()
+            lvc.setEditable(True)
+            lvc.setMinimumWidth(120)
+            lpl.addWidget(lvc)
+            def on_lcc(col, vc=lvc, fname=df):
                 vc.clear()
                 if col:
                     path = os.path.join(self.project_dir, 'Данные', fname)
                     if os.path.exists(path):
-                        vals = self.data_reader.get_distinct_values(path, col)
-                        vc.addItems(vals)
-            lookup_col_combo.currentTextChanged.connect(on_lookup_col_changed)
-
-            # Radio group: only one of rownum/lookup active
-            radio_rownum.toggled.connect(lambda checked, sp=spin_rownum, lc=lookup_col_combo, lv=lookup_val_combo: (
-                sp.setEnabled(checked), lc.setEnabled(not checked), lv.setEnabled(not checked)))
-            radio_lookup.toggled.connect(lambda checked, sp=spin_rownum, lc=lookup_col_combo, lv=lookup_val_combo: (
-                sp.setEnabled(not checked), lc.setEnabled(checked), lv.setEnabled(checked)))
-            # Initially: rownum enabled, lookup disabled
-            lookup_col_combo.setEnabled(False)
-            lookup_val_combo.setEnabled(False)
-
-            single_panel.setVisible(True)  # visible when mode=SINGLE
-
-            row_layout.addWidget(single_panel)
-
-            def on_mode_changed(idx, sp=single_panel, spin=n_spin, nl=n_label):
-                sp.setVisible(idx == 0)  # show single panel only for SINGLE
-                show_n = (idx == 2 or idx == 3)
-                spin.setVisible(show_n)
-                nl.setVisible(show_n)
-
-            mode_combo.currentIndexChanged.connect(on_mode_changed)
-
+                        vc.addItems(self.data_reader.get_distinct_values(path, col))
+            lcc.currentTextChanged.connect(on_lcc)
+            rl.addWidget(lp)
+            def on_mc(c, l=lp):
+                l.setVisible(c)
+            rc.toggled.connect(on_mc)
+            lp.setVisible(True)
+            rc.toggled.connect(lambda _: self._update_auto_info())
+            rs.toggled.connect(lambda _: self._update_auto_info())
             self.batch_source_widgets[df] = {
-                'mode_combo': mode_combo,
-                'n_spin': n_spin,
-                'n_label': n_label,
-                'single_panel': single_panel,
-                'radio_rownum': radio_rownum,
-                'radio_lookup': radio_lookup,
-                'spin_rownum': spin_rownum,
-                'lookup_col_combo': lookup_col_combo,
-                'lookup_val_combo': lookup_val_combo,
+                'radio_constant': rc, 'radio_sequential': rs, 'radio_circular': ry,
+                'lookup_panel': lp, 'lookup_col_combo': lcc, 'lookup_val_combo': lvc,
             }
-
             layout.addWidget(row_widget)
 
-    def _on_limit_docs_toggled(self, checked):
-        self.spin_limit_docs.setVisible(checked)
-        # ── Form state: auto-save / auto-restore ──────────────────────
-
-    def _connect_autosave(self):
-        """Connect all widget signals to _save_form_state for auto-save."""
-        self._autosave_enabled = True
-        # Field widgets
-        for fn, w in self.field_widgets.items():
-            w['type_combo'].currentTextChanged.connect(self._save_form_state)
-            w['const_value'].textChanged.connect(self._save_form_state)
-            w['table_file'].currentTextChanged.connect(self._save_form_state)
-            w['table_column'].currentTextChanged.connect(self._save_form_state)
-            w['counter_start'].textChanged.connect(self._save_form_state)
-            w['counter_format'].currentTextChanged.connect(self._save_form_state)
-            w['today_format'].currentTextChanged.connect(self._save_form_state)
-            w['image_file'].textChanged.connect(self._save_form_state)
-        # Batch widgets
-        self.radio_single.toggled.connect(self._save_form_state)
-        for df, bw in self.batch_source_widgets.items():
-            bw['mode_combo'].currentIndexChanged.connect(self._save_form_state)
-            bw['n_spin'].valueChanged.connect(self._save_form_state)
-            bw['radio_rownum'].toggled.connect(self._save_form_state)
-            bw['spin_rownum'].valueChanged.connect(self._save_form_state)
-            bw['lookup_col_combo'].currentTextChanged.connect(self._save_form_state)
-            bw['lookup_val_combo'].currentTextChanged.connect(self._save_form_state)
-        self.chk_limit_docs.toggled.connect(self._save_form_state)
-        self.spin_limit_docs.valueChanged.connect(self._save_form_state)
-        # Advanced
-        self.advanced_group.toggled.connect(self._save_form_state)
-
-    def _save_form_state(self, *_args):
-        """Serialize current form widget values to JSON file."""
-        if not self._autosave_enabled:
-            return
-        state = {}
-
-        # Fields
-        fields = {}
-        for fn, w in self.field_widgets.items():
-            fd = {
-                'type': w['type_combo'].currentText(),
-                'const_value': w['const_value'].text(),
-                'table_file': w['table_file'].currentText(),
-                'table_column': w['table_column'].currentText(),
-                'counter_start': w['counter_start'].text(),
-                'counter_format': w['counter_format'].currentText(),
-                'today_format': w['today_format'].currentText(),
-                'image_file': w['image_file'].text(),
-            }
-            fields[fn] = fd
-        state['fields'] = fields
-
-        # Batch
-        state['batch_mode'] = 'single' if self.radio_single.isChecked() else 'batch'
-        batch_sources = {}
-        for df, bw in self.batch_source_widgets.items():
-            bd = {
-                'mode_index': bw['mode_combo'].currentIndex(),
-                'n_rows': bw['n_spin'].value(),
-                'use_lookup': bw['radio_lookup'].isChecked(),
-                'row_number': bw['spin_rownum'].value(),
-                'lookup_column': bw['lookup_col_combo'].currentText(),
-                'lookup_value': bw['lookup_val_combo'].currentText(),
-            }
-            batch_sources[df] = bd
-        state['batch_sources'] = batch_sources
-        state['limit_docs'] = self.chk_limit_docs.isChecked()
-        state['max_docs'] = self.spin_limit_docs.value()
-
-        # Advanced
-        state['advanced_visible'] = self.advanced_group.isChecked()
-
-        try:
-            with open(self._form_state_path, 'w', encoding='utf-8') as f:
-                json.dump(state, f, ensure_ascii=False, indent=2)
-        except Exception:
-            pass  # best-effort save
-
-    def _load_form_state(self):
-        """Restore form widget values from JSON file (if exists)."""
-        if not os.path.exists(self._form_state_path):
-            return
-        try:
-            with open(self._form_state_path, 'r', encoding='utf-8') as f:
-                state = json.load(f)
-        except Exception:
-            return
-
-        # Fields
-        fields_state = state.get('fields', {})
-        for fn, fd in fields_state.items():
-            # Ensure widget exists — may have been added since last save
-            if fn not in self.field_widgets:
-                self._add_field_row(fn, preset_type=fd.get('type', 'константа'))
-            w = self.field_widgets.get(fn)
+    def _load_existing_config(self):
+        for field_name, fm in self.config.fields.items():
+            if field_name not in self.field_widgets:
+                preset = 'константа'
+                if fm.type == FieldType.COUNTER:
+                    preset = 'счётчик'
+                elif fm.type == FieldType.TODAY:
+                    preset = 'сегодня'
+                elif fm.type == FieldType.TABLE:
+                    preset = 'таблица'
+                elif fm.type == FieldType.IMAGE:
+                    preset = 'изображение'
+                self._add_field_row(field_name, preset_type=preset)
+            w = self.field_widgets.get(field_name)
             if not w:
                 continue
-            tp = fd.get('type', 'константа')
-            w['type_combo'].setCurrentText(tp)
-            # This triggers _on_type_changed via signal, so visibility is set
-            if tp == 'константа':
-                w['const_value'].setText(fd.get('const_value', ''))
-            elif tp == 'таблица':
-                idx = w['table_file'].findText(fd.get('table_file', ''))
+            type_name = next((k for k, v in FIELD_TYPES_ENUM.items() if v == fm.type), 'константа')
+            w['type_combo'].setCurrentText(type_name)
+            if fm.type == FieldType.CONSTANT:
+                w['const_value'].setText(fm.value or '')
+            elif fm.type == FieldType.TABLE:
+                idx = w['table_file'].findText(fm.file or '')
                 if idx >= 0:
                     w['table_file'].setCurrentIndex(idx)
-                # Column may need table_file to be set first — signal updates it
-                idx = w['table_column'].findText(fd.get('table_column', ''))
+                idx = w['table_column'].findText(fm.column or '')
                 if idx >= 0:
                     w['table_column'].setCurrentIndex(idx)
-                else:
-                    # Column not yet in combo (table not loaded) — set after combo updates
-                    w['table_column'].setCurrentText(fd.get('table_column', ''))
-            elif tp == 'счётчик':
-                w['counter_start'].setText(fd.get('counter_start', '1'))
-                fmt = fd.get('counter_format', '0001')
-                idx = w['counter_format'].findText(fmt)
+            elif fm.type == FieldType.COUNTER:
+                w['counter_start'].setText(str(fm.start))
+                idx = w['counter_format'].findText(fm.format)
                 if idx >= 0:
                     w['counter_format'].setCurrentIndex(idx)
-            elif tp == 'сегодня':
-                fmt = fd.get('today_format', 'dd.MM.yyyy')
-                idx = w['today_format'].findText(fmt)
+            elif fm.type == FieldType.TODAY:
+                idx = w['today_format'].findText(fm.format)
                 if idx >= 0:
                     w['today_format'].setCurrentIndex(idx)
-            elif tp == 'изображение':
-                w['image_file'].setText(fd.get('image_file', ''))
-
-        # Batch
-        batch_mode = state.get('batch_mode', 'single')
-        if batch_mode == 'batch':
-            self.radio_batch.setChecked(True)
-        else:
-            self.radio_single.setChecked(True)
-
-        batch_sources = state.get('batch_sources', {})
-        for df, bd in batch_sources.items():
+            elif fm.type == FieldType.IMAGE:
+                w['image_file'].setText(fm.value or fm.file or '')
+        for cycle in self.config.cycles:
+            self._add_cycle_row(cycle.table, cycle.columns)
+        for aname, agg in self.config.aggregations.items():
+            self._add_aggr_row(aname, agg.function.value, agg.table, agg.column, agg.multiplier)
+        for df, bsc in self.config.batch_sources.items():
             bw = self.batch_source_widgets.get(df)
             if not bw:
                 continue
-            bw['mode_combo'].setCurrentIndex(bd.get('mode_index', 0))
-            bw['n_spin'].setValue(bd.get('n_rows', 1))
-            use_lookup = bd.get('use_lookup', False)
-            if use_lookup:
-                bw['radio_lookup'].setChecked(True)
-            else:
-                bw['radio_rownum'].setChecked(True)
-            bw['spin_rownum'].setValue(bd.get('row_number', 1))
-            # Restore lookup column, then value
-            lc = bd.get('lookup_column', '')
-            idx = bw['lookup_col_combo'].findText(lc)
-            if idx >= 0:
-                bw['lookup_col_combo'].setCurrentIndex(idx)
-            lv = bd.get('lookup_value', '')
-            idx = bw['lookup_val_combo'].findText(lv)
-            if idx >= 0:
-                bw['lookup_val_combo'].setCurrentIndex(idx)
-            else:
-                bw['lookup_val_combo'].setCurrentText(lv)
-
-        self.chk_limit_docs.setChecked(state.get('limit_docs', False))
-        self.spin_limit_docs.setValue(state.get('max_docs', 1))
-
-        # Advanced
-        self.advanced_group.setChecked(state.get('advanced_visible', False))
-
-        # Enable autosave AFTER loading (so load doesn't trigger saves)
-        self._connect_autosave()
-
-
-    def _validate(self):
-        issues = []
-        for fn, w in self.field_widgets.items():
-            tp = w['type_combo'].currentText()
-            if tp == 'константа' and not w['const_value'].text().strip():
-                issues.append('%s: константа без значения' % fn)
-            elif tp == 'таблица':
-                if not w['table_file'].currentText():
-                    issues.append('%s: не выбран файл' % fn)
-                if not w['table_column'].currentText():
-                    issues.append('%s: не выбран столбец' % fn)
-            elif tp == 'изображение' and not w['image_file'].text().strip():
-                issues.append('%s: не выбран файл' % fn)
-
-        if issues:
-            QMessageBox.warning(self, 'Предупреждение',
-                                 'Незаполненные поля:\n' + '\n'.join(issues))
+            if bsc.mode == RowIterationMode.CONSTANT:
+                bw['radio_constant'].setChecked(True)
+            elif bsc.mode == RowIterationMode.SEQUENTIAL:
+                bw['radio_sequential'].setChecked(True)
+            elif bsc.mode == RowIterationMode.CIRCULAR:
+                bw['radio_circular'].setChecked(True)
+            if bsc.mode == RowIterationMode.CONSTANT:
+                idx = bw['lookup_col_combo'].findText(bsc.lookup_column or '')
+                if idx >= 0:
+                    bw['lookup_col_combo'].setCurrentIndex(idx)
+                idx = bw['lookup_val_combo'].findText(bsc.lookup_value or '')
+                if idx >= 0:
+                    bw['lookup_val_combo'].setCurrentIndex(idx)
+                else:
+                    bw['lookup_val_combo'].setCurrentText(bsc.lookup_value or '')
+        if self.config.total_docs is not None:
+            self.chk_auto_docs.setChecked(False)
+            self.spin_total_docs.setValue(self.config.total_docs)
         else:
-            QMessageBox.information(self, 'OK', 'Все поля заполнены корректно.')
+            self.chk_auto_docs.setChecked(True)
+        self.chk_continue.setChecked(self.config.resume.continue_from_last)
+        self._update_resume_info()
+        self.advanced_group.setChecked(self.config.ui_state.get('advanced_visible', False))
 
-    def _create(self):
+    def _connect_autosave(self):
+        self._autosave_enabled = True
+        for fn, w in self.field_widgets.items():
+            w['type_combo'].currentTextChanged.connect(self._schedule_save)
+            w['const_value'].textChanged.connect(self._schedule_save)
+            w['table_file'].currentTextChanged.connect(self._schedule_save)
+            w['table_column'].currentTextChanged.connect(self._schedule_save)
+            w['counter_start'].textChanged.connect(self._schedule_save)
+            w['counter_format'].currentTextChanged.connect(self._schedule_save)
+            w['today_format'].currentTextChanged.connect(self._schedule_save)
+            w['image_file'].textChanged.connect(self._schedule_save)
+        self.spin_total_docs.valueChanged.connect(self._schedule_save)
+        self.chk_auto_docs.toggled.connect(self._schedule_save)
+        self.chk_continue.toggled.connect(self._schedule_save)
+        for df, bw in self.batch_source_widgets.items():
+            bw['radio_constant'].toggled.connect(self._schedule_save)
+            bw['radio_sequential'].toggled.connect(self._schedule_save)
+            bw['radio_circular'].toggled.connect(self._schedule_save)
+            bw['lookup_col_combo'].currentTextChanged.connect(self._schedule_save)
+            bw['lookup_val_combo'].currentTextChanged.connect(self._schedule_save)
+        self.advanced_group.toggled.connect(self._schedule_save)
+
+    def _schedule_save(self, *_args):
+        if not self._autosave_enabled:
+            return
+        self._save_timer.start(500)
+
+    def _do_save_project(self):
+        if not self._autosave_enabled:
+            return
+        config = self._collect_config()
+        self.renderer.project.templates[self.template_rel_path] = config
+        self.renderer.save_project()
+
+    def _collect_config(self):
         config = TemplateConfig()
         for fn, w in self.field_widgets.items():
             tp = w['type_combo'].currentText()
             ft = FIELD_TYPES_ENUM.get(tp, FieldType.CONSTANT)
             fm = FieldMapping(type=ft)
-
             if ft == FieldType.CONSTANT:
                 fm.value = w['const_value'].text()
             elif ft == FieldType.TABLE:
@@ -881,10 +704,7 @@ class FillForm(QDialog):
                 fm.format = w['today_format'].currentText()
             elif ft == FieldType.IMAGE:
                 fm.value = w['image_file'].text()
-
             config.fields[fn] = fm
-
-        # Auto-link
         seen_tables = {}
         for fn, fm in config.fields.items():
             if fm.type == FieldType.TABLE and fm.file:
@@ -892,8 +712,6 @@ class FillForm(QDialog):
                     fm.linked_to = seen_tables[fm.file]
                 else:
                     seen_tables[fm.file] = fn
-
-        # Cycles
         for i in range(self.cycles_layout.count()):
             grp = self.cycles_layout.itemAt(i).widget()
             if not isinstance(grp, QGroupBox):
@@ -908,18 +726,15 @@ class FillForm(QDialog):
                 continue
             columns = {}
             for r in range(cols_layout.rowCount()):
-                name_w = cols_layout.itemAtPosition(r, 1)
-                val_w = cols_layout.itemAtPosition(r, 3)
-                if name_w and val_w:
-                    n = name_w.widget().text().strip()
-                    v = val_w.widget().currentText().strip()
+                nw = cols_layout.itemAtPosition(r, 1)
+                vw = cols_layout.itemAtPosition(r, 3)
+                if nw and vw:
+                    n = nw.widget().text().strip()
+                    v = vw.widget().currentText().strip()
                     if n and v:
                         columns[n] = v
             if file_combo.currentText() and columns:
-                config.cycles.append(CycleMapping(
-                    table=file_combo.currentText(), columns=columns))
-
-        # Aggregations
+                config.cycles.append(CycleMapping(table=file_combo.currentText(), columns=columns))
         for i in range(self.aggr_layout.count()):
             grp = self.aggr_layout.itemAt(i).widget()
             if not isinstance(grp, QGroupBox):
@@ -942,73 +757,106 @@ class FillForm(QDialog):
                 multiplier = None
             else:
                 continue
-            config.aggregations[aname] = AggregationMapping(
-                function=func, table=table, column=column, multiplier=multiplier)
+            config.aggregations[aname] = AggregationMapping(function=func, table=table, column=column, multiplier=multiplier)
+        for df, bw in self.batch_source_widgets.items():
+            mode = RowIterationMode.CONSTANT
+            if bw['radio_sequential'].isChecked():
+                mode = RowIterationMode.SEQUENTIAL
+            elif bw['radio_circular'].isChecked():
+                mode = RowIterationMode.CIRCULAR
+            bsc = BatchSourceConfig(file=df, mode=mode)
+            if mode == RowIterationMode.CONSTANT:
+                bsc.lookup_column = bw['lookup_col_combo'].currentText() or None
+                bsc.lookup_value = bw['lookup_val_combo'].currentText() or None
+            config.batch_sources[df] = bsc
+        if self.chk_auto_docs.isChecked():
+            config.total_docs = None
+        else:
+            config.total_docs = self.spin_total_docs.value()
+        config.resume = ResumeState(
+            last_counter_value=self.config.resume.last_counter_value,
+            sources=dict(self.config.resume.sources),
+            continue_from_last=self.chk_continue.isChecked(),
+        )
+        config.ui_state = {'advanced_visible': self.advanced_group.isChecked()}
+        return config
 
+    def _validate(self):
+        issues = []
+        for fn, w in self.field_widgets.items():
+            tp = w['type_combo'].currentText()
+            if tp == 'константа' and not w['const_value'].text().strip():
+                issues.append('%s: константа без значения' % fn)
+            elif tp == 'таблица':
+                if not w['table_file'].currentText():
+                    issues.append('%s: не выбран файл' % fn)
+                if not w['table_column'].currentText():
+                    issues.append('%s: не выбран столбец' % fn)
+            elif tp == 'изображение' and not w['image_file'].text().strip():
+                issues.append('%s: не выбран файл' % fn)
+        if self.chk_auto_docs.isChecked():
+            has_seq = any(bw['radio_sequential'].isChecked() for bw in self.batch_source_widgets.values())
+            if not has_seq:
+                issues.append('Авто: нет таблиц «По строкам»')
+        if issues:
+            QMessageBox.warning(self, 'Предупреждение',
+                'Проблемы:\n' + '\n'.join(issues))
+        else:
+            QMessageBox.information(self, 'OK', 'Все поля заполнены корректно.')
+
+    def _create(self):
+        config = self._collect_config()
         self.renderer.project.templates[self.template_rel_path] = config
         self.renderer.save_project()
-
         user_values = {}
         for fn, fm in config.fields.items():
             if fm.type == FieldType.CONSTANT:
                 user_values[fn] = fm.value or ''
             elif fm.type == FieldType.IMAGE:
                 user_values[fn] = fm.value or fm.file or ''
-
-        # Determine batch config — always collect SINGLE row selection
+        total_docs = config.total_docs
         batch_table = None
-        batch_configs = {}
-        max_docs = None
-
-        MODE_MAP = {
-            0: BatchMode.SINGLE,
-            1: BatchMode.ALL_ROWS,
-            2: BatchMode.N_ROWS,
-            3: BatchMode.CIRCULAR,
-        }
-        for df, bw in self.batch_source_widgets.items():
-            idx = bw['mode_combo'].currentIndex()
-            mode = MODE_MAP.get(idx, BatchMode.SINGLE)
-            bsc = BatchSourceConfig(file=df, mode=mode, n_rows=bw['n_spin'].value())
-            # For SINGLE mode: row selection
-            if mode == BatchMode.SINGLE:
-                if bw['radio_lookup'].isChecked():
-                    bsc.row_index = -1
-                    bsc.lookup_column = bw['lookup_col_combo'].currentText() or None
-                    bsc.lookup_value = bw['lookup_val_combo'].currentText() or None
-                else:
-                    bsc.row_index = bw['spin_rownum'].value() - 1  # 0-based
-            batch_configs[df] = bsc
-            # batch_table only set when batch mode is active and a non-SINGLE source exists
-            if self.radio_batch.isChecked() and batch_table is None and mode != BatchMode.SINGLE:
+        for df, bsc in config.batch_sources.items():
+            if bsc.mode == RowIterationMode.SEQUENTIAL:
                 batch_table = df
-
-        if self.radio_batch.isChecked():
-            if batch_table is None and self.data_files:
-                batch_table = self.data_files[0]
-            if self.chk_limit_docs.isChecked():
-                max_docs = self.spin_limit_docs.value()
-
+                break
+        warnings = []
+        seq_counts = {}
+        for df, bsc in config.batch_sources.items():
+            if bsc.mode == RowIterationMode.SEQUENTIAL:
+                seq_counts[df] = self._get_row_count(df)
+        if len(seq_counts) > 1:
+            min_c = min(seq_counts.values())
+            for df, n in seq_counts.items():
+                if n > min_c:
+                    warnings.append('Таблица «%s»: %d строк, генерация до %d' % (df, n, min_c))
+        if warnings:
+            reply = QMessageBox.warning(self, 'Предупреждение',
+                'Обнаружены проблемы:\n\n' + '\n'.join(warnings) + '\n\nПродолжить?',
+                QMessageBox.Yes | QMessageBox.No)
+            if reply == QMessageBox.No:
+                return
+        resume = config.resume
         progress = QProgressDialog('Генерация документов...', 'Отмена', 0, 0, self)
         progress.setWindowModality(Qt.WindowModal)
         progress.show()
-
         try:
             output_dir = os.path.join(self.project_dir, 'output')
             outputs = self.renderer.render(
                 self.template_rel_path, user_values,
                 batch_table=batch_table, output_dir=output_dir,
-                batch_configs=batch_configs, max_docs=max_docs)
+                batch_configs=config.batch_sources,
+                max_docs=total_docs, resume=resume)
+            config.resume = resume
+            self.renderer.project.templates[self.template_rel_path] = config
+            self.renderer.save_project()
             progress.close()
-            QMessageBox.information(
-                self, 'Готово',
-                'Создано документов: %d\nПапка: %s\nПервый файл: %s' %
-                (len(outputs), output_dir,
-                 os.path.basename(outputs[0]) if outputs else '—'))
+            QMessageBox.information(self, 'Готово',
+                'Создано документов: %d\nПапка: %s\n%s' %
+                (len(outputs), output_dir, os.path.basename(outputs[0]) if outputs else '-'))
         except Exception as e:
             progress.close()
             import traceback
             traceback.print_exc()
             QMessageBox.critical(self, 'Ошибка',
-                                 'Не удалось создать документ:\n%s' % str(e))
-
+                'Не удалось создать документ:\n%s' % str(e))

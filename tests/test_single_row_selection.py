@@ -10,7 +10,7 @@ from lxml import etree
 
 from docxforge.engine.schema import (
     Project, TemplateConfig, FieldMapping, FieldType,
-    BatchSourceConfig, BatchMode,
+    BatchSourceConfig, RowIterationMode,
 )
 from docxforge.engine.renderer import Renderer
 from docxforge.engine.data_reader import DataReader
@@ -69,7 +69,8 @@ class TestResolveSingleRow:
             renderer.load_project()
 
             # Row index 1 (0-based) = Boris
-            bsc = BatchSourceConfig(file="people.xlsx", mode=BatchMode.SINGLE, row_index=1)
+            bsc = BatchSourceConfig(file="people.xlsx", mode=RowIterationMode.CONSTANT,
+                                    lookup_column="name", lookup_value="Boris")
             outputs = renderer.render("t.docx", {},
                 batch_table=None,
                 batch_configs={"people.xlsx": bsc})
@@ -108,8 +109,7 @@ class TestResolveSingleRow:
 
             # Lookup by city = Kazan → Vera
             bsc = BatchSourceConfig(
-                file="people.xlsx", mode=BatchMode.SINGLE,
-                row_index=-1,
+                file="people.xlsx", mode=RowIterationMode.CONSTANT,
                 lookup_column="city", lookup_value="Kazan")
             outputs = renderer.render("t.docx", {},
                 batch_table=None,
@@ -226,7 +226,8 @@ class TestResolveSingleRow:
             renderer = Renderer(tmp, reader)
             renderer.load_project()
 
-            bsc = BatchSourceConfig(file="d.xlsx", mode=BatchMode.SINGLE, row_index=0)
+            bsc = BatchSourceConfig(file="d.xlsx", mode=RowIterationMode.CONSTANT,
+                                   lookup_column="val", lookup_value="AAA")
             outputs = renderer.render("t.docx", {},
                 batch_table=None,
                 batch_configs={"d.xlsx": bsc})

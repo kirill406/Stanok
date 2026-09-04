@@ -124,7 +124,7 @@ class TestCliCreate:
             # Verify .docxforge is valid JSON
             with open(proj_file, 'r', encoding='utf-8') as f:
                 data = json.load(f)
-            assert data['version'] == 1
+            assert data['version'] == 2
             assert 'templates' in data
 
     def test_create_idempotent(self):
@@ -415,7 +415,7 @@ class TestCliInfo:
         with tempfile.TemporaryDirectory() as tmp:
             create_project(tmp)
             prj = Project.from_file(os.path.join(tmp, 'проект.docxforge'))
-            assert prj.version == 1
+            assert prj.version == 2
 
     def test_info_shows_template_count(self):
         with tempfile.TemporaryDirectory() as tmp:

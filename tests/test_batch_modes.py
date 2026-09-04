@@ -10,7 +10,7 @@ from lxml import etree
 
 from docxforge.engine.schema import (
     Project, TemplateConfig, FieldMapping, FieldType,
-    BatchSourceConfig, BatchMode,
+    BatchSourceConfig, RowIterationMode,
 )
 from docxforge.engine.renderer import Renderer
 from docxforge.engine.data_reader import DataReader
@@ -41,44 +41,41 @@ def _read_output_text(path):
 class TestBatchSourceConfig:
 
     def test_batch_mode_enum_values(self):
-        assert BatchMode.SINGLE.value == "single"
-        assert BatchMode.ALL_ROWS.value == "all_rows"
-        assert BatchMode.N_ROWS.value == "n_rows"
-        assert BatchMode.CIRCULAR.value == "circular"
+        assert RowIterationMode.CONSTANT.value == "constant"
+        assert RowIterationMode.SEQUENTIAL.value == "sequential"
+        assert RowIterationMode.SEQUENTIAL.value == "sequential"
+        assert RowIterationMode.CIRCULAR.value == "circular"
 
     def test_batch_source_config_defaults(self):
         bsc = BatchSourceConfig()
         assert bsc.file == ""
-        assert bsc.mode == BatchMode.SINGLE
-        assert bsc.n_rows == 1
+        assert bsc.mode == RowIterationMode.CONSTANT
 
     def test_batch_source_config_round_trip(self):
         with tempfile.TemporaryDirectory() as tmp:
             prj = Project()
             tc = TemplateConfig()
             tc.batch_sources["clients.xlsx"] = BatchSourceConfig(
-                file="clients.xlsx", mode=BatchMode.ALL_ROWS)
+                file="clients.xlsx", mode=RowIterationMode.SEQUENTIAL)
             tc.batch_sources["staff.xlsx"] = BatchSourceConfig(
-                file="staff.xlsx", mode=BatchMode.N_ROWS, n_rows=5)
+                file="staff.xlsx", mode=RowIterationMode.SEQUENTIAL)
             tc.batch_sources["cities.xlsx"] = BatchSourceConfig(
-                file="cities.xlsx", mode=BatchMode.CIRCULAR, n_rows=10)
-            tc.max_docs = 50
+                file="cities.xlsx", mode=RowIterationMode.CIRCULAR)
+            tc.total_docs = 50
             prj.templates["t.docx"] = tc
             path = os.path.join(tmp, "proj.docxforge")
             prj.to_file(path)
             prj2 = Project.from_file(path)
             tc2 = prj2.templates["t.docx"]
             assert len(tc2.batch_sources) == 3
-            assert tc2.batch_sources["clients.xlsx"].mode == BatchMode.ALL_ROWS
-            assert tc2.batch_sources["staff.xlsx"].mode == BatchMode.N_ROWS
-            assert tc2.batch_sources["staff.xlsx"].n_rows == 5
-            assert tc2.batch_sources["cities.xlsx"].mode == BatchMode.CIRCULAR
-            assert tc2.batch_sources["cities.xlsx"].n_rows == 10
-            assert tc2.max_docs == 50
+            assert tc2.batch_sources["clients.xlsx"].mode == RowIterationMode.SEQUENTIAL
+            assert tc2.batch_sources["staff.xlsx"].mode == RowIterationMode.SEQUENTIAL
+            assert tc2.batch_sources["cities.xlsx"].mode == RowIterationMode.CIRCULAR
+            assert tc2.total_docs == 50
 
-    def test_max_docs_default_none(self):
+    def test_total_docs_default_none(self):
         tc = TemplateConfig()
-        assert tc.max_docs is None
+        assert tc.total_docs is None
 
     def test_batch_config_no_max_docs_when_not_set(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -88,7 +85,7 @@ class TestBatchSourceConfig:
             path = os.path.join(tmp, "proj.docxforge")
             prj.to_file(path)
             prj2 = Project.from_file(path)
-            assert prj2.templates["t.docx"].max_docs is None
+            assert prj2.templates["t.docx"].total_docs is None
 
 
 class TestRendererBatchModes:
@@ -114,7 +111,7 @@ class TestRendererBatchModes:
             reader = DataReader()
             renderer = Renderer(tmp, reader)
             renderer.load_project()
-            bsc = BatchSourceConfig(file="people.xlsx", mode=BatchMode.SINGLE)
+            bsc = BatchSourceConfig(file="people.xlsx", mode=RowIterationMode.CONSTANT)
             outputs = renderer.render("t.docx", {},
                 batch_table="people.xlsx",
                 batch_configs={"people.xlsx": bsc})
@@ -143,10 +140,11 @@ class TestRendererBatchModes:
             reader = DataReader()
             renderer = Renderer(tmp, reader)
             renderer.load_project()
-            bsc = BatchSourceConfig(file="people.xlsx", mode=BatchMode.N_ROWS, n_rows=2)
+            bsc = BatchSourceConfig(file="people.xlsx", mode=RowIterationMode.SEQUENTIAL)
             outputs = renderer.render("t.docx", {},
                 batch_table="people.xlsx",
-                batch_configs={"people.xlsx": bsc})
+                batch_configs={"people.xlsx": bsc},
+                max_docs=2)
             assert len(outputs) == 2
             texts = [_read_output_text(o) for o in outputs]
             assert "Anna" in texts[0]
@@ -172,10 +170,11 @@ class TestRendererBatchModes:
             reader = DataReader()
             renderer = Renderer(tmp, reader)
             renderer.load_project()
-            bsc = BatchSourceConfig(file="data.xlsx", mode=BatchMode.CIRCULAR, n_rows=5)
+            bsc = BatchSourceConfig(file="data.xlsx", mode=RowIterationMode.CIRCULAR)
             outputs = renderer.render("t.docx", {},
                 batch_table="data.xlsx",
-                batch_configs={"data.xlsx": bsc})
+                batch_configs={"data.xlsx": bsc},
+                max_docs=5)
             assert len(outputs) == 5
             texts = [_read_output_text(o) for o in outputs]
             assert "A" in texts[0]
@@ -229,7 +228,7 @@ class TestRendererBatchModes:
             reader = DataReader()
             renderer = Renderer(tmp, reader)
             renderer.load_project()
-            bsc = BatchSourceConfig(file="data.xlsx", mode=BatchMode.ALL_ROWS)
+            bsc = BatchSourceConfig(file="data.xlsx", mode=RowIterationMode.SEQUENTIAL)
             outputs_new = renderer.render("t.docx", {},
                 batch_table="data.xlsx",
                 batch_configs={"data.xlsx": bsc})

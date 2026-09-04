@@ -1,10 +1,10 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """.docxforge project file schema — defines the JSON structure and defaults."""
 
 import json
 import os
 from dataclasses import dataclass, field, asdict
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 from enum import Enum
 
 
@@ -24,11 +24,14 @@ class AggregationFunction(str, Enum):
     MIN = 'min'
 
 
-class BatchMode(str, Enum):
-    SINGLE = 'single'           # константная строка (один документ)
-    ALL_ROWS = 'all_rows'       # итерироваться по строкам до конца
-    N_ROWS = 'n_rows'           # итерироваться до заданного числа
-    CIRCULAR = 'circular'       # итерироваться по кругу
+class RowIterationMode(str, Enum):
+    CONSTANT = 'constant'       # одна и та же строка во всех документах (lookup)
+    SEQUENTIAL = 'sequential'   # по порядку, стоп при исчерпании
+    CIRCULAR = 'circular'       # по кругу
+
+
+# Backward compatibility alias
+BatchMode = RowIterationMode
 
 
 @dataclass
@@ -61,12 +64,18 @@ class AggregationMapping:
 @dataclass
 class BatchSourceConfig:
     file: str = ''
-    mode: BatchMode = BatchMode.SINGLE
-    n_rows: int = 1  # used when mode == N_ROWS or CIRCULAR
-    # For SINGLE mode: how to pick the row
-    row_index: int = 0  # explicit row number (0-based), -1 means use lookup
+    mode: RowIterationMode = RowIterationMode.CONSTANT
+    # For CONSTANT mode: lookup by column value
     lookup_column: Optional[str] = None  # column to search value in
     lookup_value: Optional[str] = None   # value to find in lookup_column
+
+
+@dataclass
+class ResumeState:
+    """Runtime state: where generation last stopped (saved in project, gitignored)."""
+    last_counter_value: int = 0
+    sources: Dict[str, int] = field(default_factory=dict)  # file → last_row (0-based)
+    continue_from_last: bool = True  # чекбокс «Продолжить»
 
 
 @dataclass
@@ -75,12 +84,14 @@ class TemplateConfig:
     cycles: List[CycleMapping] = field(default_factory=list)
     aggregations: Dict[str, AggregationMapping] = field(default_factory=dict)
     batch_sources: Dict[str, BatchSourceConfig] = field(default_factory=dict)
-    max_docs: Optional[int] = None  # limit total number of documents
+    total_docs: Optional[int] = None  # None = auto (min rows of SEQUENTIAL sources)
+    resume: ResumeState = field(default_factory=ResumeState)
+    ui_state: Dict[str, Any] = field(default_factory=dict)  # UI-specific state
 
 
 @dataclass
 class Project:
-    version: int = 1
+    version: int = 2
     templates: Dict[str, TemplateConfig] = field(default_factory=dict)
 
     @classmethod
@@ -91,7 +102,7 @@ class Project:
 
     @classmethod
     def _from_dict(cls, data: dict) -> 'Project':
-        project = cls(version=data.get('version', 1))
+        project = cls(version=data.get('version', 2))
         for tpl_name, tpl_data in data.get('templates', {}).items():
             tc = TemplateConfig()
             for fname, fdata in tpl_data.get('fields', {}).items():
@@ -120,15 +131,31 @@ class Project:
                 )
             # Batch sources
             for bname, bdata in tpl_data.get('batch', {}).get('sources', {}).items():
+                # Support both old BatchMode and new RowIterationMode
+                mode_str = bdata.get('mode', 'constant')
+                # Legacy migration: single → constant, all_rows → sequential, n_rows → sequential
+                _legacy_map = {
+                    'single': 'constant',
+                    'all_rows': 'sequential',
+                    'n_rows': 'sequential',
+                }
+                mode_str = _legacy_map.get(mode_str, mode_str)
                 tc.batch_sources[bname] = BatchSourceConfig(
                     file=bdata.get('file', ''),
-                    mode=BatchMode(bdata.get('mode', 'single')),
-                    n_rows=bdata.get('n_rows', 1),
-                    row_index=bdata.get('row_index', 0),
+                    mode=RowIterationMode(mode_str),
                     lookup_column=bdata.get('lookup_column'),
                     lookup_value=bdata.get('lookup_value'),
                 )
-            tc.max_docs = tpl_data.get('batch', {}).get('max_docs')
+            tc.total_docs = tpl_data.get('batch', {}).get('total_docs')
+            # Resume
+            resume_data = tpl_data.get('resume', {})
+            tc.resume = ResumeState(
+                last_counter_value=resume_data.get('last_counter_value', 0),
+                sources=resume_data.get('sources', {}),
+                continue_from_last=resume_data.get('continue_from_last', True),
+            )
+            # UI state
+            tc.ui_state = tpl_data.get('ui_state', {})
             project.templates[tpl_name] = tc
         return project
 
@@ -175,19 +202,27 @@ class Project:
                 batch['sources'] = {}
                 for bname, bsc in tc.batch_sources.items():
                     bd = {'file': bsc.file, 'mode': bsc.mode.value}
-                    if bsc.mode == BatchMode.N_ROWS or bsc.mode == BatchMode.CIRCULAR:
-                        bd['n_rows'] = bsc.n_rows
-                    if bsc.mode == BatchMode.SINGLE:
-                        bd['row_index'] = bsc.row_index
+                    if bsc.mode == RowIterationMode.CONSTANT:
                         if bsc.lookup_column is not None:
                             bd['lookup_column'] = bsc.lookup_column
                         if bsc.lookup_value is not None:
                             bd['lookup_value'] = bsc.lookup_value
                     batch['sources'][bname] = bd
-            if tc.max_docs is not None:
-                batch['max_docs'] = tc.max_docs
+            if tc.total_docs is not None:
+                batch['total_docs'] = tc.total_docs
             if batch:
                 td['batch'] = batch
+
+            # Resume
+            td['resume'] = {
+                'last_counter_value': tc.resume.last_counter_value,
+                'sources': tc.resume.sources,
+                'continue_from_last': tc.resume.continue_from_last,
+            }
+
+            # UI state
+            if tc.ui_state:
+                td['ui_state'] = tc.ui_state
 
             result['templates'][tpl_name] = td
         return result

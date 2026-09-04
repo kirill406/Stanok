@@ -185,7 +185,7 @@ class TestSchema:
             proj_file = create_project(os.path.join(tmp, 'myproject'))
             assert os.path.exists(proj_file)
             prj = Project.from_file(proj_file)
-            assert prj.version == 1
+            assert prj.version == 2
             assert len(prj.templates) == 0
 
     def test_multiply_aggregation_round_trip(self):

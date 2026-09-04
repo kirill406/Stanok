@@ -12,7 +12,7 @@ from lxml import etree
 from .schema import (
     Project, TemplateConfig, FieldMapping, CycleMapping,
     AggregationMapping, FieldType, AggregationFunction,
-    BatchSourceConfig, BatchMode,
+    BatchSourceConfig, RowIterationMode, ResumeState,
 )
 from .data_reader import DataReader
 
@@ -230,7 +230,27 @@ class Renderer:
         self.project = Project.from_file(project_file) if os.path.exists(project_file) else Project()
 
     def save_project(self):
-        self.project.to_file(os.path.join(self.project_dir, 'проект.docxforge'))
+        self._atomic_write_project()
+
+    def _atomic_write_project(self):
+        """Atomically write project file: write .tmp → backup .bak → rename."""
+        project_file = os.path.join(self.project_dir, 'проект.docxforge')
+        tmp_file = project_file + '.tmp'
+        bak_file = project_file + '.bak'
+        data = self.project._to_dict()
+        # Write to temp
+        with open(tmp_file, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        # Backup current
+        if os.path.exists(project_file):
+            try:
+                os.replace(project_file, bak_file)
+            except Exception:
+                pass
+        # Rename temp to final
+        os.replace(tmp_file, project_file)
 
     def get_template_path(self, template_name: str) -> str:
         base = os.path.join(self.project_dir, 'Шаблоны')
@@ -246,39 +266,123 @@ class Renderer:
         path = os.path.join(self.project_dir, 'Данные', table_file)
         if os.path.exists(path):
             return self.data_reader.read_excel(path)
+        return []
 
-    def _resolve_single_row(self, table_file: str,
-                            batch_configs: Optional[Dict[str, BatchSourceConfig]] = None) -> Optional[Dict[str, str]]:
-        """Resolve a specific row for a SINGLE-mode table.
+    def _resolve_constant_row(self, table_file: str,
+                               batch_configs: Optional[Dict[str, BatchSourceConfig]] = None,
+                               all_rows: Optional[List[Dict[str, str]]] = None) -> Optional[Dict[str, str]]:
+        """Resolve the row for a CONSTANT-mode source (lookup by column value).
 
-        If batch_configs has a SINGLE entry for table_file, use its
-        row_index or lookup_column/lookup_value to pick a row.
-        Otherwise return None (caller should fall back to rows[0]).
+        Returns the matching row, or first row if lookup fails, or None if no data.
         """
         if not batch_configs:
             return None
         bsc = batch_configs.get(table_file)
-        if not bsc or bsc.mode != BatchMode.SINGLE:
+        if not bsc or bsc.mode != RowIterationMode.CONSTANT:
             return None
-        all_rows = self._read_table_data(table_file)
+        if all_rows is None:
+            all_rows = self._read_table_data(table_file)
         if not all_rows:
             return None
         if bsc.lookup_column and bsc.lookup_value:
             for row in all_rows:
                 if str(row.get(bsc.lookup_column, '')).strip() == bsc.lookup_value.strip():
                     return row
+            return all_rows[0]  # fallback
+        return all_rows[0]  # no lookup → first row
+
+    def _resolve_row_for_source(self, source_file: str, doc_index: int,
+                                 batch_configs: Dict[str, BatchSourceConfig],
+                                 resume: Optional[ResumeState] = None,
+                                 all_rows: Optional[List[Dict[str, str]]] = None) -> Optional[Dict[str, str]]:
+        """Resolve the data row for a given source at a given document index.
+
+        doc_index: 0-based index of the document being generated.
+        resume: if continue_from_last, offset by last_row.
+        """
+        if all_rows is None:
+            all_rows = self._read_table_data(source_file)
+        if not all_rows:
+            return None
+
+        bsc = batch_configs.get(source_file)
+        if not bsc:
+            # No config → default to CONSTANT (first row)
             return all_rows[0]
-        elif bsc.row_index >= 0:
-            idx = min(bsc.row_index, len(all_rows) - 1)
-            return all_rows[idx]
+
+        if bsc.mode == RowIterationMode.CONSTANT:
+            return self._resolve_constant_row(source_file, batch_configs, all_rows)
+
+        # Compute effective start index (for resume)
+        start_offset = 0
+        if resume and resume.continue_from_last:
+            start_offset = resume.sources.get(source_file, 0)
+
+        effective_i = start_offset + doc_index
+
+        if bsc.mode == RowIterationMode.SEQUENTIAL:
+            if effective_i < len(all_rows):
+                return all_rows[effective_i]
+            else:
+                return None  # exhausted → stop
+
+        if bsc.mode == RowIterationMode.CIRCULAR:
+            return all_rows[effective_i % len(all_rows)]
+
         return all_rows[0]
+
+    def _compute_total_docs(self, config: TemplateConfig,
+                            batch_configs: Dict[str, BatchSourceConfig],
+                            resume: Optional[ResumeState] = None) -> Optional[int]:
+        """Determine total number of documents to generate.
+
+        Returns int if total can be determined, None if it cannot.
+
+        Rules:
+        - If total_docs is set explicitly → use it.
+        - If any SEQUENTIAL source exists → min(len) of all SEQUENTIAL sources
+          (accounting for resume offset).
+        - If no SEQUENTIAL -> return None (cannot auto-determine).
+        """
+        if config.total_docs is not None and config.total_docs > 0:
+            return config.total_docs
+
+        # Auto: find min rows among SEQUENTIAL sources
+        sequential_sources = [
+            (name, bsc) for name, bsc in batch_configs.items()
+            if bsc.mode == RowIterationMode.SEQUENTIAL
+        ]
+        if not sequential_sources:
+            # No SEQUENTIAL, cannot auto-determine
+            return None
+
+        min_remaining = None
+        for name, bsc in sequential_sources:
+            all_rows = self._read_table_data(name)
+            start_offset = 0
+            if resume and resume.continue_from_last:
+                start_offset = resume.sources.get(name, 0)
+            remaining = max(0, len(all_rows) - start_offset)
+            if min_remaining is None or remaining < min_remaining:
+                min_remaining = remaining
+
+        return min_remaining if min_remaining and min_remaining > 0 else None
 
     def render(self, template_rel_path: str,
                user_values: Dict[str, str],
                batch_table: Optional[str] = None,
                output_dir: str = None,
                batch_configs: Optional[Dict[str, BatchSourceConfig]] = None,
-               max_docs: Optional[int] = None) -> List[str]:
+               max_docs: Optional[int] = None,
+               resume: Optional[ResumeState] = None) -> List[str]:
+        """Render template into one or more output documents.
+
+        Args:
+            batch_table: (legacy) Excel file for batch iteration.
+            max_docs: (legacy) limit on total documents.
+            batch_configs: per-source iteration mode config.
+            resume: resume state for continuation.
+        """
         template_path = self.get_template_path(template_rel_path)
         config = self.project.templates.get(template_rel_path, TemplateConfig()) if self.project else TemplateConfig()
 
@@ -286,10 +390,34 @@ class Renderer:
             output_dir = os.path.join(self.project_dir, 'output')
         os.makedirs(output_dir, exist_ok=True)
 
+        # Use batch_configs from project if not provided
+        if batch_configs is None:
+            batch_configs = dict(config.batch_sources)
+
+        # Legacy: if batch_table given without matching batch_config, add SEQUENTIAL
+        if batch_table and batch_table not in batch_configs:
+            batch_configs[batch_table] = BatchSourceConfig(
+                file=batch_table, mode=RowIterationMode.SEQUENTIAL)
+
+        # Use resume from config if not provided, else fresh start
+        if resume is None:
+            # Only auto-use config.resume if it has actual saved state
+            if config.resume and config.resume.sources:
+                resume = config.resume
+            else:
+                resume = ResumeState(continue_from_last=False)
+
+        # Clone resume for computation so the original is not mutated
+        # during the render loop (updated only after successful render).
+        resume_compute = ResumeState(
+            last_counter_value=resume.last_counter_value,
+            sources=dict(resume.sources),
+            continue_from_last=resume.continue_from_last,
+        )
+
         with zipfile.ZipFile(template_path, 'r') as zf:
             zdata = {name: zf.read(name) for name in zf.namelist()}
 
-        # Keep a pristine copy so each batch iteration starts from the original template
         zdata_orig = {name: data for name, data in zdata.items()}
 
         # Scan raw placeholders
@@ -303,64 +431,92 @@ class Renderer:
             merged_all += '\n'
         all_raw_phs = re.findall(r'\{\{(.+?)\}\}', merged_all)
 
-        # Batch rows — support new batch_configs or legacy batch_table
-        batch_rows = [None]
-        if batch_configs and batch_table:
-            # New system: use batch_configs to determine iteration
-            bsc = batch_configs.get(batch_table)
-            if bsc:
-                all_rows = self._read_table_data(batch_table)
-                if bsc.mode == BatchMode.SINGLE:
-                    if not all_rows:
-                        batch_rows = [None]
-                    elif bsc.lookup_column and bsc.lookup_value:
-                        # Find row by lookup value
-                        found = None
-                        for row in all_rows:
-                            if str(row.get(bsc.lookup_column, '')).strip() == bsc.lookup_value.strip():
-                                found = row
-                                break
-                        batch_rows = [found if found else all_rows[0]]
-                    elif bsc.row_index >= 0:
-                        # Use explicit row index
-                        idx = min(bsc.row_index, len(all_rows) - 1)
-                        batch_rows = [all_rows[idx]]
-                    else:
-                        batch_rows = [all_rows[0]]
-                elif bsc.mode == BatchMode.ALL_ROWS:
-                    batch_rows = all_rows
-                elif bsc.mode == BatchMode.N_ROWS:
-                    batch_rows = all_rows[:bsc.n_rows]
-                elif bsc.mode == BatchMode.CIRCULAR:
-                    if all_rows:
-                        target = max(bsc.n_rows, len(all_rows))
-                        batch_rows = [all_rows[i % len(all_rows)] for i in range(target)]
-                    else:
-                        batch_rows = [None]
-                else:
-                    batch_rows = all_rows
-            else:
-                batch_rows = self._read_table_data(batch_table)
-        elif batch_table:
-            # Legacy: iterate all rows
-            batch_rows = self._read_table_data(batch_table)
-
-        # Apply max_docs limit
+        # Determine total documents
+        total_docs = self._compute_total_docs(config, batch_configs, resume_compute)
+        # Legacy max_docs override
         if max_docs is not None and max_docs > 0:
-            batch_rows = batch_rows[:max_docs]
+            if total_docs is None:
+                total_docs = max_docs
+            else:
+                total_docs = min(total_docs, max_docs)
+        if total_docs is None or total_docs <= 0:
+            total_docs = 1
 
-        # Pre-read cycle data (once, shared)
+        # Pre-read all table data (shared across iterations)
+        all_table_data = {}
+        for fn, fm in config.fields.items():
+            if fm.type == FieldType.TABLE and fm.file and fm.file not in all_table_data:
+                all_table_data[fm.file] = self._read_table_data(fm.file)
+        for source_file in batch_configs:
+            if source_file not in all_table_data:
+                all_table_data[source_file] = self._read_table_data(source_file)
+
         cycle_data = {}
         for cycle in config.cycles:
-            cycle_data[cycle.table] = self._read_table_data(cycle.table)
+            if cycle.table not in all_table_data:
+                cycle_data[cycle.table] = self._read_table_data(cycle.table)
+            else:
+                cycle_data[cycle.table] = all_table_data[cycle.table]
+
+        # Find primary batch table for legacy mode
+        batch_primary = None
+        if batch_table:
+            batch_primary = batch_table
+        elif batch_configs:
+            # First SEQUENTIAL source is the "primary" batch table
+            for name, bsc in batch_configs.items():
+                if bsc.mode == RowIterationMode.SEQUENTIAL:
+                    batch_primary = name
+                    break
+
+        # Collect warnings
+        warnings = []
 
         outputs = []
+        doc_index = 0
 
-        for batch_idx, batch_row in enumerate(batch_rows):
-            # Reset zdata from pristine copy for each iteration
+        while doc_index < total_docs:
+            # Reset zdata from pristine copy
             zdata = {name: data for name, data in zdata_orig.items()}
             effective = dict(user_values)
             now = datetime.now()
+
+            # Resolve per-source rows for this document index
+            per_source_rows: Dict[str, Optional[Dict[str, str]]] = {}
+            for source_file, bsc in batch_configs.items():
+                rows = all_table_data.get(source_file, [])
+                row = self._resolve_row_for_source(
+                    source_file, doc_index, batch_configs, resume_compute, rows)
+                if row is None and bsc.mode == RowIterationMode.SEQUENTIAL:
+                    # Source exhausted — stop generation
+                    if doc_index == 0:
+                        warnings.append(
+                            'Таблица «%s» не имеет данных для генерации.' % source_file)
+                    break
+                per_source_rows[source_file] = row
+
+            # Check if any source stopped us
+            stopped = False
+            for source_file, bsc in batch_configs.items():
+                if bsc.mode == RowIterationMode.SEQUENTIAL:
+                    rows = all_table_data.get(source_file, [])
+                    start_offset = 0
+                    if resume_compute and resume_compute.continue_from_last:
+                        start_offset = resume_compute.sources.get(source_file, 0)
+                    if start_offset + doc_index >= len(rows):
+                        stopped = True
+                        if doc_index > 0:
+                            # Only warn if we produced at least some docs
+                            pass
+                        else:
+                            warnings.append(
+                                'Таблица «%s» исчерпана (строк: %d, начало: %d).' %
+                                (source_file, len(rows), start_offset))
+            if stopped and doc_index == 0:
+                # No docs at all — still generate one from defaults
+                pass
+            elif stopped:
+                break
 
             # 1. today from raw template
             for raw_ph in all_raw_phs:
@@ -375,7 +531,10 @@ class Renderer:
             if counter_field:
                 start = config.fields[counter_field].start
                 fmt = config.fields[counter_field].format
-                effective[counter_field] = format_counter(start + batch_idx, fmt)
+                counter_offset = 0
+                if resume_compute and resume_compute.continue_from_last:
+                    counter_offset = resume_compute.last_counter_value
+                effective[counter_field] = format_counter(start + counter_offset + doc_index, fmt)
 
             # 3. Today from config
             for fn, fm in config.fields.items():
@@ -388,49 +547,36 @@ class Renderer:
                     effective[fn] = fm.value or ''
 
             # 5. TABLE — primary (not linked)
-            # Priority:  batch_row (batch iteration) > SINGLE batch_config > rows[0]
             for fn, fm in config.fields.items():
                 if fm.type == FieldType.TABLE and not fm.linked_to:
-                    rows = self._read_table_data(fm.file)
-                    if fm.file == batch_table and batch_row is not None and fm.column in batch_row:
-                        # Batch iteration: this field maps to the batch table's column
-                        effective[fn] = str(batch_row[fm.column])
+                    source_row = per_source_rows.get(fm.file)
+                    if source_row and fm.column in source_row:
+                        effective[fn] = str(source_row[fm.column])
                     else:
-                        # Check SINGLE batch_config for this table
-                        single_row = self._resolve_single_row(fm.file, batch_configs)
-                        if single_row and fm.column in single_row:
-                            effective[fn] = str(single_row[fm.column])
-                        elif rows and fm.column in rows[0]:
+                        rows = all_table_data.get(fm.file, [])
+                        if rows and fm.column in rows[0]:
                             effective[fn] = str(rows[0][fm.column])
 
-            # 6. TABLE — linked. Use the same row as the primary field.
-            # A linked field shares the same table and row as its primary.
-            # When the primary got its value from batch_row or SINGLE config,
-            # the linked field must use that same row's column.
+            # 6. TABLE — linked (same table → same row; different table → find by value)
             for fn, fm in config.fields.items():
                 if fm.type == FieldType.TABLE and fm.linked_to:
                     primary_fm = config.fields.get(fm.linked_to)
                     if not primary_fm or not fm.file:
                         continue
-                    # Same table as primary? Use the same row resolution.
                     if primary_fm.file == fm.file:
-                        # Resolve the row for this table the same way as primary
-                        if primary_fm.file == batch_table and batch_row is not None:
-                            if fm.column in batch_row:
-                                effective[fn] = str(batch_row[fm.column])
+                        # Same table: use same row resolution
+                        source_row = per_source_rows.get(fm.file)
+                        if source_row and fm.column in source_row:
+                            effective[fn] = str(source_row[fm.column])
                         else:
-                            single_row = self._resolve_single_row(fm.file, batch_configs)
-                            if single_row and fm.column in single_row:
-                                effective[fn] = str(single_row[fm.column])
-                            else:
-                                rows = self._read_table_data(fm.file)
-                                if rows and fm.column in rows[0]:
-                                    effective[fn] = str(rows[0][fm.column])
+                            rows = all_table_data.get(fm.file, [])
+                            if rows and fm.column in rows[0]:
+                                effective[fn] = str(rows[0][fm.column])
                     else:
                         # Different table: find row by primary value
                         primary_val = effective.get(fm.linked_to)
                         if primary_val:
-                            rows = self._read_table_data(fm.file)
+                            rows = all_table_data.get(fm.file, [])
                             primary_col = primary_fm.column
                             found = False
                             for row in rows:
@@ -469,8 +615,9 @@ class Renderer:
             zdata['word/document.xml'] = etree.tostring(
                 doc_xml, xml_declaration=True, encoding='UTF-8', standalone=True)
 
-            if batch_table:
-                out_name = '%s_%04d.docx' % (os.path.splitext(template_rel_path)[0], batch_idx + 1)
+            # File naming
+            if total_docs > 1 or batch_primary:
+                out_name = '%s_%04d.docx' % (os.path.splitext(template_rel_path)[0], doc_index + 1)
             else:
                 out_name = os.path.basename(template_rel_path).replace('.docx', '_заполнен.docx')
             out_path = os.path.join(output_dir, out_name)
@@ -480,5 +627,22 @@ class Renderer:
                     zout.writestr(name, data)
 
             outputs.append(out_path)
+            doc_index += 1
+
+        # Update resume state
+        if resume:
+            counter_field = next(
+                (fn for fn, fm in config.fields.items() if fm.type == FieldType.COUNTER), None)
+            if counter_field:
+                counter_offset = 0
+                if resume_compute.continue_from_last:
+                    counter_offset = resume_compute.last_counter_value
+                resume.last_counter_value = counter_offset + doc_index
+            for source_file, bsc in batch_configs.items():
+                if bsc.mode in (RowIterationMode.SEQUENTIAL, RowIterationMode.CIRCULAR):
+                    start_offset = 0
+                    if resume_compute.continue_from_last:
+                        start_offset = resume_compute.sources.get(source_file, 0)
+                    resume.sources[source_file] = start_offset + doc_index
 
         return outputs

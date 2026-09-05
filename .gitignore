@@ -38,3 +38,5 @@ test_project_cli/
 
 # === Temp fix scripts ===
 _fix_*.py
+# .bash_tmp/ - Temporary bash-generated files
+.bash_tmp/

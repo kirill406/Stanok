@@ -11,6 +11,7 @@ from lxml import etree
 from .xml_utils import W, W_NS
 from .merge import merge_and_replace_paragraph, expand_table_cycle
 from .formatting import compute_aggregation, format_counter, format_today
+from .image_utils import insert_image_in_paragraph, add_image_to_zdata, add_image_relationship
 from .schema import (
     TemplateConfig, FieldMapping, FieldType, AggregationFunction,
     BatchSourceConfig, RowIterationMode, ResumeState,
@@ -116,14 +117,24 @@ def resolve_field_values(
         data = cycle_data.get(agg.table, [])
         effective[aname] = compute_aggregation(agg, data)
 
-    return effective
+    # 8. IMAGE fields - store paths (not text values)
+    image_paths = {}
+    for fn, fm in config.fields.items():
+        if fm.type == FieldType.IMAGE and fm.value:
+            image_paths[fn] = fm.value
+
+    return effective, image_paths
 
 
 def process_xml(zdata: dict, config: TemplateConfig,
                 cycle_data: Dict[str, List[Dict[str, str]]],
-                effective: Dict[str, str]) -> dict:
-    """Process all XML parts: expand cycles and replace placeholders."""
+                effective: Dict[str, str],
+                image_paths: Dict[str, str] = None,
+                project_dir: str = None) -> dict:
+    """Process all XML parts: expand cycles, replace placeholders, insert images."""
     from .xml_utils import W_NS
+    if image_paths is None:
+        image_paths = {}
 
     doc_xml = etree.fromstring(zdata['word/document.xml'])
     body = doc_xml.find(W_NS + 'body')
@@ -133,6 +144,34 @@ def process_xml(zdata: dict, config: TemplateConfig,
         for tbl in body.findall('.//' + W_NS + 'tbl'):
             expand_table_cycle(tbl, cycle, data, effective)
 
+    # Insert images before text replacement
+    image_index = 1
+    for p in body.findall('.//' + W_NS + 'p'):
+        runs = p.findall(W_NS + 'r')
+        if not runs:
+            continue
+        merged_text = ''
+        for r in runs:
+            for t in r.findall(W_NS + 't'):
+                if t.text:
+                    merged_text += t.text
+        for m in re.finditer(r'\{\{\s*image:(.+?)\s*\}\}', merged_text):
+            img_name = m.group(1).strip()
+            if img_name in image_paths:
+                img_path = image_paths[img_name]
+                if project_dir:
+                    img_path = os.path.join(project_dir, img_path) if not os.path.isabs(img_path) else img_path
+                if os.path.exists(img_path):
+                    r_id = 'rIdImg{:d}'.format(image_index)
+                    add_image_to_zdata(zdata, img_path, image_index)
+                    add_image_relationship(zdata, r_id,
+                                          'word/media/image{:d}{}'.format(
+                                              image_index,
+                                              os.path.splitext(img_path)[1] or '.png'))
+                    insert_image_in_paragraph(p, r_id, name=img_name)
+                    image_index += 1
+                    break
+
     for p in body.findall('.//' + W_NS + 'p'):
         merge_and_replace_paragraph(p, effective)
 
@@ -140,6 +179,30 @@ def process_xml(zdata: dict, config: TemplateConfig,
         if 'header' in part_name or 'footer' in part_name:
             part_xml = etree.fromstring(zdata[part_name])
             for p in part_xml.findall('.//' + W_NS + 'p'):
+                # Check for image placeholders in headers/footers too
+                runs = p.findall(W_NS + 'r')
+                if runs:
+                    merged_text = ''
+                    for r in runs:
+                        for t in r.findall(W_NS + 't'):
+                            if t.text:
+                                merged_text += t.text
+                    for m in re.finditer(r'\{\{\s*image:(.+?)\s*\}\}', merged_text):
+                        img_name = m.group(1).strip()
+                        if img_name in image_paths:
+                            img_path = image_paths[img_name]
+                            if project_dir:
+                                img_path = os.path.join(project_dir, img_path) if not os.path.isabs(img_path) else img_path
+                            if os.path.exists(img_path):
+                                r_id = 'rIdImgHF{:d}'.format(image_index)
+                                add_image_to_zdata(zdata, img_path, image_index)
+                                add_image_relationship(zdata, r_id,
+                                                      'word/media/image{:d}{}'.format(
+                                                          image_index,
+                                                          os.path.splitext(img_path)[1] or '.png'))
+                                insert_image_in_paragraph(p, r_id, name=img_name)
+                                image_index += 1
+                                break
                 merge_and_replace_paragraph(p, effective)
             zdata[part_name] = etree.tostring(part_xml, xml_declaration=True,
                                                encoding='UTF-8', standalone=True)

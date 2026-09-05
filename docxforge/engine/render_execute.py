@@ -133,11 +133,13 @@ def execute_render(renderer, template_rel_path: str,
         if stopped and doc_index > 0:
             break
 
-        effective = resolve_field_values(
+        effective, image_paths = resolve_field_values(
             config, all_raw_phs, doc_index, per_source_rows,
             all_table_data, cycle_data, resume_compute, now, user_values)
 
-        zdata = process_xml(zdata, config, cycle_data, effective)
+        zdata = process_xml(zdata, config, cycle_data, effective,
+                           image_paths=image_paths,
+                           project_dir=renderer.project_dir)
 
         out_path = write_output_doc(
             zdata, output_dir, template_rel_path, doc_index, total_docs, batch_primary)

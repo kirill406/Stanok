@@ -25,10 +25,13 @@ def scan_template(docx_path: str) -> Dict[str, Any]:
         }
     """
     with zipfile.ZipFile(docx_path, 'r') as zf:
+        all_names = zf.namelist()
         doc_xml = etree.parse(zf.open('word/document.xml'))
 
     all_text_parts = []
+    header_footer_placeholders = []
 
+    # Scan document.xml
     for p in doc_xml.findall('.//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p'):
         merged = merge_runs_text(p)
         if merged:
@@ -41,6 +44,24 @@ def scan_template(docx_path: str) -> Dict[str, Any]:
                     merged = merge_runs_text(p)
                     if merged:
                         all_text_parts.append(merged)
+
+    # Scan headers and footers
+    with zipfile.ZipFile(docx_path, 'r') as zf:
+        for name in all_names:
+            if 'header' in name or 'footer' in name:
+                if name.endswith('.xml'):
+                    try:
+                        part_xml = etree.parse(zf.open(name))
+                        for p in part_xml.findall('.//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p'):
+                            merged = merge_runs_text(p)
+                            if merged:
+                                phs = re.findall(r'\{\{(.+?)\}\}', merged)
+                                for ph in phs:
+                                    header_footer_placeholders.append(
+                                        (ph.strip(), '{{ ' + ph + ' }}', name))
+                                all_text_parts.append(merged)
+                    except Exception:
+                        pass
 
     full_text = '\n'.join(all_text_parts)
     raw_placeholders = re.findall(r'\{\{(.+?)\}\}', full_text)
@@ -83,6 +104,7 @@ def scan_template(docx_path: str) -> Dict[str, Any]:
         'today': today_list,
         'doc_number': doc_number_list,
         'image': image_list,
+        'header_footer_placeholders': header_footer_placeholders,
     }
 
 

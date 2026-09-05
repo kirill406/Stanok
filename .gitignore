@@ -29,6 +29,8 @@ prototype/templates/
 
 # === Test/coverage artifacts ===
 .coverage
+htmlcov/
+.pytest_cache/
 
 # === Project data (user data, not tracked) ===
 test_project/

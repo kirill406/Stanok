@@ -3,7 +3,7 @@
 
 import re
 import zipfile
-from typing import List, Dict, Set, Tuple
+from typing import Any, Dict, List, Set, Tuple
 from lxml import etree
 
 W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
@@ -11,7 +11,7 @@ W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
 IMAGE_PREFIX = 'image:'
 
 
-def scan_template(docx_path: str) -> Dict[str, any]:
+def scan_template(docx_path: str) -> Dict[str, Any]:
     """Scan a .docx template and extract all placeholders.
 
     Returns:

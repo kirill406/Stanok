@@ -2,6 +2,7 @@
 """Project window: shows template tree, data files, and opens fill form."""
 
 import os
+import shutil
 from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                               QPushButton, QLabel, QTreeWidget, QTreeWidgetItem,
                               QListWidget, QListWidgetItem, QFileDialog,
@@ -156,7 +157,6 @@ class ProjectWindow(QMainWindow):
             self, 'Выберите шаблон .docx',
             os.path.expanduser('~'), 'Word документы (*.docx)')
         if file:
-            import shutil
             dest = os.path.join(self.project_dir, 'Шаблоны', os.path.basename(file))
             if not os.path.exists(dest):
                 shutil.copy2(file, dest)
@@ -167,7 +167,6 @@ class ProjectWindow(QMainWindow):
             self, 'Выберите файл данных',
             os.path.expanduser('~'), 'Excel файлы (*.xlsx *.xls)')
         if file:
-            import shutil
             dest = os.path.join(self.project_dir, 'Данные', os.path.basename(file))
             if not os.path.exists(dest):
                 shutil.copy2(file, dest)

@@ -8,66 +8,7 @@ from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont
 
-FIELD_TEMPLATES = [
-    {
-        'name': 'Константа (текст)',
-        'icon': '📝',
-        'description': 'Одно значение на все документы. Вводится вручную.',
-        'example': '{{ организация }}\n→  "ООО Ромашка"',
-        'type': 'константа',
-        'fields': [
-            {'label': 'Имя поля', 'key': 'field_name', 'widget': 'text', 'placeholder': 'организация'},
-            {'label': 'Значение', 'key': 'value', 'widget': 'text', 'placeholder': 'ООО Ромашка'},
-        ],
-    },
-    {
-        'name': 'Из таблицы Excel',
-        'icon': '📊',
-        'description': 'Значение из Excel. При генерации выбирается строка.',
-        'example': '{{ название_клиента }}\n→  "ООО Альфа" (из клиенты.xlsx, столбец название)',
-        'type': 'таблица',
-        'fields': [
-            {'label': 'Имя поля', 'key': 'field_name', 'widget': 'text', 'placeholder': 'название_клиента'},
-            {'label': 'Excel-файл', 'key': 'file', 'widget': 'combo_data', 'placeholder': 'клиенты.xlsx'},
-            {'label': 'Столбец', 'key': 'column', 'widget': 'combo_column', 'placeholder': 'название'},
-            {'label': 'Связать с полем', 'key': 'linked_to', 'widget': 'combo_fields', 'placeholder': '(авто)'},
-        ],
-    },
-    {
-        'name': 'Счётчик (номер документа)',
-        'icon': '🔢',
-        'description': 'Автоинкремент. В пакетной генерации +1 на каждый документ.',
-        'example': '{{ номер }}\n→  0001, 0002, 0003...',
-        'type': 'счётчик',
-        'fields': [
-            {'label': 'Имя поля', 'key': 'field_name', 'widget': 'text', 'placeholder': 'номер'},
-            {'label': 'Начальное значение', 'key': 'start', 'widget': 'text', 'placeholder': '1'},
-            {'label': 'Формат', 'key': 'format', 'widget': 'combo_counter_format', 'placeholder': '0001'},
-        ],
-    },
-    {
-        'name': 'Дата (сегодня)',
-        'icon': '📅',
-        'description': 'Текущая дата. Подставляется автоматически при генерации.',
-        'example': '{{ дата }}\n→  04.09.2026',
-        'type': 'сегодня',
-        'fields': [
-            {'label': 'Имя поля', 'key': 'field_name', 'widget': 'text', 'placeholder': 'дата'},
-            {'label': 'Формат', 'key': 'format', 'widget': 'combo_date_format', 'placeholder': 'dd.MM.yyyy'},
-        ],
-    },
-    {
-        'name': 'Изображение',
-        'icon': '🖼',
-        'description': 'Картинка: логотип, подпись, печать. Выбор файла.',
-        'example': '{{ image:логотип }}\n→  logo.png',
-        'type': 'изображение',
-        'fields': [
-            {'label': 'Имя поля', 'key': 'field_name', 'widget': 'text', 'placeholder': 'логотип'},
-            {'label': 'Файл изображения', 'key': 'value', 'widget': 'file', 'placeholder': 'logo.png'},
-        ],
-    },
-]
+from docxforge.gui.field_templates import FIELD_TEMPLATES
 
 
 class FieldTemplateDialog(QDialog):

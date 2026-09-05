@@ -20,7 +20,7 @@ from docxforge.engine.schema import (
     CycleMapping, AggregationMapping, AggregationFunction,
     create_project,
 )
-from docxforge.engine.renderer import Renderer
+from docxforge.engine import Renderer
 from docxforge.engine.data_reader import DataReader
 from docxforge.engine.template_parser import scan_template
 

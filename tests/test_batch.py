@@ -11,7 +11,7 @@ from docx import Document
 from docxforge.engine.schema import (
     Project, TemplateConfig, FieldMapping, FieldType,
 )
-from docxforge.engine.renderer import Renderer
+from docxforge.engine import Renderer
 from docxforge.engine.data_reader import DataReader
 
 W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'

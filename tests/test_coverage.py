@@ -13,7 +13,7 @@ from docxforge.engine.schema import (
     CycleMapping, AggregationMapping, AggregationFunction,
     BatchSourceConfig, RowIterationMode,
 )
-from docxforge.engine.renderer import (
+from docxforge.engine import (
     Renderer, format_counter, format_today, compute_aggregation,
     merge_and_replace_paragraph, row_contains_placeholder,
     row_has_placeholders, expand_table_cycle, clone_element,

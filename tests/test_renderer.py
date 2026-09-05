@@ -13,7 +13,7 @@ from docxforge.engine.schema import (
     create_project, Project, TemplateConfig, FieldMapping, FieldType,
     CycleMapping, AggregationMapping, AggregationFunction,
 )
-from docxforge.engine.renderer import Renderer
+from docxforge.engine import Renderer
 from docxforge.engine.data_reader import DataReader
 
 W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'

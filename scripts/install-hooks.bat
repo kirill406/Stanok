@@ -1,6 +1,12 @@
 @echo off
-REM Установка pre-commit hook для проверки секретов
-REM Запусти этот скрипт после git clone
+REM Install pre-commit hook for Windows
+REM Run this script after git clone
 echo Installing pre-commit hook...
-copy /Y "%~dp0pre-commit.hook" "%~dp0..\.git\hooks\pre-commit"
-echo Done! Hook установлен.
+
+for /f "delims=" %%R in ('git rev-parse --git-dir') do set GIT_DIR=%%R
+if not exist "%GIT_DIR%\hooks" mkdir "%GIT_DIR%\hooks"
+
+copy /Y "%~dp0pre-commit.hook" "%GIT_DIR%\hooks\pre-commit" >nul
+
+echo Done! Hook installed.
+echo Hook uses #!/bin/sh (MSYS2 bash from Git for Windows)

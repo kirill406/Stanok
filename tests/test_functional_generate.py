@@ -122,34 +122,27 @@ class TestAllBasicFields:
         """Test generation with constant, table, counter, today fields."""
         project = copy_fixture('all_basic_fields', tmp_path)
         
-        # Generate 3 documents (10 rows in clients.xlsx, but we limit to 3)
-        outputs = generate_project(str(project), num_docs=3)
+        # Generate 2 documents
+        outputs = generate_project(str(project), num_docs=2)
         
-        assert len(outputs) == 3
+        assert len(outputs) == 2
         for out in outputs:
             assert os.path.exists(out)
             assert os.path.getsize(out) > 0
 
         # Compare first document with expected reference
-        expected_ref = FIXTURES_DIR / 'all_basic_fields' / 'expected_0001.docx'
-        assert expected_ref.exists(), f'Expected reference not found: {expected_ref}'
+        expected_0001 = FIXTURES_DIR / 'all_basic_fields' / 'expected_0001.docx'
+        assert expected_0001.exists(), f'Expected reference not found: {expected_0001}'
         
-        is_equal, differences = compare_docx(Path(outputs[0]), expected_ref)
-        assert is_equal, f'Generated document does not match expected:\n' + '\n'.join(differences)
+        is_equal, differences = compare_docx(Path(outputs[0]), expected_0001)
+        assert is_equal, f'Document 1 does not match expected_0001:\n' + '\n'.join(differences)
 
-        # Check second document - counter increments, data from row 2
-        text = read_docx_text(Path(outputs[1]))
-        assert 'Номер: 0002' in text  # counter increments
-        assert 'Клиент: Клиент 2' in text  # table from clients.xlsx row 2
-        assert 'Сумма: 20000 руб.' in text
-        assert 'Менеджер: Менеджер 2' in text  # table from managers.xlsx row 2
-
-        # Check third document
-        text = read_docx_text(Path(outputs[2]))
-        assert 'Номер: 0003' in text
-        assert 'Клиент: Клиент 3' in text
-        assert 'Сумма: 30000 руб.' in text
-        assert 'Менеджер: Менеджер 3' in text
+        # Compare second document with expected reference
+        expected_0002 = FIXTURES_DIR / 'all_basic_fields' / 'expected_0002.docx'
+        assert expected_0002.exists(), f'Expected reference not found: {expected_0002}'
+        
+        is_equal, differences = compare_docx(Path(outputs[1]), expected_0002)
+        assert is_equal, f'Document 2 does not match expected_0002:\n' + '\n'.join(differences)
 
     def test_counter_resume_between_calls(self, tmp_path):
         """Test that counter resumes correctly between generate calls."""

@@ -5,16 +5,17 @@ from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
                               QLabel, QComboBox, QLineEdit, QGroupBox,
                               QDialogButtonBox, QWidget, QScrollArea,
                               QFrame, QGridLayout)
-from PyQt5.QtCore import Qt, QEvent
+from PyQt5.QtCore import Qt, QEvent, QObject
 from PyQt5.QtGui import QFont
 
 from docxforge.gui.field_templates import FIELD_TEMPLATES
 from .strings import STRINGS
 
 
-class _WheelEventFilter:
+class _WheelEventFilter(QObject):
     """Event filter to ignore wheel events on comboboxes when not focused."""
-    def __init__(self, parent):
+    def __init__(self, parent=None):
+        super().__init__(parent)
         self.parent = parent
 
     def eventFilter(self, obj, event):

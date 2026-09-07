@@ -3,7 +3,7 @@
 
 import os
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout,
-                              QLabel, QComboBox, QRadioButton)
+                              QLabel, QComboBox, QRadioButton, QCheckBox)
 
 from ..strings import STRINGS
 

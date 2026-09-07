@@ -1,0 +1,28 @@
+{
+  "version": 2,
+  "templates": {
+    "request.docx": {
+      "fields": {
+        "req_num": {
+          "type": "counter",
+          "start": 100,
+          "step": 1,
+          "format": "0000"
+        },
+        "req_type": {
+          "type": "table",
+          "file": "types.xlsx",
+          "column": "req_type"
+        }
+      },
+      "batch": {
+        "sources": {
+          "types.xlsx": {
+            "file": "types.xlsx",
+            "mode": "sequential"
+          }
+        }
+      }
+    }
+  }
+}

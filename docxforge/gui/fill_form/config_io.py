@@ -78,8 +78,13 @@ class ConfigIOMixin:
         if self.config.total_docs is not None:
             self.chk_auto_docs.setChecked(False)
             self.spin_total_docs.setValue(self.config.total_docs)
+            self.spin_total_docs.setVisible(True)
         else:
             self.chk_auto_docs.setChecked(True)
+            self.spin_total_docs.setVisible(False)
+        # Filename template
+        if self.config.filename_template:
+            self.edit_filename_template.setText(self.config.filename_template)
         self.chk_continue.setChecked(self.config.resume.continue_from_last)
         self._update_resume_info()
         self.advanced_group.setChecked(self.config.ui_state.get('advanced_visible', False))
@@ -126,7 +131,10 @@ class ConfigIOMixin:
         if errors:
             QMessageBox.warning(self, '\u041e\u0448\u0438\u0431\u043a\u0438', '\n'.join(errors))
             return
-        QMessageBox.information(self, '\u041f\u0440\u043e\u0432\u0435\u0440\u043a\u0430', '\u0412\u0441\u0451 \u043a\u043e\u0440\u0440\u0435\u043a\u0442\u043d\u043e')
+        # Save config on validation
+        self.renderer.project.templates[self.template_rel_path] = config
+        self.renderer.save_project()
+        QMessageBox.information(self, '\u041f\u0440\u043e\u0432\u0435\u0440\u043a\u0430', '\u0412\u0441\u0451 \u043a\u043e\u0440\u0440\u0435\u043a\u0442\u043d\u043e. \u041a\u043e\u043d\u0444\u0438\u0433\u0443\u0440\u0430\u0446\u0438\u044f \u0441\u043e\u0445\u0440\u0430\u043d\u0435\u043d\u0430.')
 
     def _create(self):
         config = self._collect_config()
@@ -140,6 +148,7 @@ class ConfigIOMixin:
             self.template_rel_path,
             {},
             output_dir=os.path.join(self.project_dir, 'output'),
+            max_docs=total_docs,
         )
         progress.close()
         if outputs:

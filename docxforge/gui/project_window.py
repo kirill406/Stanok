@@ -6,7 +6,7 @@ import shutil
 from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                               QPushButton, QLabel, QTreeWidget, QTreeWidgetItem,
                               QListWidget, QListWidgetItem, QFileDialog,
-                              QMessageBox, QSplitter, QApplication)
+                              QMessageBox, QSplitter, QApplication, QToolButton)
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont
 
@@ -22,10 +22,9 @@ class ProjectWindow(QMainWindow):
         self.data_reader = DataReader()
 
         self.setWindowTitle('DocxForge — %s' % os.path.basename(project_dir))
-        self.resize(800, 550)
         self._build_ui()
         self._scan_project()
-        self._center()
+        self.showMaximized()  # Open in full screen
 
     def _center(self):
         frame = self.frameGeometry()
@@ -46,6 +45,20 @@ class ProjectWindow(QMainWindow):
         title.setFont(QFont('Segoe UI', 14, QFont.Bold))
         header.addWidget(title)
         header.addStretch()
+        
+        # Delete project button (delete project files and templates, keep data and output)
+        btn_delete_project = QToolButton()
+        btn_delete_project.setText('🗑')
+        btn_delete_project.setFont(QFont('Segoe UI', 12))
+        btn_delete_project.setToolTip('Удалить проект целиком (шаблоны и конфиг, данные и output сохраняются)')
+        btn_delete_project.setFixedSize(36, 36)
+        btn_delete_project.setStyleSheet("""
+            QToolButton { background-color: transparent; border: none; border-radius: 4px; }
+            QToolButton:hover { background-color: #ffe0e0; }
+        """)
+        btn_delete_project.clicked.connect(self._delete_project)
+        header.addWidget(btn_delete_project)
+        
         btn_back = QPushButton('←  Назад к проектам')
         btn_back.setFont(QFont('Segoe UI', 9))
         btn_back.clicked.connect(self._go_back)
@@ -153,9 +166,10 @@ class ProjectWindow(QMainWindow):
         self._scan_project()
 
     def _add_template(self):
+        templates_dir = os.path.join(self.project_dir, 'Шаблоны')
         file, _ = QFileDialog.getOpenFileName(
             self, 'Выберите шаблон .docx',
-            os.path.expanduser('~'), 'Word документы (*.docx)')
+            templates_dir, 'Word документы (*.docx)')
         if file:
             dest = os.path.join(self.project_dir, 'Шаблоны', os.path.basename(file))
             if not os.path.exists(dest):
@@ -163,14 +177,48 @@ class ProjectWindow(QMainWindow):
             self._scan_project()
 
     def _add_data(self):
+        data_dir = os.path.join(self.project_dir, 'Данные')
         file, _ = QFileDialog.getOpenFileName(
             self, 'Выберите файл данных',
-            os.path.expanduser('~'), 'Excel файлы (*.xlsx *.xls)')
+            data_dir, 'Excel файлы (*.xlsx *.xls)')
         if file:
             dest = os.path.join(self.project_dir, 'Данные', os.path.basename(file))
             if not os.path.exists(dest):
                 shutil.copy2(file, dest)
             self._scan_project()
+
+    def _delete_project(self):
+        """Delete project files and templates, but keep data and output folders."""
+        reply = QMessageBox.question(
+            self, 'Удалить проект',
+            'Удалить файлы проекта и шаблоны?\n'
+            'Папки "Данные" и "output" НЕ будут удалены.\n\n'
+            'Папка проекта: %s' % self.project_dir,
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        if reply != QMessageBox.Yes:
+            return
+
+        # Remove from recent in main window
+        self.main_window.remove_recent_project(self.project_dir)
+
+        # Delete Шаблоны folder and проект.docxforge
+        templates_dir = os.path.join(self.project_dir, 'Шаблоны')
+        project_file = os.path.join(self.project_dir, 'проект.docxforge')
+        project_bak = os.path.join(self.project_dir, 'проект.docxforge.bak')
+        project_tmp = os.path.join(self.project_dir, 'проект.docxforge.tmp')
+
+        for path in [templates_dir, project_file, project_bak, project_tmp]:
+            if os.path.exists(path):
+                if os.path.isdir(path):
+                    shutil.rmtree(path)
+                else:
+                    os.remove(path)
+
+        QMessageBox.information(self, 'Готово', 'Проект удалён. Данные и сгенерированные файлы сохранены.')
+        self.main_window.show()
+        self.close()
 
     def _go_back(self):
         self.main_window.show()

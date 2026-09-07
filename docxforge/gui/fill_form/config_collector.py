@@ -101,6 +101,8 @@ class ConfigCollectorMixin:
             config.total_docs = None
         else:
             config.total_docs = self.spin_total_docs.value()
+        # Filename template
+        config.filename_template = self.edit_filename_template.text().strip() or None
         config.resume = ResumeState(
             last_counter_value=self.config.resume.last_counter_value,
             sources=dict(self.config.resume.sources),

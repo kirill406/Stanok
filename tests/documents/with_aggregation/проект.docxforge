@@ -1,0 +1,41 @@
+{
+  "version": 2,
+  "templates": {
+    "report.docx": {
+      "fields": {
+        "manager": {
+          "type": "constant",
+          "value": "Иванов"
+        }
+      },
+      "advanced": {
+        "aggregations": {
+          "deal_count": {
+            "function": "count",
+            "table": "deals.xlsx",
+            "column": "deal_amount"
+          },
+          "total_sum": {
+            "function": "sum",
+            "table": "deals.xlsx",
+            "column": "deal_amount"
+          },
+          "avg_deal": {
+            "function": "sum",
+            "table": "deals.xlsx",
+            "column": "deal_amount",
+            "multiplier": 0.3333
+          }
+        }
+      },
+      "batch": {
+        "sources": {
+          "deals.xlsx": {
+            "file": "deals.xlsx",
+            "mode": "constant"
+          }
+        }
+      }
+    }
+  }
+}

@@ -104,6 +104,7 @@ class AdvancedSectionMixin:
         self.aggr_widget.setVisible(checked)
 
     def _on_auto_docs_toggled(self, checked):
+        self.spin_total_docs.setVisible(not checked)
         self.spin_total_docs.setEnabled(not checked)
         self._update_auto_info()
 

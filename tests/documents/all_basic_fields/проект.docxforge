@@ -1,0 +1,50 @@
+{
+  "version": 2,
+  "templates": {
+    "all_fields.docx": {
+      "fields": {
+        "doc_title": {
+          "type": "constant",
+          "value": "Договор поставки"
+        },
+        "doc_number": {
+          "type": "counter",
+          "start": 1,
+          "step": 1,
+          "format": "0000"
+        },
+        "client_name": {
+          "type": "table",
+          "file": "clients.xlsx",
+          "column": "client_name"
+        },
+        "amount": {
+          "type": "table",
+          "file": "clients.xlsx",
+          "column": "amount"
+        },
+        "manager_name": {
+          "type": "table",
+          "file": "managers.xlsx",
+          "column": "manager_name"
+        },
+        "status": {
+          "type": "constant",
+          "value": "Новый"
+        }
+      },
+      "batch": {
+        "sources": {
+          "clients.xlsx": {
+            "file": "clients.xlsx",
+            "mode": "sequential"
+          },
+          "managers.xlsx": {
+            "file": "managers.xlsx",
+            "mode": "sequential"
+          }
+        }
+      }
+    }
+  }
+}

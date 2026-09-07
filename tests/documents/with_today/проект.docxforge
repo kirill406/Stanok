@@ -1,0 +1,27 @@
+{
+  "version": 2,
+  "templates": {
+    "act.docx": {
+      "fields": {
+        "doc_num": {
+          "type": "counter",
+          "start": 1,
+          "format": "000"
+        },
+        "supplier": {
+          "type": "table",
+          "file": "suppliers.xlsx",
+          "column": "supplier"
+        }
+      },
+      "batch": {
+        "sources": {
+          "suppliers.xlsx": {
+            "file": "suppliers.xlsx",
+            "mode": "constant"
+          }
+        }
+      }
+    }
+  }
+}

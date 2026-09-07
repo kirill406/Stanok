@@ -1,0 +1,45 @@
+{
+  "version": 2,
+  "templates": {
+    "invoice.docx": {
+      "fields": {
+        "invoice_no": {
+          "type": "table",
+          "file": "invoices.xlsx",
+          "column": "invoice_no"
+        },
+        "client": {
+          "type": "table",
+          "file": "invoices.xlsx",
+          "column": "client"
+        }
+      },
+      "advanced": {
+        "cycles": [
+          {
+            "table": "items.xlsx",
+            "columns": {
+              "item_name": "item_name",
+              "qty": "qty",
+              "price": "price"
+            }
+          }
+        ]
+      },
+      "batch": {
+        "sources": {
+          "invoices.xlsx": {
+            "file": "invoices.xlsx",
+            "mode": "sequential"
+          },
+          "items.xlsx": {
+            "file": "items.xlsx",
+            "mode": "constant",
+            "lookup_column": "invoice_no",
+            "lookup_value": "{{ invoice_no }}"
+          }
+        }
+      }
+    }
+  }
+}

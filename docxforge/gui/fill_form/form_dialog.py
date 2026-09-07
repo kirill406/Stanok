@@ -2,10 +2,11 @@
 """Fill form dialog: map template fields to data sources, then render."""
 
 import os
+import re
 from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
                               QLabel, QComboBox, QLineEdit, QScrollArea,
                               QWidget, QGroupBox, QCheckBox, QFrame,
-                              QRadioButton, QSpinBox)
+                              QRadioButton, QSpinBox, QSizePolicy)
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QFont
 
@@ -152,15 +153,25 @@ class FillForm(FieldRowsMixin, AdvancedSectionMixin, BatchSectionMixin, ConfigIO
         batch_group = QGroupBox('\u0413\u0435\u043d\u0435\u0440\u0430\u0446\u0438\u044f')
         batch_layout = QVBoxLayout(batch_group)
 
+        # Filename template row
+        filename_row = QHBoxLayout()
+        filename_row.addWidget(QLabel('\u0428\u0430\u0431\u043b\u043e\u043d \u0438\u043c\u0435\u043d\u0438 \u0444\u0430\u0439\u043b\u0430:'))
+        self.edit_filename_template = QLineEdit()
+        self.edit_filename_template.setPlaceholderText('{{ doc_number }}_{{ client_name }} (пусто = авто)')
+        self.edit_filename_template.setToolTip('Используйте {{ field_name }} для подстановки значений полей. Пусто = автоматическое именование.')
+        filename_row.addWidget(self.edit_filename_template)
+        batch_layout.addLayout(filename_row)
+
         total_row = QHBoxLayout()
         total_row.addWidget(QLabel('\u041a\u043e\u043b\u0438\u0447\u0435\u0441\u0442\u0432\u043e \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u043e\u0432:'))
         self.spin_total_docs = QSpinBox()
         self.spin_total_docs.setMinimum(1)
         self.spin_total_docs.setMaximum(99999)
         self.spin_total_docs.setValue(1)
+        self.spin_total_docs.setFixedWidth(80)
         total_row.addWidget(self.spin_total_docs)
         self.chk_auto_docs = QCheckBox('\u0410\u0432\u0442\u043e')
-        self.chk_auto_docs.setChecked(True)
+        self.chk_auto_docs.setChecked(False)  # Off by default
         self.chk_auto_docs.toggled.connect(self._on_auto_docs_toggled)
         total_row.addWidget(self.chk_auto_docs)
         total_row.addStretch()
@@ -190,6 +201,9 @@ class FillForm(FieldRowsMixin, AdvancedSectionMixin, BatchSectionMixin, ConfigIO
         batch_layout.addLayout(resume_row)
 
         main_layout.addWidget(batch_group)
+
+        # Add stretch to push generation section down when window is resized
+        main_layout.addStretch(1)
 
         # Bottom buttons
         btn_layout = QHBoxLayout()

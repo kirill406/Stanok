@@ -1,0 +1,37 @@
+{
+  "version": 2,
+  "templates": {
+    "simple.docx": {
+      "fields": {
+        "number": {
+          "type": "table",
+          "file": "data.xlsx",
+          "column": "number"
+        },
+        "date": {
+          "type": "table",
+          "file": "data.xlsx",
+          "column": "date"
+        },
+        "client_name": {
+          "type": "table",
+          "file": "data.xlsx",
+          "column": "client_name"
+        },
+        "amount": {
+          "type": "table",
+          "file": "data.xlsx",
+          "column": "amount"
+        }
+      },
+      "batch": {
+        "sources": {
+          "data.xlsx": {
+            "file": "data.xlsx",
+            "mode": "sequential"
+          }
+        }
+      }
+    }
+  }
+}

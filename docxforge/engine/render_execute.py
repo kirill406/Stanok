@@ -41,11 +41,17 @@ def execute_render(renderer, template_rel_path: str,
         batch_configs[batch_table] = BatchSourceConfig(
             file=batch_table, mode=RowIterationMode.SEQUENTIAL)
 
+    resume_provided = resume is not None
     if resume is None:
-        if config.resume and config.resume.sources:
-            resume = config.resume
+        if config.resume:
+            # Create a copy to avoid mutating config.resume directly
+            resume = ResumeState(
+                last_counter_value=config.resume.last_counter_value,
+                sources=dict(config.resume.sources),
+                continue_from_last=config.resume.continue_from_last,
+            )
         else:
-            resume = ResumeState(continue_from_last=False)
+            resume = ResumeState(continue_from_last=True)
 
     resume_compute = ResumeState(
         last_counter_value=resume.last_counter_value,
@@ -84,6 +90,14 @@ def execute_render(renderer, template_rel_path: str,
             cycle_data[cycle.table] = renderer._read_table_data(cycle.table)
         else:
             cycle_data[cycle.table] = all_table_data[cycle.table]
+
+    # Also load tables referenced by aggregations
+    for agg in config.aggregations.values():
+        if agg.table not in cycle_data:
+            if agg.table not in all_table_data:
+                cycle_data[agg.table] = renderer._read_table_data(agg.table)
+            else:
+                cycle_data[agg.table] = all_table_data[agg.table]
 
     batch_primary = None
     if batch_table:
@@ -142,13 +156,20 @@ def execute_render(renderer, template_rel_path: str,
                            project_dir=renderer.project_dir)
 
         out_path = write_output_doc(
-            zdata, output_dir, template_rel_path, doc_index, total_docs, batch_primary)
+            zdata, output_dir, template_rel_path, doc_index, total_docs, batch_primary,
+            filename_template=config.filename_template,
+            effective_values=effective)
 
         outputs.append(out_path)
         doc_index += 1
 
     if resume:
         update_resume_state(resume, resume_compute, config, batch_configs, doc_index)
+        # Persist updated resume state back to config only if caller provided resume
+        if resume_provided:
+            config.resume.last_counter_value = resume.last_counter_value
+            config.resume.sources = resume.sources
+            config.resume.continue_from_last = resume.continue_from_last
 
     return outputs
 

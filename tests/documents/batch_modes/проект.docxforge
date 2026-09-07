@@ -1,0 +1,32 @@
+{
+  "version": 2,
+  "templates": {
+    "letter.docx": {
+      "fields": {
+        "num": {
+          "type": "table",
+          "file": "letters.xlsx",
+          "column": "num"
+        },
+        "name": {
+          "type": "table",
+          "file": "letters.xlsx",
+          "column": "name"
+        },
+        "subject": {
+          "type": "table",
+          "file": "letters.xlsx",
+          "column": "subject"
+        }
+      },
+      "batch": {
+        "sources": {
+          "letters.xlsx": {
+            "file": "letters.xlsx",
+            "mode": "sequential"
+          }
+        }
+      }
+    }
+  }
+}

@@ -216,9 +216,20 @@ def process_xml(zdata: dict, config: TemplateConfig,
 def write_output_doc(zdata: dict, output_dir: str,
                      template_rel_path: str,
                      doc_index: int, total_docs: int,
-                     batch_primary: Optional[str]) -> str:
+                     batch_primary: Optional[str],
+                     filename_template: Optional[str] = None,
+                     effective_values: Optional[Dict[str, str]] = None) -> str:
     """Write a single output .docx file and return its path."""
-    if total_docs > 1 or batch_primary:
+    if filename_template and effective_values:
+        # Use filename template with field substitution
+        out_name = filename_template
+        for key, value in effective_values.items():
+            out_name = out_name.replace('{{ %s }}' % key, str(value))
+            out_name = out_name.replace('{{%s}}' % key, str(value))
+        # Ensure .docx extension
+        if not out_name.lower().endswith('.docx'):
+            out_name += '.docx'
+    elif total_docs > 1 or batch_primary:
         out_name = '%s_%04d.docx' % (os.path.splitext(template_rel_path)[0], doc_index + 1)
     else:
         out_name = os.path.basename(template_rel_path).replace(

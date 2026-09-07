@@ -75,6 +75,10 @@ class ConfigIOMixin:
                     bw['lookup_val_combo'].setCurrentIndex(idx)
                 else:
                     bw['lookup_val_combo'].setCurrentText(bsc.lookup_value or '')
+            # Per-table resume checkbox
+            bw['chk_resume'].setChecked(bsc.continue_from_last)
+            # Show/hide based on sequential mode
+            bw['chk_resume'].setVisible(bsc.mode == RowIterationMode.SEQUENTIAL)
         if self.config.total_docs is not None:
             self.chk_auto_docs.setChecked(False)
             self.spin_total_docs.setValue(self.config.total_docs)

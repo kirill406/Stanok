@@ -68,6 +68,8 @@ class BatchSourceConfig:
     # For CONSTANT mode: lookup by column value
     lookup_column: Optional[str] = None  # column to search value in
     lookup_value: Optional[str] = None   # value to find in lookup_column
+    # Per-table resume: continue from last row for this specific table
+    continue_from_last: bool = True
 
 
 @dataclass
@@ -146,6 +148,7 @@ class Project:
                     mode=RowIterationMode(mode_str),
                     lookup_column=bdata.get('lookup_column'),
                     lookup_value=bdata.get('lookup_value'),
+                    continue_from_last=bdata.get('continue_from_last', True),
                 )
             tc.total_docs = tpl_data.get('batch', {}).get('total_docs')
             tc.filename_template = tpl_data.get('batch', {}).get('filename_template')
@@ -209,6 +212,8 @@ class Project:
                             bd['lookup_column'] = bsc.lookup_column
                         if bsc.lookup_value is not None:
                             bd['lookup_value'] = bsc.lookup_value
+                    # Per-table resume setting
+                    bd['continue_from_last'] = bsc.continue_from_last
                     batch['sources'][bname] = bd
             if tc.total_docs is not None:
                 batch['total_docs'] = tc.total_docs

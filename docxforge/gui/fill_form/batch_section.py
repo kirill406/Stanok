@@ -83,14 +83,32 @@ class BatchSectionMixin:
                         vc.addItems(self.data_reader.get_distinct_values(path, col))
             lcc.currentTextChanged.connect(on_lcc)
             rl.addWidget(lp)
+            
+            # Continue from last row checkbox (shown only for sequential mode)
+            resume_row = QHBoxLayout()
+            resume_row.addStretch()
+            chk_resume = QCheckBox(STRINGS['batch_continue_from_last'])
+            chk_resume.setChecked(True)
+            chk_resume.setVisible(False)  # Hidden by default, shown when sequential is selected
+            resume_row.addWidget(chk_resume)
+            resume_row.addStretch()
+            rl.addLayout(resume_row)
+            
             def on_mc(c, l=lp):
                 l.setVisible(c)
             rc.toggled.connect(on_mc)
             lp.setVisible(True)
+            
+            # Show/hide continue checkbox based on sequential selection
+            def on_rs_toggled(checked, chk=chk_resume):
+                chk.setVisible(checked)
+            rs.toggled.connect(on_rs_toggled)
+            
             rc.toggled.connect(lambda _: self._update_auto_info())
             rs.toggled.connect(lambda _: self._update_auto_info())
             self.batch_source_widgets[df] = {
                 'radio_constant': rc, 'radio_sequential': rs, 'radio_circular': ry,
                 'lookup_panel': lp, 'lookup_col_combo': lcc, 'lookup_val_combo': lvc,
+                'chk_resume': chk_resume, 'resume_row': resume_row,
             }
             layout.addWidget(row_widget)

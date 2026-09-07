@@ -61,6 +61,7 @@ STRINGS = {
     'batch_mode_circular': 'По кругу',
     'batch_lookup_column': 'Столбец:',
     'batch_lookup_value': 'Значение:',
+    'batch_continue_from_last': 'Продолжить с последней строки',
     'batch_auto_info_with_tables': 'Авто: минимальное число строк ({counts})',
     'batch_auto_info_no_tables': 'Авто: нет таблиц "По строкам" - задайте количество вручную',
 

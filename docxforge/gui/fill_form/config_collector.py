@@ -96,6 +96,8 @@ class ConfigCollectorMixin:
             if mode == RowIterationMode.CONSTANT:
                 bsc.lookup_column = bw['lookup_col_combo'].currentText() or None
                 bsc.lookup_value = bw['lookup_val_combo'].currentText() or None
+            # Per-table resume checkbox (for sequential mode)
+            bsc.continue_from_last = bw['chk_resume'].isChecked()
             config.batch_sources[df] = bsc
         if self.chk_auto_docs.isChecked():
             config.total_docs = None

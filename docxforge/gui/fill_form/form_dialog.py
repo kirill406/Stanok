@@ -56,8 +56,9 @@ class FillForm(FieldRowsMixin, AdvancedSectionMixin, BatchSectionMixin, ConfigIO
         self.data_files = self._scan_data_files()
         self.columns_cache = {}
 
-        self.setWindowTitle('\u0417\u0430\u043f\u043e\u043b\u043d\u0435\u043d\u0438\u0435: %s' % os.path.basename(self.template_path))
-        self.resize(750, 620)
+        self.setWindowTitle(STRINGS['fill_window_title'].format(template=os.path.basename(self.template_path)))
+        # Open maximized (full screen)
+        self.showMaximized()
         self._autosave_enabled = False
 
         self._save_timer = QTimer(self)

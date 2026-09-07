@@ -133,7 +133,10 @@ class FieldTemplateDialog(QDialog):
 
         # Clear previous detail widgets
         for i in reversed(range(self.detail_layout.count())):
-            self.detail_layout.itemAt(i).widget().setParent(None)
+            item = self.detail_layout.itemAt(i)
+            widget = item.widget()
+            if widget is not None:
+                widget.setParent(None)
 
         self._detail_widgets = {}
 

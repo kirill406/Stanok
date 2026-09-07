@@ -3,6 +3,7 @@
 
 import os
 import shutil
+import logging
 from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                               QPushButton, QLabel, QTreeWidget, QTreeWidgetItem,
                               QListWidget, QListWidgetItem, QFileDialog,
@@ -12,6 +13,8 @@ from PyQt5.QtGui import QFont
 
 from docxforge.gui.fill_form import FillForm
 from docxforge.engine.data_reader import DataReader
+
+logger = logging.getLogger(__name__)
 
 
 class ProjectWindow(QMainWindow):

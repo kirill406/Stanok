@@ -4,6 +4,7 @@
 import os
 import sys
 import json
+import logging
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                               QHBoxLayout, QPushButton, QLabel, QListWidget,
                               QListWidgetItem, QFileDialog, QMessageBox,
@@ -15,6 +16,8 @@ from PyQt5.QtGui import QFont, QIcon
 from docxforge.gui.project_window import ProjectWindow
 from docxforge.engine.schema import create_project
 from docxforge.generate import generate_project, GenerationError
+
+logger = logging.getLogger(__name__)
 
 def get_settings_path():
     """Get settings file path next to executable."""

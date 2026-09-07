@@ -76,11 +76,16 @@ class BatchSectionMixin:
             lvc.installEventFilter(self._wheel_filter)
             lpl.addWidget(lvc)
             def on_lcc(col, vc=lvc, fname=df):
+                # Remember if a value was already selected
+                had_value = bool(vc.currentText())
                 vc.clear()
                 if col:
                     path = os.path.join(self.project_dir, '\u0414\u0430\u043d\u043d\u044b\u0435', fname)
                     if os.path.exists(path):
                         vc.addItems(self.data_reader.get_distinct_values(path, col))
+                        # If no value was selected before, select the first data row (index 0 = first data row)
+                        if not had_value and vc.count() > 0:
+                            vc.setCurrentIndex(0)
             lcc.currentTextChanged.connect(on_lcc)
             rl.addWidget(lp)
             

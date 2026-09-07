@@ -36,6 +36,10 @@ htmlcov/
 test_project/
 test_project_cli/
 
+# === Build artifacts ===
+*.spec
+docxforge_settings.json
+
 # === Temp fix scripts ===
 _fix_*.py
 # .bash_tmp/ - Temporary bash-generated files

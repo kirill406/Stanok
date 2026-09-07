@@ -110,6 +110,6 @@ class ConfigCollectorMixin:
             sources=dict(self.config.resume.sources),
             continue_from_last=self.chk_continue.isChecked(),
         )
-        config.ui_state = {'advanced_visible': self.advanced_group.isChecked()}
+        config.ui_state = {}
         return config
 

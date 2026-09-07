@@ -130,53 +130,36 @@ class FillForm(FieldRowsMixin, AdvancedSectionMixin, BatchSectionMixin, ConfigIO
         add_btn_layout.addWidget(btn_add_field)
         main_layout.addLayout(add_btn_layout)
 
-        # Scrollable field list
+        # Single scroll area for both fields and generation
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+
+        scroll_content = QWidget()
+        scroll_layout = QVBoxLayout(scroll_content)
+        scroll_layout.setContentsMargins(0, 0, 0, 0)
+        scroll_layout.setSpacing(15)
+
+        # --- Fields section ---
+        fields_group = QGroupBox('\u041f\u043e\u043b\u044f \u0448\u0430\u0431\u043b\u043e\u043d\u0430')
+        fields_layout = QVBoxLayout(fields_group)
+        fields_layout.setContentsMargins(10, 10, 10, 10)
+        fields_layout.setSpacing(6)
 
         self.fields_widget = QWidget()
         self.fields_layout = QVBoxLayout(self.fields_widget)
         self.fields_layout.setContentsMargins(0, 0, 0, 0)
         self.fields_layout.setSpacing(6)
 
-        scroll.setWidget(self.fields_widget)
-        main_layout.addWidget(scroll, stretch=1)
+        fields_layout.addWidget(self.fields_widget)
+        scroll_layout.addWidget(fields_group, stretch=1)  # Fields expand first
 
-        # Advanced section
-        self.advanced_group = QGroupBox('\u0414\u043e\u043f\u043e\u043b\u043d\u0438\u0442\u0435\u043b\u044c\u043d\u043e: \u0446\u0438\u043a\u043b\u044b \u0438 \u0430\u0433\u0440\u0435\u0433\u0430\u0446\u0438\u0438')
-        self.advanced_group.setCheckable(True)
-        self.advanced_group.setChecked(False)
-        self.advanced_layout = QVBoxLayout(self.advanced_group)
-
-        self.cycles_widget = QWidget()
-        self.cycles_layout = QVBoxLayout(self.cycles_widget)
-        self.advanced_layout.addWidget(self.cycles_widget)
-
-        self.btn_add_cycle = QPushButton(STRINGS['fill_add_cycle'])
-        self.btn_add_cycle.clicked.connect(self._add_cycle_row)
-        self.advanced_layout.addWidget(self.btn_add_cycle)
-
-        self.aggr_widget = QWidget()
-        self.aggr_layout = QVBoxLayout(self.aggr_widget)
-        self.advanced_layout.addWidget(self.aggr_widget)
-
-        self.btn_add_aggr = QPushButton(STRINGS['fill_add_aggr'])
-        self.btn_add_aggr.clicked.connect(self._add_aggr_row)
-        self.advanced_layout.addWidget(self.btn_add_aggr)
-
-        self.btn_add_cycle.setVisible(False)
-        self.btn_add_aggr.setVisible(False)
-        self.cycles_widget.setVisible(False)
-        self.aggr_widget.setVisible(False)
-
-        self.advanced_group.toggled.connect(self._on_advanced_toggled)
-
-        main_layout.addWidget(self.advanced_group)
-
-        # Generation section
+        # --- Generation section ---
         batch_group = QGroupBox(STRINGS['batch_generation_group'])
         batch_layout = QVBoxLayout(batch_group)
+        batch_layout.setContentsMargins(10, 10, 10, 10)
+        batch_layout.setSpacing(10)
 
         # Filename template row
         filename_row = QHBoxLayout()
@@ -225,12 +208,12 @@ class FillForm(FieldRowsMixin, AdvancedSectionMixin, BatchSectionMixin, ConfigIO
         resume_row.addStretch()
         batch_layout.addLayout(resume_row)
 
-        main_layout.addWidget(batch_group)
+        scroll_layout.addWidget(batch_group)
 
-        # Add stretch to push generation section down when window is resized
-        main_layout.addStretch(1)
+        scroll.setWidget(scroll_content)
+        main_layout.addWidget(scroll, stretch=1)
 
-        # Bottom buttons
+        # Bottom buttons (fixed at bottom)
         btn_layout = QHBoxLayout()
         btn_layout.addStretch()
         btn_validate = QPushButton(STRINGS['fill_validate_btn'])

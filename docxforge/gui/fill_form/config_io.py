@@ -91,7 +91,6 @@ class ConfigIOMixin:
             self.edit_filename_template.setText(self.config.filename_template)
         self.chk_continue.setChecked(self.config.resume.continue_from_last)
         self._update_resume_info()
-        self.advanced_group.setChecked(self.config.ui_state.get('advanced_visible', False))
 
     def _connect_autosave(self):
         self._autosave_enabled = True
@@ -113,7 +112,6 @@ class ConfigIOMixin:
             bw['radio_circular'].toggled.connect(self._schedule_save)
             bw['lookup_col_combo'].currentTextChanged.connect(self._schedule_save)
             bw['lookup_val_combo'].currentTextChanged.connect(self._schedule_save)
-        self.advanced_group.toggled.connect(self._schedule_save)
 
     def _schedule_save(self, *_args):
         if not self._autosave_enabled:

@@ -5,6 +5,7 @@ import os
 import shutil
 import tempfile
 from pathlib import Path
+from typing import Tuple, List
 
 import pytest
 from docx import Document
@@ -28,6 +29,92 @@ def read_docx_text(path: Path) -> str:
     return '\n'.join(p.text for p in doc.paragraphs)
 
 
+def read_docx_paragraphs(path: Path):
+    """Extract paragraphs with formatting info from a .docx file."""
+    doc = Document(path)
+    paragraphs = []
+    for p in doc.paragraphs:
+        runs = []
+        for r in p.runs:
+            runs.append({
+                'text': r.text,
+                'bold': r.bold,
+                'italic': r.italic,
+                'underline': r.underline,
+            })
+        paragraphs.append({
+            'text': p.text,
+            'style': p.style.name if p.style else None,
+            'runs': runs,
+        })
+    return paragraphs
+
+
+def read_docx_tables(path: Path):
+    """Extract table data from a .docx file."""
+    doc = Document(path)
+    tables = []
+    for table in doc.tables:
+        rows = []
+        for row in table.rows:
+            rows.append([cell.text for cell in row.cells])
+        tables.append(rows)
+    return tables
+
+
+def compare_docx(generated_path: Path, expected_path: Path) -> Tuple[bool, List[str]]:
+    """Compare two .docx files semantically.
+    
+    Returns:
+        (is_equal, list_of_differences)
+    """
+    differences = []
+    
+    # Compare paragraphs
+    gen_paragraphs = read_docx_paragraphs(generated_path)
+    exp_paragraphs = read_docx_paragraphs(expected_path)
+    
+    if len(gen_paragraphs) != len(exp_paragraphs):
+        differences.append(f'Paragraph count mismatch: generated={len(gen_paragraphs)}, expected={len(exp_paragraphs)}')
+    
+    for i, (gen_p, exp_p) in enumerate(zip(gen_paragraphs, exp_paragraphs)):
+        if gen_p['text'] != exp_p['text']:
+            differences.append(f'Paragraph {i} text mismatch: generated="{gen_p["text"]}", expected="{exp_p["text"]}"')
+        if gen_p['style'] != exp_p['style']:
+            differences.append(f'Paragraph {i} style mismatch: generated="{gen_p["style"]}", expected="{exp_p["style"]}"')
+        
+        # Compare runs (formatting)
+        if len(gen_p['runs']) != len(exp_p['runs']):
+            differences.append(f'Paragraph {i} run count mismatch: generated={len(gen_p["runs"])}, expected={len(exp_p["runs"])}')
+        else:
+            for j, (gen_r, exp_r) in enumerate(zip(gen_p['runs'], exp_p['runs'])):
+                if gen_r['text'] != exp_r['text']:
+                    differences.append(f'Paragraph {i}, run {j} text mismatch: generated="{gen_r["text"]}", expected="{exp_r["text"]}"')
+                if gen_r['bold'] != exp_r['bold']:
+                    differences.append(f'Paragraph {i}, run {j} bold mismatch: generated={gen_r["bold"]}, expected={exp_r["bold"]}')
+                if gen_r['italic'] != exp_r['italic']:
+                    differences.append(f'Paragraph {i}, run {j} italic mismatch: generated={gen_r["italic"]}, expected={exp_r["italic"]}')
+                if gen_r['underline'] != exp_r['underline']:
+                    differences.append(f'Paragraph {i}, run {j} underline mismatch: generated={gen_r["underline"]}, expected={exp_r["underline"]}')
+    
+    # Compare tables
+    gen_tables = read_docx_tables(generated_path)
+    exp_tables = read_docx_tables(expected_path)
+    
+    if len(gen_tables) != len(exp_tables):
+        differences.append(f'Table count mismatch: generated={len(gen_tables)}, expected={len(exp_tables)}')
+    
+    for i, (gen_t, exp_t) in enumerate(zip(gen_tables, exp_tables)):
+        if len(gen_t) != len(exp_t):
+            differences.append(f'Table {i} row count mismatch: generated={len(gen_t)}, expected={len(exp_t)}')
+        else:
+            for r, (gen_row, exp_row) in enumerate(zip(gen_t, exp_t)):
+                if gen_row != exp_row:
+                    differences.append(f'Table {i}, row {r} mismatch: generated={gen_row}, expected={exp_row}')
+    
+    return len(differences) == 0, differences
+
+
 class TestAllBasicFields:
     """Single comprehensive test for all basic field types."""
 
@@ -43,19 +130,14 @@ class TestAllBasicFields:
             assert os.path.exists(out)
             assert os.path.getsize(out) > 0
 
-        # Check first document
-        text = read_docx_text(Path(outputs[0]))
-        assert 'Документ: Договор поставки' in text  # constant
-        assert 'Номер: 0001' in text  # counter starts at 1
-        assert 'Клиент: Клиент 1' in text  # table from clients.xlsx row 1
-        assert 'Сумма: 10000 руб.' in text  # table from clients.xlsx row 1
-        assert 'Менеджер: Менеджер 1' in text  # table from managers.xlsx row 1
-        assert 'Статус: Новый' in text  # constant
-        # today field should have current date in dd.MM.yyyy format
-        import re
-        assert re.search(r'Дата: \d{2}\.\d{2}\.\d{4}', text)
+        # Compare first document with expected reference
+        expected_ref = FIXTURES_DIR / 'all_basic_fields' / 'expected_0001.docx'
+        assert expected_ref.exists(), f'Expected reference not found: {expected_ref}'
+        
+        is_equal, differences = compare_docx(Path(outputs[0]), expected_ref)
+        assert is_equal, f'Generated document does not match expected:\n' + '\n'.join(differences)
 
-        # Check second document
+        # Check second document - counter increments, data from row 2
         text = read_docx_text(Path(outputs[1]))
         assert 'Номер: 0002' in text  # counter increments
         assert 'Клиент: Клиент 2' in text  # table from clients.xlsx row 2

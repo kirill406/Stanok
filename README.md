@@ -157,26 +157,13 @@ python -m pytest --cov=docxforge.engine --cov-report=html:htmlcov tests/
 1. Запускаются тесты (`python -m pytest tests/ -q`)
 2. Сканируются секреты (`trufflehog3`)
 
-Если тесты падают — коммит отклоняется. Обойти: `git commit --no-verify`.
+Если тесты падают — коммит отклоняется.
 
 `powershell
 # Установить хук после клонирования
 scripts\install-hooks.bat
 `
 
-## Прототип склейки XML-ран
-
-Проверяет, что Word не ломает плейсхолдеры {{ }}:
-
-`powershell
-# Сгенерировать тестовые шаблоны
-python prototype/generate_test_templates.py
-
-# Проверить, сколько плейсхолдеров разбито по ранам
-python prototype/test_run_merge.py
-`
-
-Результат прототипа: 53 плейсхолдера, 32% разбиты Word-ом, **0 потеряны** после склейки.
 
 ## Структура проекта
 

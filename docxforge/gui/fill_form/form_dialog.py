@@ -77,13 +77,20 @@ class FillForm(FieldRowsMixin, AdvancedSectionMixin, BatchSectionMixin, ConfigIO
         data_dir = os.path.join(self.project_dir, '\u0414\u0430\u043d\u043d\u044b\u0435')
         if not os.path.exists(data_dir):
             return []
-        return sorted([f for f in os.listdir(data_dir) if f.endswith(('.xlsx', '.xls'))])
+        # Filter out temporary Excel files (e.g., ~$filename.xlsx)
+        return sorted([f for f in os.listdir(data_dir) 
+                       if f.endswith(('.xlsx', '.xls')) and not f.startswith('~$')])
 
     def _get_columns(self, filename):
         if filename not in self.columns_cache:
             path = os.path.join(self.project_dir, '\u0414\u0430\u043d\u043d\u044b\u0435', filename)
             if os.path.exists(path):
-                self.columns_cache[filename] = self.data_reader.get_columns(path)
+                try:
+                    self.columns_cache[filename] = self.data_reader.get_columns(path)
+                except Exception as e:
+                    import logging
+                    logging.getLogger(__name__).error(f"Error getting columns from {filename}: {e}")
+                    self.columns_cache[filename] = []
             else:
                 self.columns_cache[filename] = []
         return self.columns_cache[filename]

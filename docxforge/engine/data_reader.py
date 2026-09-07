@@ -1,8 +1,12 @@
 ﻿# -*- coding: utf-8 -*-
 """Read Excel files into list-of-dicts format used by the renderer."""
 
+import logging
 from typing import Dict, List
 import openpyxl
+
+
+logger = logging.getLogger(__name__)
 
 
 class DataReader:
@@ -14,7 +18,15 @@ class DataReader:
         First row is treated as headers.
         Empty rows and rows with fewer than 2 non-empty cells are skipped.
         """
-        wb = openpyxl.load_workbook(path, data_only=True)
+        try:
+            wb = openpyxl.load_workbook(path, data_only=True)
+        except PermissionError as e:
+            logger.error(f"Permission denied reading {path}: {e}")
+            return []
+        except Exception as e:
+            logger.error(f"Error reading {path}: {e}")
+            return []
+
         if sheet_name:
             ws = wb[sheet_name]
         else:
@@ -22,6 +34,7 @@ class DataReader:
 
         rows = list(ws.iter_rows(values_only=True))
         if not rows:
+            wb.close()
             return []
 
         # Find header row (first non-empty row)
@@ -37,6 +50,7 @@ class DataReader:
                 break
 
         if header is None:
+            wb.close()
             return []
 
         result = []
@@ -59,7 +73,15 @@ class DataReader:
 
     def get_columns(self, path: str, sheet_name: str = None) -> List[str]:
         """Get list of column names from an Excel file."""
-        wb = openpyxl.load_workbook(path, data_only=True)
+        try:
+            wb = openpyxl.load_workbook(path, data_only=True)
+        except PermissionError as e:
+            logger.error(f"Permission denied reading {path}: {e}")
+            return []
+        except Exception as e:
+            logger.error(f"Error reading {path}: {e}")
+            return []
+
         if sheet_name:
             ws = wb[sheet_name]
         else:
@@ -67,6 +89,7 @@ class DataReader:
 
         rows = list(ws.iter_rows(values_only=True))
         if not rows:
+            wb.close()
             return []
 
         for row in rows:

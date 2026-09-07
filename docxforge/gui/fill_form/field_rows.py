@@ -7,6 +7,7 @@ from PyQt5.QtGui import QFont
 
 from docxforge.gui.field_dialog import FieldTemplateDialog
 from .constants import FIELD_TYPES, FIELD_TYPES_ENUM
+from ..strings import STRINGS
 
 
 class FieldRowsMixin:
@@ -31,7 +32,7 @@ class FieldRowsMixin:
         row = QHBoxLayout(group)
         row.setContentsMargins(8, 4, 8, 4)
 
-        label = QLabel('{{ %s }}' % field_name)
+        label = QLabel(field_name)
         label.setMinimumWidth(150)
         label.setFont(QFont('Consolas', 9))
         row.addWidget(label)
@@ -41,6 +42,7 @@ class FieldRowsMixin:
         type_combo.setCurrentText(preset_type)
         type_combo.currentTextChanged.connect(
             lambda t, fn=field_name: self._on_type_changed(fn, t))
+        type_combo.installEventFilter(self._wheel_filter)
         row.addWidget(type_combo)
 
         stack = QWidget()
@@ -48,11 +50,13 @@ class FieldRowsMixin:
         stack_layout.setContentsMargins(0, 0, 0, 0)
 
         const_value = QLineEdit()
-        const_value.setPlaceholderText('\u0437\u043d\u0430\u0447\u0435\u043d\u0438\u0435')
+        const_value.setPlaceholderText(STRINGS.get('field_placeholder_value', '\u0437\u043d\u0430\u0447\u0435\u043d\u0438\u0435'))
 
         table_file = QComboBox()
         table_file.addItems([''] + self.data_files)
+        table_file.installEventFilter(self._wheel_filter)
         table_column = QComboBox()
+        table_column.installEventFilter(self._wheel_filter)
 
         def on_tf_changed(tf, tc=table_column):
             tc.clear()
@@ -64,26 +68,28 @@ class FieldRowsMixin:
         counter_start.setMaximumWidth(60)
         counter_format = QComboBox()
         counter_format.addItems(['1', '0001', '001', '00001'])
+        counter_format.installEventFilter(self._wheel_filter)
 
         today_format = QComboBox()
         today_format.addItems(['dd.MM.yyyy', 'dd.MM.yyyy HH:mm', 'dd', 'MM', 'yyyy', 'dd.MM.yy'])
+        today_format.installEventFilter(self._wheel_filter)
 
         image_file = QLineEdit()
-        image_file.setPlaceholderText('\u043f\u0443\u0442\u044c \u043a \u0438\u0437\u043e\u0431\u0440\u0430\u0436\u0435\u043d\u0438\u044e')
+        image_file.setPlaceholderText(STRINGS.get('field_placeholder_image', '\u043f\u0443\u0442\u044c \u043a \u0438\u0437\u043e\u0431\u0440\u0430\u0436\u0435\u043d\u0438\u0435'))
 
         image_btn = QPushButton('\U0001f4ce')
         image_btn.setMaximumWidth(40)
         image_btn.clicked.connect(lambda: image_file.setText(
-            QFileDialog.getOpenFileName(self, '\u0412\u044b\u0431\u0435\u0440\u0438\u0442\u0435 \u0438\u0437\u043e\u0431\u0440\u0430\u0436\u0435\u043d\u0438\u0435',
+            QFileDialog.getOpenFileName(self, STRINGS.get('field_dialog_select_image', '\u0412\u044b\u0431\u0435\u0440\u0438\u0442\u0435 \u0438\u0437\u043e\u0431\u0440\u0430\u0436\u0435\u043d\u0438\u0435'),
                                          self.project_dir,
-                                         '\u0418\u0437\u043e\u0431\u0440\u0430\u0436\u0435\u043d\u0438\u044f (*.png *.jpg *.jpeg *.bmp)')[0]))
+                                         STRINGS.get('field_filter_image', '\u0418\u0437\u043e\u0431\u0440\u0430\u0436\u0435\u043d\u0438\u0435 (*.png *.jpg *.jpeg *.bmp)'))[0]))
 
-        lbl_file = QLabel('\u0424\u0430\u0439\u043b:')
-        lbl_column = QLabel('\u0421\u0442\u043e\u043b\u0431\u0435\u0446:')
-        lbl_start = QLabel('\u041d\u0430\u0447\u0430\u043b\u043e:')
-        lbl_counter_format = QLabel('\u0424\u043e\u0440\u043c\u0430\u0442:')
-        lbl_today_format = QLabel('\u0424\u043e\u0440\u043c\u0430\u0442:')
-        lbl_image = QLabel('\u0418\u0437\u043e\u0431\u0440\u0430\u0436\u0435\u043d\u0438\u0435:')
+        lbl_file = QLabel(STRINGS['field_label_file'])
+        lbl_column = QLabel(STRINGS['field_label_column'])
+        lbl_start = QLabel(STRINGS['field_label_start'])
+        lbl_counter_format = QLabel(STRINGS['field_label_counter_format'])
+        lbl_today_format = QLabel(STRINGS['field_label_today_format'])
+        lbl_image = QLabel(STRINGS['field_label_image'])
 
         self.field_widgets[field_name] = {
             'type_combo': type_combo,
@@ -126,21 +132,21 @@ class FieldRowsMixin:
         w = self.field_widgets.get(field_name)
         if not w:
             return
-        w['const_value'].setVisible(type_name == '\u043a\u043e\u043d\u0441\u0442\u0430\u043d\u0442\u0430')
-        is_table = (type_name == '\u0442\u0430\u0431\u043b\u0438\u0446\u0430')
+        w['const_value'].setVisible(type_name == STRINGS['field_type_constant'])
+        is_table = (type_name == STRINGS['field_type_table'])
         w['table_file'].setVisible(is_table)
         w['table_column'].setVisible(is_table)
         w['lbl_file'].setVisible(is_table)
         w['lbl_column'].setVisible(is_table)
-        is_counter = (type_name == '\u0441\u0447\u0451\u0442\u0447\u0438\u043a')
+        is_counter = (type_name == STRINGS['field_type_counter'])
         w['counter_start'].setVisible(is_counter)
         w['counter_format'].setVisible(is_counter)
         w['lbl_start'].setVisible(is_counter)
         w['lbl_counter_format'].setVisible(is_counter)
-        is_today = (type_name == '\u0441\u0435\u0433\u043e\u0434\u043d\u044f')
+        is_today = (type_name == STRINGS['field_type_today'])
         w['today_format'].setVisible(is_today)
         w['lbl_today_format'].setVisible(is_today)
-        is_image = (type_name == '\u0438\u0437\u043e\u0431\u0440\u0430\u0436\u0435\u043d\u0438\u0435')
+        is_image = (type_name == STRINGS['field_type_image'])
         w['image_file'].setVisible(is_image)
         w['image_btn'].setVisible(is_image)
         w['lbl_image'].setVisible(is_image)
@@ -157,10 +163,10 @@ class FieldRowsMixin:
             if result and result.get('field_name'):
                 field_name = result['field_name'].strip()
                 if field_name in self.field_widgets:
-                    QMessageBox.warning(self, '\u041e\u0448\u0438\u0431\u043a\u0430',
-                                         '\u041f\u043e\u043b\u0435 %s \u0443\u0436\u0435 \u0441\u0443\u0449\u0435\u0441\u0442\u0432\u0443\u0435\u0442' % field_name)
+                    QMessageBox.warning(self, STRINGS['msg_warning'],
+                                         STRINGS['msg_field_exists'].format(name=field_name))
                     return
-                self._add_field_row(field_name, preset_type=result.get('type', '\u043a\u043e\u043d\u0441\u0442\u0430\u043d\u0442\u0430'))
+                self._add_field_row(field_name, preset_type=result.get('type', STRINGS['field_type_constant']))
                 w = self.field_widgets[field_name]
                 if result.get('value'):
                     w['const_value'].setText(result['value'])

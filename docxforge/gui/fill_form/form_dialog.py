@@ -7,8 +7,21 @@ from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
                               QLabel, QComboBox, QLineEdit, QScrollArea,
                               QWidget, QGroupBox, QCheckBox, QFrame,
                               QRadioButton, QSpinBox, QSizePolicy)
-from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtCore import Qt, QTimer, QEvent
 from PyQt5.QtGui import QFont
+
+
+class _WheelEventFilter:
+    """Event filter to ignore wheel events on comboboxes when not focused."""
+    def __init__(self, parent):
+        self.parent = parent
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.Wheel and isinstance(obj, QComboBox):
+            # Only allow wheel if combobox has focus or popup is open
+            if not obj.hasFocus() and not obj.view().isVisible():
+                return True  # Ignore wheel event
+        return False
 
 from docxforge.engine.template_parser import scan_template
 from docxforge.engine.schema import (
@@ -23,6 +36,7 @@ from .advanced_section import AdvancedSectionMixin
 from .batch_section import BatchSectionMixin
 from .config_io import ConfigIOMixin
 from .config_collector import ConfigCollectorMixin
+from ..strings import STRINGS
 
 
 class FillForm(FieldRowsMixin, AdvancedSectionMixin, BatchSectionMixin, ConfigIOMixin, ConfigCollectorMixin, QDialog):
@@ -49,6 +63,9 @@ class FillForm(FieldRowsMixin, AdvancedSectionMixin, BatchSectionMixin, ConfigIO
         self._save_timer = QTimer(self)
         self._save_timer.setSingleShot(True)
         self._save_timer.timeout.connect(self._do_save_project)
+
+        # Wheel event filter to prevent accidental combobox changes
+        self._wheel_filter = _WheelEventFilter(self)
 
         self._build_ui()
         self._populate_fields()
@@ -80,7 +97,7 @@ class FillForm(FieldRowsMixin, AdvancedSectionMixin, BatchSectionMixin, ConfigIO
         main_layout.setSpacing(10)
 
         # Header
-        info = QLabel('\u0428\u0430\u0431\u043b\u043e\u043d: %s' % os.path.basename(self.template_path))
+        info = QLabel(STRINGS['fill_template_label'].format(template=os.path.basename(self.template_path)))
         info.setFont(QFont('Segoe UI', 11, QFont.Bold))
         main_layout.addWidget(info)
 
@@ -89,17 +106,24 @@ class FillForm(FieldRowsMixin, AdvancedSectionMixin, BatchSectionMixin, ConfigIO
                            len(self.scan_result['doc_number']) +
                            len(self.scan_result['image']))
         stats = QLabel(
-            '\u041f\u043e\u043b\u0435\u0439 \u0432 \u0448\u0430\u0431\u043b\u043e\u043d\u0435: %d (%d \u043d\u0430\u0441\u0442\u0440\u0430\u0438\u0432\u0430\u0435\u043c\u044b\u0445, %d \u0434\u0430\u0442, %d \u043d\u043e\u043c\u0435\u0440\u043e\u0432, %d \u0438\u0437\u043e\u0431\u0440\u0430\u0436\u0435\u043d\u0438\u0439)' %
-            (placeholder_count, len(self.scan_result['simple']),
-             len(self.scan_result['today']), len(self.scan_result['doc_number']),
-             len(self.scan_result['image'])))
+            STRINGS['fill_fields_count'].format(
+                total=placeholder_count,
+                simple=len(self.scan_result['simple']),
+                today=len(self.scan_result['today']),
+                counter=len(self.scan_result['doc_number']),
+                image=len(self.scan_result['image'])))
         stats.setStyleSheet('color: #666;')
         main_layout.addWidget(stats)
+
+        # Description for field mapping
+        desc_label = QLabel(STRINGS['fill_field_description'])
+        desc_label.setStyleSheet('color: #444; font-size: 9pt; margin-top: 4px;')
+        main_layout.addWidget(desc_label)
 
         # + Add field button
         add_btn_layout = QHBoxLayout()
         add_btn_layout.addStretch()
-        btn_add_field = QPushButton('+ \u0414\u043e\u0431\u0430\u0432\u0438\u0442\u044c \u043f\u043e\u043b\u0435')
+        btn_add_field = QPushButton(STRINGS['fill_add_field'])
         btn_add_field.setFont(QFont('Segoe UI', 9))
         btn_add_field.clicked.connect(self._add_field_dialog)
         add_btn_layout.addWidget(btn_add_field)
@@ -128,7 +152,7 @@ class FillForm(FieldRowsMixin, AdvancedSectionMixin, BatchSectionMixin, ConfigIO
         self.cycles_layout = QVBoxLayout(self.cycles_widget)
         self.advanced_layout.addWidget(self.cycles_widget)
 
-        self.btn_add_cycle = QPushButton('+ \u0414\u043e\u0431\u0430\u0432\u0438\u0442\u044c \u0446\u0438\u043a\u043b')
+        self.btn_add_cycle = QPushButton(STRINGS['fill_add_cycle'])
         self.btn_add_cycle.clicked.connect(self._add_cycle_row)
         self.advanced_layout.addWidget(self.btn_add_cycle)
 
@@ -136,7 +160,7 @@ class FillForm(FieldRowsMixin, AdvancedSectionMixin, BatchSectionMixin, ConfigIO
         self.aggr_layout = QVBoxLayout(self.aggr_widget)
         self.advanced_layout.addWidget(self.aggr_widget)
 
-        self.btn_add_aggr = QPushButton('+ \u0414\u043e\u0431\u0430\u0432\u0438\u0442\u044c \u0430\u0433\u0440\u0435\u0433\u0430\u0446\u0438\u044e')
+        self.btn_add_aggr = QPushButton(STRINGS['fill_add_aggr'])
         self.btn_add_aggr.clicked.connect(self._add_aggr_row)
         self.advanced_layout.addWidget(self.btn_add_aggr)
 
@@ -150,27 +174,27 @@ class FillForm(FieldRowsMixin, AdvancedSectionMixin, BatchSectionMixin, ConfigIO
         main_layout.addWidget(self.advanced_group)
 
         # Generation section
-        batch_group = QGroupBox('\u0413\u0435\u043d\u0435\u0440\u0430\u0446\u0438\u044f')
+        batch_group = QGroupBox(STRINGS['batch_generation_group'])
         batch_layout = QVBoxLayout(batch_group)
 
         # Filename template row
         filename_row = QHBoxLayout()
-        filename_row.addWidget(QLabel('\u0428\u0430\u0431\u043b\u043e\u043d \u0438\u043c\u0435\u043d\u0438 \u0444\u0430\u0439\u043b\u0430:'))
+        filename_row.addWidget(QLabel(STRINGS['fill_filename_template']))
         self.edit_filename_template = QLineEdit()
-        self.edit_filename_template.setPlaceholderText('{{ doc_number }}_{{ client_name }} (пусто = авто)')
-        self.edit_filename_template.setToolTip('Используйте {{ field_name }} для подстановки значений полей. Пусто = автоматическое именование.')
+        self.edit_filename_template.setPlaceholderText(STRINGS['fill_filename_placeholder'])
+        self.edit_filename_template.setToolTip(STRINGS['fill_filename_tooltip'])
         filename_row.addWidget(self.edit_filename_template)
         batch_layout.addLayout(filename_row)
 
         total_row = QHBoxLayout()
-        total_row.addWidget(QLabel('\u041a\u043e\u043b\u0438\u0447\u0435\u0441\u0442\u0432\u043e \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u043e\u0432:'))
+        total_row.addWidget(QLabel(STRINGS['fill_total_docs']))
         self.spin_total_docs = QSpinBox()
         self.spin_total_docs.setMinimum(1)
         self.spin_total_docs.setMaximum(99999)
         self.spin_total_docs.setValue(1)
         self.spin_total_docs.setFixedWidth(80)
         total_row.addWidget(self.spin_total_docs)
-        self.chk_auto_docs = QCheckBox('\u0410\u0432\u0442\u043e')
+        self.chk_auto_docs = QCheckBox(STRINGS['fill_auto_checkbox'])
         self.chk_auto_docs.setChecked(False)  # Off by default
         self.chk_auto_docs.toggled.connect(self._on_auto_docs_toggled)
         total_row.addWidget(self.chk_auto_docs)
@@ -191,7 +215,7 @@ class FillForm(FieldRowsMixin, AdvancedSectionMixin, BatchSectionMixin, ConfigIO
         self._rebuild_batch_source_rows()
 
         resume_row = QHBoxLayout()
-        self.chk_continue = QCheckBox('\u041f\u0440\u043e\u0434\u043e\u043b\u0436\u0438\u0442\u044c \u0441 \u043f\u043e\u0441\u043b\u0435\u0434\u043d\u0435\u0439 \u0441\u0442\u0440\u043e\u043a\u0438')
+        self.chk_continue = QCheckBox(STRINGS['fill_continue_checkbox'])
         self.chk_continue.setChecked(True)
         resume_row.addWidget(self.chk_continue)
         self.resume_info_label = QLabel('')
@@ -208,10 +232,10 @@ class FillForm(FieldRowsMixin, AdvancedSectionMixin, BatchSectionMixin, ConfigIO
         # Bottom buttons
         btn_layout = QHBoxLayout()
         btn_layout.addStretch()
-        btn_validate = QPushButton('\u041f\u0440\u043e\u0432\u0435\u0440\u0438\u0442\u044c')
+        btn_validate = QPushButton(STRINGS['fill_validate_btn'])
         btn_validate.clicked.connect(self._validate)
         btn_layout.addWidget(btn_validate)
-        btn_create = QPushButton('\u0421\u043e\u0437\u0434\u0430\u0442\u044c')
+        btn_create = QPushButton(STRINGS['fill_create_btn'])
         btn_create.setMinimumWidth(120)
         btn_create.clicked.connect(self._create)
         btn_layout.addWidget(btn_create)

@@ -5,6 +5,8 @@ import os
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout,
                               QLabel, QComboBox, QRadioButton)
 
+from ..strings import STRINGS
+
 
 class BatchSectionMixin:
     """Methods for managing batch source configuration in FillForm."""
@@ -17,10 +19,9 @@ class BatchSectionMixin:
         if seq:
             counts = ['%s: %d' % (df, self._get_row_count(df)) for df in seq]
             self.auto_info_label.setText(
-                '\u0410\u0432\u0442\u043e: \u043c\u0438\u043d\u0438\u043c\u0430\u043b\u044c\u043d\u043e\u0435 \u0447\u0438\u0441\u043b\u043e \u0441\u0442\u0440\u043e\u043a (%s)' % ', '.join(counts))
+                STRINGS['batch_auto_info_with_tables'].format(counts=', '.join(counts)))
         else:
-            self.auto_info_label.setText(
-                '\u0410\u0432\u0442\u043e: \u043d\u0435\u0442 \u0442\u0430\u0431\u043b\u0438\u0446 \u00ab\u041f\u043e \u0441\u0442\u0440\u043e\u043a\u0430\u043c\u00bb - \u0437\u0430\u0434\u0430\u0439\u0442\u0435 \u043a\u043e\u043b\u0438\u0447\u0435\u0441\u0442\u0432\u043e \u0432\u0440\u0443\u0447\u043d\u0443\u044e')
+            self.auto_info_label.setText(STRINGS['batch_auto_info_no_tables'])
 
     def _update_resume_info(self):
         resume = self.config.resume
@@ -49,12 +50,12 @@ class BatchSectionMixin:
             lbl = QLabel(df)
             lbl.setMinimumWidth(140)
             top.addWidget(lbl)
-            rc = QRadioButton('\u041a\u043e\u043d\u0441\u0442\u0430\u043d\u0442\u0430')
+            rc = QRadioButton(STRINGS['batch_mode_constant'])
             rc.setChecked(True)
             top.addWidget(rc)
-            rs = QRadioButton('\u041f\u043e \u0441\u0442\u0440\u043e\u043a\u0430\u043c')
+            rs = QRadioButton(STRINGS['batch_mode_sequential'])
             top.addWidget(rs)
-            ry = QRadioButton('\u041f\u043e \u043a\u0440\u0443\u0433\u0443')
+            ry = QRadioButton(STRINGS['batch_mode_circular'])
             top.addWidget(ry)
             top.addStretch()
             rl.addLayout(top)
@@ -62,15 +63,17 @@ class BatchSectionMixin:
             lpl = QHBoxLayout(lp)
             lpl.setContentsMargins(20, 0, 0, 0)
             lpl.setSpacing(4)
-            lpl.addWidget(QLabel('\u0421\u0442\u043e\u043b\u0431\u0435\u0446:'))
+            lpl.addWidget(QLabel(STRINGS['batch_lookup_column']))
             lcc = QComboBox()
             lcc.addItems(self._get_columns(df))
             lcc.setMinimumWidth(100)
+            lcc.installEventFilter(self._wheel_filter)
             lpl.addWidget(lcc)
-            lpl.addWidget(QLabel('\u0417\u043d\u0430\u0447\u0435\u043d\u0438\u0435:'))
+            lpl.addWidget(QLabel(STRINGS['batch_lookup_value']))
             lvc = QComboBox()
             lvc.setEditable(True)
             lvc.setMinimumWidth(120)
+            lvc.installEventFilter(self._wheel_filter)
             lpl.addWidget(lvc)
             def on_lcc(col, vc=lvc, fname=df):
                 vc.clear()

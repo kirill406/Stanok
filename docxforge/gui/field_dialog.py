@@ -5,10 +5,23 @@ from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
                               QLabel, QComboBox, QLineEdit, QGroupBox,
                               QDialogButtonBox, QWidget, QScrollArea,
                               QFrame, QGridLayout)
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QEvent
 from PyQt5.QtGui import QFont
 
 from docxforge.gui.field_templates import FIELD_TEMPLATES
+from .strings import STRINGS
+
+
+class _WheelEventFilter:
+    """Event filter to ignore wheel events on comboboxes when not focused."""
+    def __init__(self, parent):
+        self.parent = parent
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.Wheel and isinstance(obj, QComboBox):
+            if not obj.hasFocus() and not obj.view().isVisible():
+                return True
+        return False
 
 
 class FieldTemplateDialog(QDialog):
@@ -20,7 +33,9 @@ class FieldTemplateDialog(QDialog):
         self.existing_fields = existing_fields or []
         self.result_data = None
 
-        self.setWindowTitle('Добавить поле')
+        self._wheel_filter = _WheelEventFilter(self)
+
+        self.setWindowTitle(STRINGS['field_dialog_title'])
         self.setMinimumWidth(550)
         self.resize(600, 480)
         self._build_ui()
@@ -30,11 +45,11 @@ class FieldTemplateDialog(QDialog):
         layout.setContentsMargins(15, 15, 15, 10)
         layout.setSpacing(10)
 
-        title = QLabel('Выберите тип поля')
+        title = QLabel(STRINGS['field_dialog_select_type'])
         title.setFont(QFont('Segoe UI', 12, QFont.Bold))
         layout.addWidget(title)
 
-        desc = QLabel('Каждый тип показывает, как поле будет выглядеть в шаблоне и в результате.')
+        desc = QLabel(STRINGS['field_dialog_desc'])
         desc.setStyleSheet('color: #666;')
         layout.addWidget(desc)
 
@@ -92,7 +107,7 @@ class FieldTemplateDialog(QDialog):
         layout.addWidget(scroll, stretch=1)
 
         # Detail form (shown after template selection)
-        self.detail_group = QGroupBox('Параметры поля')
+        self.detail_group = QGroupBox(STRINGS['field_dialog_params'])
         self.detail_group.setVisible(False)
         self.detail_layout = QVBoxLayout(self.detail_group)
         self.detail_layout.setContentsMargins(10, 10, 10, 10)
@@ -101,10 +116,10 @@ class FieldTemplateDialog(QDialog):
         # Buttons
         btn_layout = QHBoxLayout()
         btn_layout.addStretch()
-        cancel_btn = QPushButton('Отмена')
+        cancel_btn = QPushButton(STRINGS['field_dialog_cancel_btn'])
         cancel_btn.clicked.connect(self.reject)
         btn_layout.addWidget(cancel_btn)
-        self.add_btn = QPushButton('Добавить поле')
+        self.add_btn = QPushButton(STRINGS['field_dialog_add_btn'])
         self.add_btn.setEnabled(False)
         self.add_btn.clicked.connect(self._on_add)
         btn_layout.addWidget(self.add_btn)
@@ -139,18 +154,23 @@ class FieldTemplateDialog(QDialog):
             elif widget_type == 'combo_data':
                 widget = QComboBox()
                 widget.addItems([''] + self.data_files)
+                widget.installEventFilter(self._wheel_filter)
             elif widget_type == 'combo_column':
                 widget = QComboBox()
                 widget.setEditable(True)
+                widget.installEventFilter(self._wheel_filter)
             elif widget_type == 'combo_fields':
                 widget = QComboBox()
                 widget.addItems(['(авто)'] + self.existing_fields)
+                widget.installEventFilter(self._wheel_filter)
             elif widget_type == 'combo_counter_format':
                 widget = QComboBox()
                 widget.addItems(['0001', '001', '00001', '1'])
+                widget.installEventFilter(self._wheel_filter)
             elif widget_type == 'combo_date_format':
                 widget = QComboBox()
                 widget.addItems(['dd.MM.yyyy', 'dd.MM.yyyy HH:mm', 'dd', 'MM', 'yyyy', 'dd.MM.yy'])
+                widget.installEventFilter(self._wheel_filter)
             elif widget_type == 'file':
                 w = QWidget()
                 wl = QHBoxLayout(w)

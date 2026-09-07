@@ -2,13 +2,20 @@
 """Shared constants and type mappings for the fill form."""
 
 from docxforge.engine.schema import FieldType
+from ..strings import STRINGS
 
-FIELD_TYPES = ['\u043a\u043e\u043d\u0441\u0442\u0430\u043d\u0442\u0430', '\u0442\u0430\u0431\u043b\u0438\u0446\u0430', '\u0441\u0447\u0451\u0442\u0447\u0438\u043a', '\u0441\u0435\u0433\u043e\u0434\u043d\u044f', '\u0438\u0437\u043e\u0431\u0440\u0430\u0436\u0435\u043d\u0438\u0435']
+FIELD_TYPES = [
+    STRINGS['field_type_constant'],
+    STRINGS['field_type_table'],
+    STRINGS['field_type_counter'],
+    STRINGS['field_type_today'],
+    STRINGS['field_type_image'],
+]
 
 FIELD_TYPES_ENUM = {
-    '\u043a\u043e\u043d\u0441\u0442\u0430\u043d\u0442\u0430': FieldType.CONSTANT,
-    '\u0442\u0430\u0431\u043b\u0438\u0446\u0430': FieldType.TABLE,
-    '\u0441\u0447\u0451\u0442\u0447\u0438\u043a': FieldType.COUNTER,
-    '\u0441\u0435\u0433\u043e\u0434\u043d\u044f': FieldType.TODAY,
-    '\u0438\u0437\u043e\u0431\u0440\u0430\u0436\u0435\u043d\u0438\u0435': FieldType.IMAGE,
+    STRINGS['field_type_constant']: FieldType.CONSTANT,
+    STRINGS['field_type_table']: FieldType.TABLE,
+    STRINGS['field_type_counter']: FieldType.COUNTER,
+    STRINGS['field_type_today']: FieldType.TODAY,
+    STRINGS['field_type_image']: FieldType.IMAGE,
 }

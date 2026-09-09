@@ -207,10 +207,8 @@ class FillForm(FieldRowsMixin, AdvancedSectionMixin, BatchSectionMixin, ConfigIO
         self.batch_source_widgets = {}
         self._rebuild_batch_source_rows()
 
+        # Resume info summary (replaces the old global continue checkbox)
         resume_row = QHBoxLayout()
-        self.chk_continue = QCheckBox(STRINGS['fill_continue_checkbox'])
-        self.chk_continue.setChecked(True)
-        resume_row.addWidget(self.chk_continue)
         self.resume_info_label = QLabel('')
         self.resume_info_label.setStyleSheet('color: #888; font-size: 9pt;')
         resume_row.addWidget(self.resume_info_label)

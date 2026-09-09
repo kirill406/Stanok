@@ -66,6 +66,9 @@ STRINGS = {
     'batch_continue_from_last': 'Продолжить с последней строки',
     'batch_auto_info_with_tables': 'Авто: минимальное число строк ({counts})',
     'batch_auto_info_no_tables': 'Авто: нет таблиц "По строкам" - задайте количество вручную',
+    'batch_counter_column': 'Столбец счётчика:',
+    'batch_counter_current_row': 'Текущая строка:',
+    'batch_counter_summary': 'Счётчики источников: {counters}',
 
     # Messages
     'msg_error': 'Ошибка',

@@ -2,7 +2,7 @@
 """Field rows mixin: populate, add, and configure individual field rows."""
 
 from PyQt5.QtWidgets import (QGroupBox, QHBoxLayout, QLabel, QComboBox,
-                              QLineEdit, QPushButton, QFileDialog, QWidget, QMessageBox)
+                              QLineEdit, QPushButton, QFileDialog, QWidget, QMessageBox, QVBoxLayout)
 from PyQt5.QtGui import QFont
 
 from docxforge.gui.field_dialog import FieldTemplateDialog
@@ -45,16 +45,22 @@ class FieldRowsMixin:
         type_combo.installEventFilter(self._wheel_filter)
         row.addWidget(type_combo)
 
+        # Main input stack - each type gets its own aligned input area
         stack = QWidget()
         stack_layout = QHBoxLayout(stack)
         stack_layout.setContentsMargins(0, 0, 0, 0)
+        stack_layout.setSpacing(4)
 
+        # Constant value input (for constant type)
         const_value = QLineEdit()
         const_value.setPlaceholderText(STRINGS.get('field_placeholder_value', '\u0437\u043d\u0430\u0447\u0435\u043d\u0438\u0435'))
 
+        # Table file input (for table type) - aligned with const_value
         table_file = QComboBox()
         table_file.addItems([''] + self.data_files)
         table_file.installEventFilter(self._wheel_filter)
+
+        # Table column input (for table type)
         table_column = QComboBox()
         table_column.installEventFilter(self._wheel_filter)
 
@@ -64,16 +70,21 @@ class FieldRowsMixin:
                 tc.addItems(self._get_columns(tf))
         table_file.currentTextChanged.connect(on_tf_changed)
 
+        # Counter start input (for counter type)
         counter_start = QLineEdit('1')
         counter_start.setMaximumWidth(60)
+
+        # Counter format combo (for counter type)
         counter_format = QComboBox()
         counter_format.addItems(['1', '0001', '001', '00001'])
         counter_format.installEventFilter(self._wheel_filter)
 
+        # Today format combo (for today type) - aligned with const_value
         today_format = QComboBox()
         today_format.addItems(['dd.MM.yyyy', 'dd.MM.yyyy HH:mm', 'dd', 'MM', 'yyyy', 'dd.MM.yy'])
         today_format.installEventFilter(self._wheel_filter)
 
+        # Image file input (for image type)
         image_file = QLineEdit()
         image_file.setPlaceholderText(STRINGS.get('field_placeholder_image', '\u043f\u0443\u0442\u044c \u043a \u0438\u0437\u043e\u0431\u0440\u0430\u0436\u0435\u043d\u0438\u0435'))
 
@@ -109,6 +120,7 @@ class FieldRowsMixin:
             'lbl_image': lbl_image,
         }
 
+        # Add all widgets to stack layout
         stack_layout.addWidget(const_value)
         stack_layout.addWidget(lbl_file)
         stack_layout.addWidget(table_file)
@@ -132,24 +144,37 @@ class FieldRowsMixin:
         w = self.field_widgets.get(field_name)
         if not w:
             return
-        w['const_value'].setVisible(type_name == STRINGS['field_type_constant'])
+        # Show/hide widgets based on type, keeping alignment consistent
+        is_constant = (type_name == STRINGS['field_type_constant'])
         is_table = (type_name == STRINGS['field_type_table'])
-        w['table_file'].setVisible(is_table)
-        w['table_column'].setVisible(is_table)
-        w['lbl_file'].setVisible(is_table)
-        w['lbl_column'].setVisible(is_table)
         is_counter = (type_name == STRINGS['field_type_counter'])
+        is_today = (type_name == STRINGS['field_type_today'])
+        is_image = (type_name == STRINGS['field_type_image'])
+
+        # Main input area - always show the primary input for the current type
+        w['const_value'].setVisible(is_constant)
+        w['table_file'].setVisible(is_table)
+        w['today_format'].setVisible(is_today)
+        w['image_file'].setVisible(is_image)
+        w['image_btn'].setVisible(is_image)
+
+        # Secondary inputs for table type - hide "Файл:" label for alignment
+        w['table_column'].setVisible(is_table)
+        w['lbl_file'].setVisible(False)  # Hidden for alignment with constant type
+        w['lbl_column'].setVisible(is_table)
+
+        # Counter inputs
         w['counter_start'].setVisible(is_counter)
         w['counter_format'].setVisible(is_counter)
         w['lbl_start'].setVisible(is_counter)
         w['lbl_counter_format'].setVisible(is_counter)
-        is_today = (type_name == STRINGS['field_type_today'])
-        w['today_format'].setVisible(is_today)
-        w['lbl_today_format'].setVisible(is_today)
-        is_image = (type_name == STRINGS['field_type_image'])
-        w['image_file'].setVisible(is_image)
-        w['image_btn'].setVisible(is_image)
+
+        # Today format label - hidden for alignment with constant type
+        w['lbl_today_format'].setVisible(False)
+
+        # Image
         w['lbl_image'].setVisible(is_image)
+        w['image_btn'].setVisible(is_image)
 
     def _add_field_dialog(self):
         """Open the 'Add Field' template dialog."""

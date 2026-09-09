@@ -356,8 +356,8 @@ def create_all_basic_fields_template():
                 },
                 "batch": {
                     "sources": {
-                        "clients.xlsx": {"file": "clients.xlsx", "mode": "sequential"},
-                        "managers.xlsx": {"file": "managers.xlsx", "mode": "sequential"}
+                        "clients.xlsx": {"file": "clients.xlsx", "mode": "constant"},
+                        "managers.xlsx": {"file": "managers.xlsx", "mode": "constant"}
                     }
                 }
             }

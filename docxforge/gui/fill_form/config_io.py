@@ -75,10 +75,15 @@ class ConfigIOMixin:
                     bw['lookup_val_combo'].setCurrentIndex(idx)
                 else:
                     bw['lookup_val_combo'].setCurrentText(bsc.lookup_value or '')
-            # Per-table resume checkbox
-            bw['chk_resume'].setChecked(bsc.continue_from_last)
-            # Show/hide based on sequential mode
-            bw['chk_resume'].setVisible(bsc.mode == RowIterationMode.SEQUENTIAL)
+            # Per-table resume checkbox (removed - using counter settings instead)
+            # Load counter settings for sequential/circular modes
+            if bsc.mode in (RowIterationMode.SEQUENTIAL, RowIterationMode.CIRCULAR):
+                if bsc.counter_column:
+                    idx = bw['counter_col_combo'].findText(bsc.counter_column)
+                    if idx >= 0:
+                        bw['counter_col_combo'].setCurrentIndex(idx)
+                if bsc.counter_current_row > 1:
+                    bw['counter_row_spin'].setValue(bsc.counter_current_row)
         if self.config.total_docs is not None:
             self.chk_auto_docs.setChecked(False)
             self.spin_total_docs.setValue(self.config.total_docs)
@@ -89,7 +94,7 @@ class ConfigIOMixin:
         # Filename template
         if self.config.filename_template:
             self.edit_filename_template.setText(self.config.filename_template)
-        self.chk_continue.setChecked(self.config.resume.continue_from_last)
+        # Per-source continue_from_last is loaded in _rebuild_batch_source_rows
         self._update_resume_info()
 
     def _connect_autosave(self):
@@ -105,13 +110,15 @@ class ConfigIOMixin:
             w['image_file'].textChanged.connect(self._schedule_save)
         self.spin_total_docs.valueChanged.connect(self._schedule_save)
         self.chk_auto_docs.toggled.connect(self._schedule_save)
-        self.chk_continue.toggled.connect(self._schedule_save)
         for df, bw in self.batch_source_widgets.items():
             bw['radio_constant'].toggled.connect(self._schedule_save)
             bw['radio_sequential'].toggled.connect(self._schedule_save)
             bw['radio_circular'].toggled.connect(self._schedule_save)
             bw['lookup_col_combo'].currentTextChanged.connect(self._schedule_save)
             bw['lookup_val_combo'].currentTextChanged.connect(self._schedule_save)
+            # New counter widgets
+            bw['counter_col_combo'].currentTextChanged.connect(self._schedule_save)
+            bw['counter_row_spin'].valueChanged.connect(self._schedule_save)
 
     def _schedule_save(self, *_args):
         if not self._autosave_enabled:

@@ -70,6 +70,9 @@ class BatchSourceConfig:
     lookup_value: Optional[str] = None   # value to find in lookup_column
     # Per-table resume: continue from last row for this specific table
     continue_from_last: bool = True
+    # Per-source counter settings (for sequential and circular modes)
+    counter_column: Optional[str] = None  # column to use as counter
+    counter_current_row: int = 1          # current row number (1-based)
 
 
 @dataclass
@@ -149,6 +152,8 @@ class Project:
                     lookup_column=bdata.get('lookup_column'),
                     lookup_value=bdata.get('lookup_value'),
                     continue_from_last=bdata.get('continue_from_last', True),
+                    counter_column=bdata.get('counter_column'),
+                    counter_current_row=bdata.get('counter_current_row', 1),
                 )
             tc.total_docs = tpl_data.get('batch', {}).get('total_docs')
             tc.filename_template = tpl_data.get('batch', {}).get('filename_template')
@@ -214,6 +219,11 @@ class Project:
                             bd['lookup_value'] = bsc.lookup_value
                     # Per-table resume setting
                     bd['continue_from_last'] = bsc.continue_from_last
+                    # Counter settings for sequential/circular
+                    if bsc.counter_column is not None:
+                        bd['counter_column'] = bsc.counter_column
+                    if bsc.counter_current_row != 1:
+                        bd['counter_current_row'] = bsc.counter_current_row
                     batch['sources'][bname] = bd
             if tc.total_docs is not None:
                 batch['total_docs'] = tc.total_docs

@@ -47,6 +47,7 @@ class ConfigCollectorMixin:
         # if hasattr(self, 'aggr_layout'):
         #     for i in range(self.aggr_layout.count()):
         #         ...
+        resume_sources = {}
         for df, bw in self.batch_source_widgets.items():
             mode = RowIterationMode.CONSTANT
             if bw['radio_sequential'].isChecked():
@@ -57,8 +58,11 @@ class ConfigCollectorMixin:
             if mode == RowIterationMode.CONSTANT:
                 bsc.lookup_column = bw['lookup_col_combo'].currentText() or None
                 bsc.lookup_value = bw['lookup_val_combo'].currentText() or None
-            # Per-table resume checkbox (for sequential mode)
-            bsc.continue_from_last = bw['chk_resume'].isChecked()
+            # Per-source counter settings (for sequential and circular modes)
+            if mode in (RowIterationMode.SEQUENTIAL, RowIterationMode.CIRCULAR):
+                bsc.counter_column = bw['counter_col_combo'].currentText() or None
+                bsc.counter_current_row = bw['counter_row_spin'].value()
+            # Global continue_from_last is no longer used; per-source continue is in BatchSourceConfig
             config.batch_sources[df] = bsc
         if self.chk_auto_docs.isChecked():
             config.total_docs = None
@@ -66,11 +70,15 @@ class ConfigCollectorMixin:
             config.total_docs = self.spin_total_docs.value()
         # Filename template
         config.filename_template = self.edit_filename_template.text().strip() or None
+        # Build resume state from per-source counters
+        resume_sources = {}
+        for df, bw in self.batch_source_widgets.items():
+            if bw['radio_sequential'].isChecked() or bw['radio_circular'].isChecked():
+                resume_sources[df] = bw['counter_row_spin'].value() - 1  # 0-based
         config.resume = ResumeState(
             last_counter_value=self.config.resume.last_counter_value,
-            sources=dict(self.config.resume.sources),
-            continue_from_last=self.chk_continue.isChecked(),
+            sources=resume_sources,
+            continue_from_last=True,  # Legacy field, kept for compatibility
         )
         config.ui_state = {}
         return config
-

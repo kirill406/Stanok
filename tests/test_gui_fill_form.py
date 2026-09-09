@@ -160,10 +160,12 @@ class TestFillForm:
         assert not dlg.spin_total_docs.isVisible()
 
     def test_batch_source_modes(self, qtbot, sample_project):
-        """Test batch source radio buttons."""
+        """Test batch source radio buttons and counter settings."""
         dlg = FillForm(sample_project, 'all_fields.docx')
         qtbot.addWidget(dlg)
         dlg.show()
+        qtbot.waitExposed(dlg)
+        QTest.qWait(100)
 
         # Should have batch sources for each data file
         assert len(dlg.batch_source_widgets) >= 2  # clients.xlsx, managers.xlsx
@@ -172,34 +174,67 @@ class TestFillForm:
             # Check that one of the radio buttons is checked (default)
             assert bw['radio_constant'].isChecked() or bw['radio_sequential'].isChecked() or bw['radio_circular'].isChecked()
             
-            # Switch to sequential
+            # Default: constant mode - lookup panel visible, counter panel hidden
+            assert bw['lookup_panel'].isVisible()
+            assert not bw['counter_panel'].isVisible()
+            
+            # Switch to sequential - counter panel should appear
             bw['radio_sequential'].setChecked(True)
             QTest.qWait(100)
-            assert bw['chk_resume'].isVisible()
+            assert bw['counter_panel'].isVisible()
+            assert not bw['lookup_panel'].isVisible()
+            # Should have counter column combo and row spin
+            assert 'counter_col_combo' in bw
+            assert 'counter_row_spin' in bw
             
-            # Switch to circular
+            # Switch to circular - counter panel should still be visible
             bw['radio_circular'].setChecked(True)
             QTest.qWait(100)
-            assert not bw['chk_resume'].isVisible()
+            assert bw['counter_panel'].isVisible()
+            
+            # Switch back to constant - lookup panel visible, counter panel hidden
+            bw['radio_constant'].setChecked(True)
+            QTest.qWait(100)
+            assert bw['lookup_panel'].isVisible()
+            assert not bw['counter_panel'].isVisible()
 
-    def test_continue_from_last_per_table(self, qtbot, sample_project):
-        """Test continue from last row checkbox per table."""
+    def test_per_source_counter_settings(self, qtbot, sample_project):
+        """Test per-source counter column and current row settings."""
         dlg = FillForm(sample_project, 'all_fields.docx')
         qtbot.addWidget(dlg)
         dlg.show()
+        qtbot.waitExposed(dlg)
+        QTest.qWait(100)
 
         for df, bw in dlg.batch_source_widgets.items():
             # Enable sequential mode
             bw['radio_sequential'].setChecked(True)
             QTest.qWait(50)
             
-            # Checkbox should be visible and checked by default
-            assert bw['chk_resume'].isVisible()
-            assert bw['chk_resume'].isChecked()
+            # Counter panel should be visible with column combo and row spin
+            assert bw['counter_panel'].isVisible()
+            assert 'counter_col_combo' in bw
+            assert 'counter_row_spin' in bw
             
-            # Uncheck
-            bw['chk_resume'].setChecked(False)
-            assert not bw['chk_resume'].isChecked()
+            # Counter column combo should have columns
+            assert bw['counter_col_combo'].count() > 0
+            
+            # Counter row spin should have default value 1
+            assert bw['counter_row_spin'].value() == 1
+            
+            # Change counter column
+            if bw['counter_col_combo'].count() > 0:
+                bw['counter_col_combo'].setCurrentIndex(0)
+                QTest.qWait(50)
+            
+            # Change current row
+            bw['counter_row_spin'].setValue(5)
+            assert bw['counter_row_spin'].value() == 5
+            
+            # Switch to circular - counter settings should persist
+            bw['radio_circular'].setChecked(True)
+            QTest.qWait(50)
+            assert bw['counter_row_spin'].value() == 5
 
     def test_validate_button(self, qtbot, sample_project, monkeypatch):
         """Test validate button saves config."""

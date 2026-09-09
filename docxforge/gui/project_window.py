@@ -13,6 +13,7 @@ from PyQt5.QtGui import QFont
 
 from docxforge.gui.fill_form import FillForm
 from docxforge.engine.data_reader import DataReader
+from .strings import STRINGS
 
 logger = logging.getLogger(__name__)
 
@@ -144,12 +145,33 @@ class ProjectWindow(QMainWindow):
                 self._scan_dir(full, item, root_dir)
             elif name.endswith('.docx'):
                 item = QTreeWidgetItem(parent if isinstance(parent, QTreeWidget) else [parent])
-                item.setText(0, '📄 %s' % name)
+                item.setText(0, '\U0001f4c4 %s' % name)
                 item.setText(1, rel)
-                btn = QPushButton('Заполнить')
-                btn.setFont(QFont('Segoe UI', 8))
-                btn.clicked.connect(lambda checked, p=rel: self._open_fill_form(p))
-                self.templates_tree.setItemWidget(item, 1, btn)
+
+                # Create widget with both Fill and Delete buttons
+                btn_widget = QWidget()
+                btn_layout = QHBoxLayout(btn_widget)
+                btn_layout.setContentsMargins(2, 2, 2, 2)
+                btn_layout.setSpacing(4)
+
+                btn_fill = QPushButton(STRINGS.get('project_fill_template', 'Заполнить'))
+                btn_fill.setFont(QFont('Segoe UI', 8))
+                btn_fill.clicked.connect(lambda checked, p=rel: self._open_fill_form(p))
+                btn_layout.addWidget(btn_fill)
+
+                btn_delete = QToolButton()
+                btn_delete.setText('\U0001f5d1')
+                btn_delete.setFont(QFont('Segoe UI', 10))
+                btn_delete.setToolTip(STRINGS.get('project_delete_template', 'Удалить шаблон'))
+                btn_delete.setFixedSize(28, 28)
+                btn_delete.setStyleSheet("""
+                    QToolButton { background-color: transparent; border: none; border-radius: 4px; }
+                    QToolButton:hover { background-color: #ffe0e0; }
+                """)
+                btn_delete.clicked.connect(lambda checked, p=rel: self._delete_template(p))
+                btn_layout.addWidget(btn_delete)
+
+                self.templates_tree.setItemWidget(item, 1, btn_widget)
 
     def _on_tree_double_click(self, item):
         if item and item.childCount() == 0 and item.text(1):
@@ -189,6 +211,38 @@ class ProjectWindow(QMainWindow):
             if not os.path.exists(dest):
                 shutil.copy2(file, dest)
             self._scan_project()
+
+    def _delete_template(self, rel_path):
+        """Delete a single template file with confirmation."""
+        full_path = os.path.join(self.project_dir, 'Шаблоны', rel_path)
+        if not os.path.exists(full_path):
+            QMessageBox.warning(self, STRINGS['msg_warning'], 
+                                STRINGS['msg_template_not_found'])
+            return
+
+        # Show confirmation dialog
+        reply = QMessageBox.question(
+            self, STRINGS.get('project_delete_template', 'Удалить шаблон'),
+            STRINGS['project_delete_template_confirm'].format(name=rel_path),
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        if reply != QMessageBox.Yes:
+            return
+
+        try:
+            os.remove(full_path)
+            logger.info(f"Deleted template: {rel_path}")
+        except Exception as e:
+            logger.error(f"Failed to delete template {rel_path}: {e}")
+            QMessageBox.critical(self, STRINGS['msg_error'], 
+                                 'Не удалось удалить шаблон: %s' % str(e))
+            return
+
+        # Refresh the project tree
+        self._scan_project()
+        QMessageBox.information(self, STRINGS['msg_info'], 
+                                'Шаблон "%s" удалён.' % rel_path)
 
     def _delete_project(self):
         """Delete project files and templates, but keep data and output folders."""

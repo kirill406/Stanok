@@ -19,6 +19,8 @@ STRINGS = {
     'project_fill_template': 'Заполнить шаблон',
     'project_delete': '🗑 Удалить проект',
     'project_delete_confirm': 'Удалить проект "{name}"?\nБудут удалены: Шаблоны/ и файл проекта.\nДанные/ и Результаты/ сохранятся.',
+    'project_delete_template': '🗑 Удалить шаблон',
+    'project_delete_template_confirm': 'Удалить шаблон "{name}"?\nФайл будет удалён безвозвратно.',
 
     # Fill form dialog
     'fill_window_title': 'Заполнение: {template}',

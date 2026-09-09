@@ -35,6 +35,7 @@ htmlcov/
 # === Project data (user data, not tracked) ===
 test_project/
 test_project_cli/
+test_project_gui/
 
 # === Build artifacts ===
 *.spec

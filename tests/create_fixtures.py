@@ -367,7 +367,21 @@ def create_all_basic_fields_template():
         json.dump(config, f, ensure_ascii=False, indent=2)
 
 
-if __name__ == '__main__':
+def create_all_fixtures(base_dir):
+    """Create all test fixtures in the given directory."""
+    global FIXTURES_DIR
+    FIXTURES_DIR = base_dir
+    
+    create_simple_template()
+    create_cycle_template()
+    create_aggregation_template()
+    create_batch_modes_template()
+    create_counter_template()
+    create_today_template()
     create_all_basic_fields_template()
+
+
+if __name__ == '__main__':
+    create_all_fixtures(FIXTURES_DIR)
     print('Created: all_basic_fields')
     print('All fixtures created!')

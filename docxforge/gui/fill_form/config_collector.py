@@ -40,52 +40,13 @@ class ConfigCollectorMixin:
                     fm.linked_to = seen_tables[fm.file]
                 else:
                     seen_tables[fm.file] = fn
-        for i in range(self.cycles_layout.count()):
-            grp = self.cycles_layout.itemAt(i).widget()
-            if not isinstance(grp, QGroupBox):
-                continue
-            vb = grp.layout()
-            if vb.count() < 2:
-                continue
-            top = vb.itemAt(0).layout()
-            file_combo = top.itemAt(1).widget()
-            cols_layout = grp.property('cols_layout')
-            if not cols_layout:
-                continue
-            columns = {}
-            for r in range(cols_layout.rowCount()):
-                nw = cols_layout.itemAtPosition(r, 1)
-                vw = cols_layout.itemAtPosition(r, 3)
-                if nw and vw:
-                    n = nw.widget().text().strip()
-                    v = vw.widget().currentText().strip()
-                    if n and v:
-                        columns[n] = v
-            if file_combo.currentText() and columns:
-                config.cycles.append(CycleMapping(table=file_combo.currentText(), columns=columns))
-        for i in range(self.aggr_layout.count()):
-            grp = self.aggr_layout.itemAt(i).widget()
-            if not isinstance(grp, QGroupBox):
-                continue
-            vb = grp.layout()
-            top = vb.itemAt(0).layout()
-            aname = top.itemAt(1).widget().text().strip()
-            mid = vb.itemAt(1).layout()
-            func_str = mid.itemAt(1).widget().currentText()
-            table = mid.itemAt(3).widget().currentText()
-            column = mid.itemAt(5).widget().currentText()
-            mult_w = mid.itemAt(7).widget()
-            if not aname or not table or not column:
-                continue
-            if func_str == 'sum * \u0447\u0438\u0441\u043b\u043e':
-                func = AggregationFunction.SUM_MULTIPLY
-                multiplier = float(mult_w.text() or '1')
-            elif func_str in ('sum', 'count', 'max', 'min'):
-                func = AggregationFunction(func_str)
-                multiplier = None
-            else:
-                continue
-            config.aggregations[aname] = AggregationMapping(function=func, table=table, column=column, multiplier=multiplier)
+        # Cycles and aggregations removed from UI - skip collection
+        # if hasattr(self, 'cycles_layout'):
+        #     for i in range(self.cycles_layout.count()):
+        #         ...
+        # if hasattr(self, 'aggr_layout'):
+        #     for i in range(self.aggr_layout.count()):
+        #         ...
         for df, bw in self.batch_source_widgets.items():
             mode = RowIterationMode.CONSTANT
             if bw['radio_sequential'].isChecked():

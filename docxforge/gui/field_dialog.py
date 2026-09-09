@@ -220,6 +220,10 @@ class FieldTemplateDialog(QDialog):
         if not result.get('field_name', '').strip():
             return  # silently ignore — user needs to enter a name
 
+        # Check for duplicate field names
+        if hasattr(self, 'existing_fields') and result.get('field_name', '').strip() in self.existing_fields:
+            return  # silently ignore — duplicate field name
+
         self.result_data = result
         self.accept()
 

@@ -58,8 +58,6 @@ class FillForm(FieldRowsMixin, AdvancedSectionMixin, BatchSectionMixin, ConfigIO
         self.columns_cache = {}
 
         self.setWindowTitle(STRINGS['fill_window_title'].format(template=os.path.basename(self.template_path)))
-        # Open maximized (full screen)
-        self.showMaximized()
         self._autosave_enabled = False
 
         self._save_timer = QTimer(self)
@@ -73,6 +71,9 @@ class FillForm(FieldRowsMixin, AdvancedSectionMixin, BatchSectionMixin, ConfigIO
         self._populate_fields()
         self._load_existing_config()
         self._connect_autosave()
+
+        # Open maximized (full screen) - call after UI is built
+        self.showMaximized()
 
     def _scan_data_files(self):
         data_dir = os.path.join(self.project_dir, '\u0414\u0430\u043d\u043d\u044b\u0435')

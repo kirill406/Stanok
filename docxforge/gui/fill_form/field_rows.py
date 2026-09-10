@@ -31,6 +31,7 @@ class FieldRowsMixin:
         group = QGroupBox()
         row = QHBoxLayout(group)
         row.setContentsMargins(8, 4, 8, 4)
+        row.setSpacing(6)  # Fixed spacing between label, type combo, and stack
 
         label = QLabel(field_name)
         label.setMinimumWidth(150)
@@ -40,6 +41,7 @@ class FieldRowsMixin:
         type_combo = QComboBox()
         type_combo.addItems(FIELD_TYPES)
         type_combo.setCurrentText(preset_type)
+        type_combo.setFixedWidth(140)  # Static width for all type combos
         type_combo.currentTextChanged.connect(
             lambda t, fn=field_name: self._on_type_changed(fn, t))
         type_combo.installEventFilter(self._wheel_filter)
@@ -136,7 +138,7 @@ class FieldRowsMixin:
         stack_layout.addWidget(image_file)
         stack_layout.addWidget(image_btn)
 
-        row.addWidget(stack)
+        row.addWidget(stack, 1)  # Stretch factor 1: stack expands, label and type_combo stay fixed
         self.fields_layout.addWidget(group)
         self._on_type_changed(field_name, preset_type)
 

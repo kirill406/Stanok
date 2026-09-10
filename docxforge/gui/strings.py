@@ -3,7 +3,7 @@
 
 STRINGS = {
     # Main window
-    'main_window_title': 'DocxForge',
+    'main_window_title': 'Станок',
     'main_create_project': 'Создать проект',
     'main_open_project': 'Открыть проект',
     'main_recent_projects': 'Недавние проекты',

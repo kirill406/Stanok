@@ -1,5 +1,5 @@
 ﻿# -*- coding: utf-8 -*-
-"""DocxForge entry point."""
+"""Станок entry point."""
 
 import sys
 import os
@@ -24,5 +24,5 @@ if __name__ == '__main__':
     try:
         run()
     except Exception as e:
-        logging.exception("Fatal error in DocxForge")
+        logging.exception("Fatal error in Станок")
         sys.exit(1)

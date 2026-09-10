@@ -25,7 +25,7 @@ class ProjectWindow(QMainWindow):
         self.main_window = main_window
         self.data_reader = DataReader()
 
-        self.setWindowTitle('DocxForge — %s' % os.path.basename(project_dir))
+        self.setWindowTitle('Станок — %s' % os.path.basename(project_dir))
         self._build_ui()
         self._scan_project()
         self.showMaximized()  # Open in full screen

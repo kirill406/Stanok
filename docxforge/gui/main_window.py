@@ -107,10 +107,10 @@ class RecentProjectWidget(QWidget):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle('DocxForge')
+        self.setWindowTitle('Станок')
         self.setMinimumSize(550, 500)
         self.resize(700, 600)
-        self.settings = QSettings('DocxForge', 'MainWindow')
+        self.settings = QSettings('Станок', 'MainWindow')
         self.recent_projects = self._load_recent()
         self._build_ui()
         self._center()
@@ -129,7 +129,7 @@ class MainWindow(QMainWindow):
         layout.setSpacing(15)
 
         # Title
-        title = QLabel('DocxForge')
+        title = QLabel('Станок')
         title.setFont(QFont('Segoe UI', 22, QFont.Bold))
         title.setAlignment(Qt.AlignCenter)
         layout.addWidget(title)

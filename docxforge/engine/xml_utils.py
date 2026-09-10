@@ -29,9 +29,12 @@ def set_run_text(run, text: str):
 
 def clone_run_with_text(template_run, text: str):
     new_run = etree.Element(W_NS + 'r')
-    rpr = template_run.find(W_NS + 'rPr')
-    if rpr is not None:
-        new_run.append(deepcopy(rpr))
+    # Copy all child elements except <w:t> (text) which will be replaced
+    for child in template_run:
+        tag = child.tag
+        if tag == W_NS + 't':
+            continue
+        new_run.append(deepcopy(child))
     set_run_text(new_run, text)
     return new_run
 

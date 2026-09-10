@@ -132,9 +132,34 @@ def merge_and_replace_paragraph(paragraph, field_values: Dict[str, str]):
         for nr in new_runs:
             prev.addnext(nr)
             prev = nr
+        last_new = prev
+    else:
+        last_new = runs[-1] if runs else None
+
+    # Identify runs to preserve: those with non-text content (w:br, w:drawing, etc.)
+    # but no text content - these should not be removed
+    runs_to_preserve = []
+    for run in runs:
+        has_text = run_text(run) != ''
+        has_non_text = any(
+            child.tag != W_NS + 't' and child.tag != W_NS + 'rPr'
+            for child in run
+        )
+        if not has_text and has_non_text:
+            runs_to_preserve.append(run)
 
     for run in runs:
-        paragraph.remove(run)
+        if run not in runs_to_preserve:
+            paragraph.remove(run)
+
+    # Move preserved runs to the end (after all new content)
+    if runs_to_preserve and last_new is not None:
+        prev = last_new
+        for run in runs_to_preserve:
+            # Move the run to after last_new
+            run.getparent().remove(run)
+            prev.addnext(run)
+            prev = run
 
 
 def expand_table_cycle(table_element, cycle: CycleMapping,

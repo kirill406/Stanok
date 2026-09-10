@@ -179,6 +179,15 @@ class FillForm(FieldRowsMixin, AdvancedSectionMixin, BatchSectionMixin, ConfigIO
         filename_row.addWidget(self.edit_filename_template)
         batch_layout.addLayout(filename_row)
 
+        # Directory template row
+        directory_row = QHBoxLayout()
+        directory_row.addWidget(QLabel(STRINGS['fill_directory_template']))
+        self.edit_directory_template = QLineEdit()
+        self.edit_directory_template.setPlaceholderText(STRINGS['fill_directory_placeholder'])
+        self.edit_directory_template.setToolTip(STRINGS['fill_directory_tooltip'])
+        directory_row.addWidget(self.edit_directory_template)
+        batch_layout.addLayout(directory_row)
+
         total_row = QHBoxLayout()
         total_row.addWidget(QLabel(STRINGS['fill_total_docs']))
         self.spin_total_docs = QSpinBox()

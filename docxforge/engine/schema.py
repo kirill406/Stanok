@@ -91,6 +91,7 @@ class TemplateConfig:
     batch_sources: Dict[str, BatchSourceConfig] = field(default_factory=dict)
     total_docs: Optional[int] = None  # None = auto (min rows of SEQUENTIAL sources)
     filename_template: Optional[str] = None  # Template for output filenames
+    directory_template: Optional[str] = None  # Template for output subdirectories
     resume: ResumeState = field(default_factory=ResumeState)
     ui_state: Dict[str, Any] = field(default_factory=dict)  # UI-specific state
 
@@ -229,6 +230,8 @@ class Project:
                 batch['total_docs'] = tc.total_docs
             if tc.filename_template is not None:
                 batch['filename_template'] = tc.filename_template
+            if tc.directory_template is not None:
+                batch['directory_template'] = tc.directory_template
             if batch:
                 td['batch'] = batch
 

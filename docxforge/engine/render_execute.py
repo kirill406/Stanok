@@ -158,6 +158,7 @@ def execute_render(renderer, template_rel_path: str,
         out_path = write_output_doc(
             zdata, output_dir, template_rel_path, doc_index, total_docs, batch_primary,
             filename_template=config.filename_template,
+            directory_template=config.directory_template,
             effective_values=effective)
 
         outputs.append(out_path)

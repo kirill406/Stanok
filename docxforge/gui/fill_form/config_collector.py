@@ -70,6 +70,8 @@ class ConfigCollectorMixin:
             config.total_docs = self.spin_total_docs.value()
         # Filename template
         config.filename_template = self.edit_filename_template.text().strip() or None
+        # Directory template
+        config.directory_template = self.edit_directory_template.text().strip() or None
         # Build resume state from per-source counters
         resume_sources = {}
         for df, bw in self.batch_source_widgets.items():

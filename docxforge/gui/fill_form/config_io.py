@@ -94,6 +94,9 @@ class ConfigIOMixin:
         # Filename template
         if self.config.filename_template:
             self.edit_filename_template.setText(self.config.filename_template)
+        # Directory template
+        if self.config.directory_template:
+            self.edit_directory_template.setText(self.config.directory_template)
         # Per-source continue_from_last is loaded in _rebuild_batch_source_rows
         self._update_resume_info()
 
@@ -108,6 +111,8 @@ class ConfigIOMixin:
             w['counter_format'].currentTextChanged.connect(self._schedule_save)
             w['today_format'].currentTextChanged.connect(self._schedule_save)
             w['image_file'].textChanged.connect(self._schedule_save)
+        self.edit_filename_template.textChanged.connect(self._schedule_save)
+        self.edit_directory_template.textChanged.connect(self._schedule_save)
         self.spin_total_docs.valueChanged.connect(self._schedule_save)
         self.chk_auto_docs.toggled.connect(self._schedule_save)
         for df, bw in self.batch_source_widgets.items():

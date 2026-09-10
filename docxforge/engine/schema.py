@@ -231,6 +231,8 @@ class Project:
                 batch['total_docs'] = tc.total_docs
             if tc.filename_template is not None:
                 batch['filename_template'] = tc.filename_template
+            if tc.directory_template is not None:
+                batch['directory_template'] = tc.directory_template
             if batch:
                 td['batch'] = batch
 

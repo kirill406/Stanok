@@ -218,6 +218,7 @@ def write_output_doc(zdata: dict, output_dir: str,
                      doc_index: int, total_docs: int,
                      batch_primary: Optional[str],
                      filename_template: Optional[str] = None,
+                     directory_template: Optional[str] = None,
                      effective_values: Optional[Dict[str, str]] = None) -> str:
     """Write a single output .docx file and return its path."""
     if filename_template and effective_values:
@@ -234,7 +235,18 @@ def write_output_doc(zdata: dict, output_dir: str,
     else:
         out_name = os.path.basename(template_rel_path).replace(
             '.docx', '_\u0437\u0430\u043f\u043e\u043b\u043d\u0435\u043d.docx')
-    out_path = os.path.join(output_dir, out_name)
+
+    # Process directory template
+    out_dir = output_dir
+    if directory_template and effective_values:
+        dir_path = directory_template
+        for key, value in effective_values.items():
+            dir_path = dir_path.replace('{{ %s }}' % key, str(value))
+            dir_path = dir_path.replace('{{%s}}' % key, str(value))
+        out_dir = os.path.join(output_dir, dir_path)
+        os.makedirs(out_dir, exist_ok=True)
+
+    out_path = os.path.join(out_dir, out_name)
 
     with zipfile.ZipFile(out_path, 'w', zipfile.ZIP_DEFLATED) as zout:
         for name, data in zdata.items():

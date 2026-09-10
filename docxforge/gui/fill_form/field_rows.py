@@ -153,6 +153,10 @@ class FieldRowsMixin:
         is_today = (type_name == STRINGS['field_type_today'])
         is_image = (type_name == STRINGS['field_type_image'])
 
+        # Auto-fill constant value with {{field_name}} when type changes to constant
+        if is_constant and not w['const_value'].text():
+            w['const_value'].setText('{{ %s }}' % field_name)
+
         # Main input area - always show the primary input for the current type
         w['const_value'].setVisible(is_constant)
         w['table_file'].setVisible(is_table)

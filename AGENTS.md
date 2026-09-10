@@ -56,6 +56,7 @@ FirstAgent/
 | scripts/install-hooks.bat | Copies pre-commit.hook into .git/hooks/ |
 |     rufflehog3 --no-history --no-entropy . | Manually scan for secrets |
 | git commit --no-verify | Bypass the pre-commit hook (only when false-positive) |
+|git push -u origin main| Push to cloud|
 
 ## Coding Style & Naming Conventions
 

@@ -68,6 +68,7 @@ STRINGS = {
     'batch_auto_info_no_tables': 'Авто: нет таблиц "По строкам" - задайте количество вручную',
     'batch_counter_column': 'Столбец счётчика:',
     'batch_counter_current_row': 'Текущая строка:',
+    'batch_counter_value': 'Значение строки:',
     'batch_counter_summary': 'Счётчики источников: {counters}',
     'fill_directory_template': 'Шаблон папки:',
     'fill_directory_placeholder': '{{ region }}/{{ city }} (пусто = без подпапок)',

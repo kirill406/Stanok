@@ -70,6 +70,7 @@ class FillForm(FieldRowsMixin, AdvancedSectionMixin, BatchSectionMixin, ConfigIO
         self._build_ui()
         self._populate_fields()
         self._load_existing_config()
+        self._load_last_doc_count()
         self._connect_autosave()
 
         # Open maximized (full screen) - call after UI is built
@@ -82,6 +83,16 @@ class FillForm(FieldRowsMixin, AdvancedSectionMixin, BatchSectionMixin, ConfigIO
         # Filter out temporary Excel files (e.g., ~$filename.xlsx)
         return sorted([f for f in os.listdir(data_dir) 
                        if f.endswith(('.xlsx', '.xls')) and not f.startswith('~$')])
+
+    def _load_last_doc_count(self):
+        """Load last document count from main window settings and apply to spin_total_docs."""
+        main_window = self._get_main_window()
+        if main_window and hasattr(main_window, '_get_last_doc_count'):
+            last_count = main_window._get_last_doc_count(self.project_dir)
+            if last_count and last_count > 1:
+                self.spin_total_docs.setValue(last_count)
+                self.chk_auto_docs.setChecked(False)
+                self.spin_total_docs.setVisible(True)
 
     def _get_columns(self, filename):
         if filename not in self.columns_cache:

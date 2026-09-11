@@ -101,6 +101,33 @@ class FillForm(FieldRowsMixin, AdvancedSectionMixin, BatchSectionMixin, ConfigIO
         """Return list of all field names in form (for linked-to combos)."""
         return list(self.field_widgets.keys())
 
+    def _insert_field_in_filename_template(self, field_name: str):
+        """Insert {{ field_name }} at cursor position in filename template edit."""
+        text = self.edit_filename_template.text()
+        cursor_pos = self.edit_filename_template.cursorPosition()
+        field_template = f"{{{{ {field_name} }}}}"
+        new_text = text[:cursor_pos] + field_template + text[cursor_pos:]
+        self.edit_filename_template.setText(new_text)
+        # Move cursor to after inserted field
+        self.edit_filename_template.setCursorPosition(cursor_pos + len(field_template))
+        self.edit_filename_template.setFocus()
+
+    def _show_insert_field_menu(self):
+        """Show popup menu with available field names for insertion."""
+        fields = self._get_all_fields()
+        if not fields:
+            return
+
+        menu = QMenu(self)
+        for field_name in sorted(fields):
+            action = menu.addAction(field_name)
+            action.triggered.connect(lambda checked, fn=field_name: self._insert_field_in_filename_template(fn))
+
+        # Show menu below the button
+        btn = self.btn_insert_field
+        pos = btn.mapToGlobal(btn.rect().bottomLeft())
+        menu.exec_(pos)
+
     def _build_ui(self):
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(15, 15, 15, 10)
@@ -177,6 +204,10 @@ class FillForm(FieldRowsMixin, AdvancedSectionMixin, BatchSectionMixin, ConfigIO
         self.edit_filename_template.setPlaceholderText(STRINGS['fill_filename_placeholder'])
         self.edit_filename_template.setToolTip(STRINGS['fill_filename_tooltip'])
         filename_row.addWidget(self.edit_filename_template)
+        self.btn_insert_field = QPushButton(STRINGS['fill_insert_field_btn'])
+        self.btn_insert_field.setFont(QFont('Segoe UI', 9))
+        self.btn_insert_field.clicked.connect(self._show_insert_field_menu)
+        filename_row.addWidget(self.btn_insert_field)
         batch_layout.addLayout(filename_row)
 
         # Directory template row

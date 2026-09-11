@@ -170,6 +170,11 @@ class ConfigIOMixin:
                 self, '\u0413\u043e\u0442\u043e\u0432\u043e',
                 '\u0421\u043e\u0437\u0434\u0430\u043d\u043e \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u043e\u0432: %d\n%s' % (
                     len(outputs), '\n'.join(os.path.basename(o) for o in outputs)))
+            # Save template name to main window settings
+            if self.parent() and hasattr(self.parent(), '_set_last_template'):
+                self.parent()._set_last_template(self.project_dir, os.path.basename(self.template_path))
+            if self.parent() and hasattr(self.parent(), '_set_last_doc_count'):
+                self.parent()._set_last_doc_count(self.project_dir, total_docs)
         else:
             QMessageBox.warning(self, '\u041e\u0448\u0438\u0431\u043a\u0430', '\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0441\u043e\u0437\u0434\u0430\u0442\u044c \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b')
 

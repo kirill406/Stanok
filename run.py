@@ -4,14 +4,18 @@
 import sys
 import os
 import logging
+from logging.handlers import RotatingFileHandler
 
 # Setup logging
+log_dir = os.path.dirname(os.path.abspath(__file__))
+log_file = os.path.join(log_dir, 'docxforge.log')
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(sys.stdout),
-        logging.FileHandler('docxforge.log', encoding='utf-8')
+        RotatingFileHandler(log_file, maxBytes=5_000_000, backupCount=3, encoding='utf-8')
     ]
 )
 

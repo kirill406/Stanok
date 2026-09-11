@@ -20,6 +20,7 @@ class BatchSourceRow(QObject):
         self.wheel_filter = wheel_filter
         self.data_reader = data_reader
         self.project_dir = project_dir
+        self._syncing = False
         
         self._build_ui()
         self._connect_signals()
@@ -68,19 +69,19 @@ class BatchSourceRow(QObject):
         lpl.addWidget(self.lvc)
         rl.addWidget(self.lp)
         
-        # Counter panel (for sequential/circular modes)
+# Counter panel (for sequential/circular modes)
         self.counter_panel = QWidget()
         counter_layout = QHBoxLayout(self.counter_panel)
         counter_layout.setContentsMargins(20, 0, 0, 0)
         counter_layout.setSpacing(4)
-        
+
         counter_layout.addWidget(QLabel(STRINGS['batch_counter_column']))
         self.ccc = QComboBox()
         self.ccc.addItems(self.columns)
         self.ccc.setMinimumWidth(100)
         self.ccc.installEventFilter(self.wheel_filter)
         counter_layout.addWidget(self.ccc)
-        
+
         counter_layout.addWidget(QLabel(STRINGS['batch_counter_current_row']))
         self.ccr = QSpinBox()
         self.ccr.setMinimum(1)
@@ -89,7 +90,14 @@ class BatchSourceRow(QObject):
         self.ccr.setMinimumWidth(80)
         self.ccr.installEventFilter(self.wheel_filter)
         counter_layout.addWidget(self.ccr)
-        
+
+        counter_layout.addWidget(QLabel(STRINGS['batch_counter_value']))
+        self.ccv = QComboBox()
+        self.ccv.setEditable(False)
+        self.ccv.setMinimumWidth(150)
+        self.ccv.installEventFilter(self.wheel_filter)
+        counter_layout.addWidget(self.ccv)
+
         counter_layout.addStretch()
         self.counter_panel.setVisible(False)
         rl.addWidget(self.counter_panel)
@@ -118,6 +126,13 @@ class BatchSourceRow(QObject):
                         self.lvc.setCurrentIndex(0)
         self.lcc.currentTextChanged.connect(on_lcc)
         
+        # Counter column change - populate value combo
+        self.ccc.currentTextChanged.connect(self._on_counter_column_changed)
+        
+        # Bidirectional sync: row spin <-> value combo
+        self.ccr.valueChanged.connect(self._on_counter_row_changed)
+        self.ccv.currentIndexChanged.connect(self._on_counter_value_changed)
+        
         # Mode change signals - use bound methods
         self.rc.toggled.connect(self._on_mode_changed)
         self.rs.toggled.connect(self._on_mode_changed)
@@ -131,6 +146,66 @@ class BatchSourceRow(QObject):
         # Auto-info update
         self.rc.toggled.connect(self.parent._update_auto_info)
         self.rs.toggled.connect(self.parent._update_auto_info)
+    
+    def _load_counter_values(self):
+        """Load distinct values from counter column into ccv combo."""
+        col = self.ccc.currentText()
+        self.ccv.clear()
+        if not col:
+            return
+        path = os.path.join(self.project_dir, 'Данные', self.df)
+        if os.path.exists(path):
+            values = self.data_reader.get_distinct_values(path, col)
+            self.ccv.addItems(values)
+            # Update spin max based on row count
+            all_data = self.data_reader.read_excel(path)
+            if all_data:
+                self.ccr.setMaximum(len(all_data))
+                if self.ccr.value() > len(all_data):
+                    self.ccr.setValue(len(all_data))
+    
+    @pyqtSlot(str)
+    def _on_counter_column_changed(self, col):
+        """Handle counter column change - reload values and reset spin."""
+        self._load_counter_values()
+        self.ccr.setValue(1)
+        self._sync_combo_from_spin()
+    
+    @pyqtSlot(int)
+    def _on_counter_row_changed(self, row):
+        """Handle spin value change - update combo to value at that row."""
+        if self._syncing:
+            return
+        self._syncing = True
+        self._sync_combo_from_spin()
+        self._syncing = False
+    
+    @pyqtSlot(int)
+    def _on_counter_value_changed(self, index):
+        """Handle combo selection change - update spin to matching row (1-based)."""
+        if self._syncing or index < 0:
+            return
+        self._syncing = True
+        self._sync_spin_from_combo(index)
+        self._syncing = False
+    
+    def _sync_combo_from_spin(self):
+        """Update combo to show value at current spin row index."""
+        row = self.ccr.value()
+        if row <= 0 or row > self.ccv.count():
+            return
+        self.ccv.blockSignals(True)
+        self.ccv.setCurrentIndex(row - 1)
+        self.ccv.blockSignals(False)
+    
+    def _sync_spin_from_combo(self, index):
+        """Update spin to match selected combo index (1-based)."""
+        row = index + 1
+        if row < 1 or row > self.ccr.maximum():
+            return
+        self.ccr.blockSignals(True)
+        self.ccr.setValue(row)
+        self.ccr.blockSignals(False)
     
     @pyqtSlot(bool)
     def _on_rc_toggled(self, checked):
@@ -169,6 +244,9 @@ class BatchSourceRow(QObject):
         if (is_sequential or is_circular) and self.ccc.count() > 0:
             if self.ccc.currentIndex() < 0:
                 self.ccc.setCurrentIndex(0)
+            # Ensure counter values are loaded when panel becomes visible
+            if self.ccv.count() == 0:
+                self._load_counter_values()
     
     def _set_initial_state(self):
         self.rc.setChecked(True)
@@ -179,6 +257,12 @@ class BatchSourceRow(QObject):
             # Set to -1 first to ensure signal emission when setting to 0
             self.lcc.setCurrentIndex(-1)
             self.lcc.setCurrentIndex(0)
+        
+        # Initialize counter column and load values
+        if self.ccc.count() > 0:
+            if self.ccc.currentIndex() < 0:
+                self.ccc.setCurrentIndex(0)
+            self._load_counter_values()
     
     def get_widgets_dict(self):
         """Return dictionary of widgets for external access."""
@@ -192,6 +276,7 @@ class BatchSourceRow(QObject):
             'counter_panel': self.counter_panel,
             'counter_col_combo': self.ccc,
             'counter_row_spin': self.ccr,
+            'counter_val_combo': self.ccv,
             'chk_resume': self.chk_resume,
         }
 

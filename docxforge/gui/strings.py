@@ -34,6 +34,7 @@ STRINGS = {
     'fill_filename_template': 'Шаблон имени файла:',
     'fill_filename_placeholder': '{{ doc_number }}_{{ client_name }} (пусто = авто)',
     'fill_filename_tooltip': 'Используйте {{ field_name }} для подстановки значений полей. Пусто = автоматическое именование.',
+    'fill_insert_field_btn': 'Вставить поле',
     'fill_total_docs': 'Количество документов:',
     'fill_auto_checkbox': 'Авто',
     'fill_continue_checkbox': 'Продолжить с последней строки',

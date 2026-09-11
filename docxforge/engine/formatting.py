@@ -50,6 +50,7 @@ def format_today(fmt: str, dt: datetime = None) -> str:
     months_ru = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
                  'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря']
     result = fmt
+    result = result.replace('month', months_ru[dt.month - 1])
     result = result.replace('MM:название_месяца', months_ru[dt.month - 1])
     result = result.replace('dd', dt.strftime('%d'))
     result = result.replace('MM', dt.strftime('%m'))

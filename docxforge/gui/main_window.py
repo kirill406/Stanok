@@ -33,13 +33,14 @@ SETTINGS_FILE = get_settings_path()
 
 
 class RecentProjectWidget(QWidget):
-    """Widget for a single recent project with generate button, doc count, and delete button."""
+    """Widget for a single recent project with generate button, doc count, template name, and delete button."""
 
-    def __init__(self, project_path: str, main_window: 'MainWindow', last_doc_count: int = 1):
+    def __init__(self, project_path: str, main_window: 'MainWindow', last_doc_count: int = 1, last_template_name: str = ''):
         super().__init__()
         self.project_path = project_path
         self.main_window = main_window
         self.last_doc_count = last_doc_count
+        self.last_template_name = last_template_name
         self._build_ui()
 
     def _build_ui(self):
@@ -59,6 +60,16 @@ class RecentProjectWidget(QWidget):
         path_label.setStyleSheet('color: #888;')
         path_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         layout.addWidget(path_label)
+
+        # Last template name (if any)
+        if self.last_template_name:
+            template_label = QLabel('📄 ' + self.last_template_name)
+            template_label.setFont(QFont('Segoe UI', 9))
+            template_label.setStyleSheet('color: #0078d4;')
+            template_label.setMinimumWidth(150)
+            template_label.setMaximumWidth(250)
+            template_label.setToolTip('Последний использованный шаблон: ' + self.last_template_name)
+            layout.addWidget(template_label)
 
         # Spin box for number of documents
         self.spin_docs = QSpinBox()
@@ -196,9 +207,10 @@ class MainWindow(QMainWindow):
         for path in self.recent_projects:
             if os.path.exists(path):
                 last_count = self._get_last_doc_count(path)
+                last_template = self._get_last_template(path)
                 item = QListWidgetItem()
                 item.setData(Qt.UserRole, path)
-                widget = RecentProjectWidget(path, self, last_count)
+                widget = RecentProjectWidget(path, self, last_count, last_template)
                 item.setSizeHint(widget.sizeHint())
                 self.recent_list.addItem(item)
                 self.recent_list.setItemWidget(item, widget)
@@ -261,13 +273,15 @@ class MainWindow(QMainWindow):
             self._save_recent()
             self._refresh_recent_list()
 
-    def _add_recent(self, path):
+    def _add_recent(self, path, template_name: str = ''):
         path = os.path.abspath(path)
         if path in self.recent_projects:
             self.recent_projects.remove(path)
         self.recent_projects.insert(0, path)
         self.recent_projects = self.recent_projects[:10]
         self._save_recent()
+        if template_name:
+            self._set_last_template(path, template_name)
         self._refresh_recent_list()
 
     def _get_last_doc_count(self, path: str) -> int:
@@ -280,13 +294,38 @@ class MainWindow(QMainWindow):
             pass
         return 1
 
+    def _get_last_template(self, path: str) -> str:
+        try:
+            if os.path.exists(SETTINGS_FILE):
+                with open(SETTINGS_FILE, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    return data.get('last_templates', {}).get(path, '')
+        except Exception:
+            pass
+        return ''
+
     def _set_last_doc_count(self, path: str, count: int):
         try:
-            data = {'recent_projects': self.recent_projects, 'doc_counts': {}}
+            data = {'recent_projects': self.recent_projects, 'doc_counts': {}, 'last_templates': {}}
             if os.path.exists(SETTINGS_FILE):
                 with open(SETTINGS_FILE, 'r', encoding='utf-8') as f:
                     data = json.load(f)
             data.setdefault('doc_counts', {})[path] = count
+            data.setdefault('last_templates', {})
+            data['recent_projects'] = self.recent_projects
+            with open(SETTINGS_FILE, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+
+    def _set_last_template(self, path: str, template_name: str):
+        try:
+            data = {'recent_projects': self.recent_projects, 'doc_counts': {}, 'last_templates': {}}
+            if os.path.exists(SETTINGS_FILE):
+                with open(SETTINGS_FILE, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+            data.setdefault('doc_counts', {})
+            data.setdefault('last_templates', {})[path] = template_name
             data['recent_projects'] = self.recent_projects
             with open(SETTINGS_FILE, 'w', encoding='utf-8') as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
@@ -337,12 +376,13 @@ class MainWindow(QMainWindow):
 
     def _save_recent(self):
         try:
-            data = {'recent_projects': self.recent_projects, 'doc_counts': {}}
+            data = {'recent_projects': self.recent_projects, 'doc_counts': {}, 'last_templates': {}}
             if os.path.exists(SETTINGS_FILE):
                 with open(SETTINGS_FILE, 'r', encoding='utf-8') as f:
                     existing = json.load(f)
                     if isinstance(existing, dict):
                         data['doc_counts'] = existing.get('doc_counts', {})
+                        data['last_templates'] = existing.get('last_templates', {})
             with open(SETTINGS_FILE, 'w', encoding='utf-8') as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
         except Exception:
@@ -350,6 +390,17 @@ class MainWindow(QMainWindow):
 
     def generate_for_project(self, project_path: str, num_docs: int):
         """Generate documents for a project using the first template found."""
+        # Find the first configured template
+        from docxforge.engine.schema import Project
+        project_file = os.path.join(project_path, 'проект.docxforge')
+        template_name = ''
+        try:
+            project = Project.from_file(project_file)
+            if project.templates:
+                template_name = next(iter(project.templates.keys()))
+        except Exception:
+            pass
+        
         progress = QProgressDialog('Генерация...', None, 0, num_docs, self)
         progress.setWindowTitle('Создание документов')
         progress.setWindowModality(Qt.WindowModal)
@@ -367,7 +418,7 @@ class MainWindow(QMainWindow):
                 msg += f'\n... и ещё {len(outputs) - 5} файлов'
             QMessageBox.information(self, 'Готово', msg)
             self._set_last_doc_count(project_path, num_docs)
-            self._add_recent(project_path)  # Move to top
+            self._add_recent(project_path, template_name)  # Move to top with template name
 
         except GenerationError as e:
             progress.close()

@@ -8,11 +8,26 @@ from pathlib import Path
 from typing import Tuple, List
 
 import pytest
+from unittest.mock import patch
+from datetime import datetime
 from docx import Document
 
 from docxforge.generate import generate_project, GenerationError
 
 FIXTURES_DIR = Path(__file__).parent / 'documents'
+
+# Fixed date matching the expected reference files (10.09.2026)
+FIXED_TEST_DATE = datetime(2026, 9, 10, 12, 0, 0)
+
+
+@pytest.fixture(autouse=True)
+def mock_datetime_now():
+    """Mock datetime.now() in render_execute module to return fixed date for reproducible tests."""
+    with patch('docxforge.engine.render_execute.datetime') as mock_dt:
+        mock_dt.now.return_value = FIXED_TEST_DATE
+        # Allow datetime construction for other uses
+        mock_dt.side_effect = lambda *args, **kwargs: datetime(*args, **kwargs)
+        yield
 
 
 def copy_fixture(fixture_name: str, tmp_path: Path) -> Path:

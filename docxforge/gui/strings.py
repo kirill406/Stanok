@@ -97,4 +97,7 @@ STRINGS = {
     'field_label_counter_format': 'Формат:',
     'field_label_today_format': 'Формат:',
     'field_label_image': 'Изображение:',
+
+    # Today format options
+    'today_format_month': 'название месяца',
 }

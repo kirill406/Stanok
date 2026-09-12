@@ -226,22 +226,52 @@ def _build_project_config(
     row_data: Dict[str, str],
     primary_source_file: str,
 ) -> TemplateConfig:
+    """Build per-project config: TABLE→CONSTANT, COUNTER reset, batch→CONSTANT.
+
+    Args:
+        template_config: Source template configuration.
+        row_data: Resolved row as {column: value} dict (keys are column names).
+        primary_source_file: Name of the primary batch file (kept for signature
+            compatibility; row_data already holds the resolved row values).
+
+    Returns:
+        New TemplateConfig with transformed fields and CONSTANT batch sources.
+    """
     new_config = TemplateConfig()
 
     for fn, fm in template_config.fields.items():
-        new_fm = FieldMapping(type=fm.type)
         if fm.type == FieldType.CONSTANT:
-            new_fm.value = fm.value
+            new_config.fields[fn] = FieldMapping(type=FieldType.CONSTANT, value=fm.value)
         elif fm.type == FieldType.TABLE:
-            if fm.file and fm.column and fm.file in row_data:
-                new_fm = FieldMapping(type=FieldType.CONSTANT, value=row_data.get(fm.column, ''))
+            if fm.column and fm.column in row_data:
+                value = row_data.get(fm.column, '')
+                new_config.fields[fn] = FieldMapping(
+                    type=FieldType.CONSTANT,
+                    value=str(value) if value is not None else '',
+                )
             else:
-                new_fm.value = fm.value
+                # No row value available: keep original mapping as-is.
+                new_config.fields[fn] = FieldMapping(
+                    type=fm.type,
+                    value=fm.value,
+                    file=fm.file,
+                    column=fm.column,
+                    linked_to=fm.linked_to,
+                    start=fm.start,
+                    step=fm.step,
+                    format=fm.format,
+                    multiplier=fm.multiplier,
+                )
         elif fm.type == FieldType.COUNTER:
-            new_fm.start = fm.start
-            new_fm.step = fm.step
-            new_fm.format = fm.format
+            # Reset to start: fresh counter, resume state cleared below.
+            new_config.fields[fn] = FieldMapping(
+                type=FieldType.COUNTER,
+                start=fm.start,
+                step=fm.step,
+                format=fm.format,
+            )
         else:
+            new_fm = FieldMapping(type=fm.type)
             new_fm.value = fm.value
             new_fm.format = fm.format
             new_fm.file = fm.file
@@ -249,15 +279,25 @@ def _build_project_config(
             new_fm.linked_to = fm.linked_to
             new_fm.function = fm.function
             new_fm.multiplier = fm.multiplier
-        new_config.fields[fn] = new_fm
+            new_fm.start = fm.start
+            new_fm.step = fm.step
+            new_config.fields[fn] = new_fm
 
+    # All batch sources → CONSTANT (project data already copied into данные/).
     new_config.batch_sources = {}
     for name, bsc in template_config.batch_sources.items():
-        if name == primary_source_file:
-            new_config.batch_sources[name] = BatchSourceConfig(file=bsc.file, mode=RowIterationMode.CONSTANT)
-        else:
-            new_config.batch_sources[name] = bsc
+        new_config.batch_sources[name] = BatchSourceConfig(
+            file=bsc.file,
+            mode=RowIterationMode.CONSTANT,
+            lookup_column=None,
+            lookup_value=None,
+            continue_from_last=False,
+            counter_column=None,
+            counter_current_row=1,
+        )
 
+    new_config.cycles = list(template_config.cycles)
+    new_config.aggregations = dict(template_config.aggregations)
     new_config.filename_template = template_config.filename_template
     new_config.directory_template = template_config.directory_template
     new_config.resume = ResumeState(continue_from_last=False)

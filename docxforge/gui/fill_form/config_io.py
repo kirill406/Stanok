@@ -160,9 +160,11 @@ class ConfigIOMixin:
         for fn, fm in config.fields.items():
             if fm.type == FieldType.TABLE and (not fm.file or not fm.column):
                 errors.append('\u041f\u043e\u043b\u0435 {{ %s }}: \u0443\u043a\u0430\u0436\u0438\u0442\u0435 \u0444\u0430\u0439\u043b \u0438 \u0441\u0442\u043e\u043b\u0431\u0435\u0446' % fn)
-        # Validate folder name template when create_projects mode is active
-        if config.create_projects and not config.folder_name_template:
-            errors.append(STRINGS['msg_folder_template_required'])
+        # Validate composite path template when create_projects mode is active:
+        # both {{employee}} and {{project_name}} placeholders are required.
+        if config.create_projects:
+            from .form_dialog import FillForm
+            errors.extend(FillForm.validate_composite_template(config.folder_name_template))
         if errors:
             QMessageBox.warning(self, '\u041e\u0448\u0438\u0431\u043a\u0430', '\n'.join(errors))
             return
@@ -174,10 +176,14 @@ class ConfigIOMixin:
     def _create(self):
         config = self._collect_config()
         
-        # Validate folder name template for create_projects mode
-        if config.create_projects and not config.folder_name_template:
-            QMessageBox.warning(self, '\u041e\u0448\u0438\u0431\u043a\u0430', STRINGS['msg_folder_template_required'])
-            return
+        # Validate composite path template for create_projects mode:
+        # both {{employee}} and {{project_name}} placeholders are required.
+        if config.create_projects:
+            from .form_dialog import FillForm
+            template_errors = FillForm.validate_composite_template(config.folder_name_template)
+            if template_errors:
+                QMessageBox.warning(self, STRINGS['msg_error'], '\n'.join(template_errors))
+                return
         
         total_docs = config.total_docs
         if total_docs is None:

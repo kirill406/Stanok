@@ -27,12 +27,14 @@
 - [x] Перед вызовом engine: сохранить собранный config
       (`renderer.project.templates[...] = config; renderer.save_project()`),
       т.к. engine читает `проект.docxforge` с диска.
-- [x] Вызвать `create_projects_from_template(project_dir, template_rel_path,
-      folder_name_template, max_projects=выбор_пользователя)`.
-- [x] Composite-диспетч (совместимость с параллельными Ф2–Ф4):
-      если шаблон содержит `/` и в `generate` есть
-      `create_nested_employee_projects` — вызывать её; иначе flat-вызов выше.
-- [x] Удалить устаревшие `_create_projects()` / `_get_effective_values_for_doc()`
+- [x] Единый вызов `create_projects_from_template(project_dir, template_rel_path,
+      folder_name_template, max_projects=выбор_пользователя)` — composite-роутинг
+      (employee/project → nested) живёт внутри engine (Фаза 2), GUI его не дублирует:
+      прямой вызов `create_nested_employee_projects` убран, т.к. это пока заглушка
+      `NotImplementedError` до Фазы 3.
+- [x] Ответ engine: 3-tuple `(path, employees, projects)` → nested-сообщение,
+      2-tuple `(path, count)` → flat-сообщение (forward-compat с Фазой 3).
+- [x] Удалены устаревшие `_create_projects()` / `_get_effective_values_for_doc()`
       (рендерили документы в `output/` вместо создания проектов через engine).
 
 ### 5.3 Success / error сообщения

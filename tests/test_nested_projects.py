@@ -324,3 +324,86 @@ def test_nested_empty_batch_source_raises_clear_error_flat():
         with pytest.raises(gen_module.GenerationError, match='no data rows'):
             gen_module.create_projects_from_template(
                 project_dir, 'contract.docx', FLAT_TEMPLATE)
+
+
+def test_nested_data_folder_copied_fully():
+    """Each project Данные/ is a full copy (all xlsx, byte-identical)."""
+    if not HAS_NESTED:
+        pytest.skip('pending: create_nested_employee_projects not implemented (Phase 3)')
+    with tempfile.TemporaryDirectory() as tmp:
+        source_dir = _make_nested_source_project(tmp)
+        output_base = os.path.join(tmp, 'Projects')
+        gen_module.create_nested_employee_projects(
+            source_dir, 'report.docx', COMPOSITE_TEMPLATE, output_base)
+        src_files = sorted(os.listdir(os.path.join(source_dir, 'Данные')))
+        assert len(src_files) >= 2
+        for emp in os.listdir(output_base):
+            emp_dir = os.path.join(output_base, emp)
+            if not os.path.isdir(emp_dir):
+                continue
+            for proj in os.listdir(emp_dir):
+                proj_data = os.path.join(emp_dir, proj, 'Данные')
+                assert sorted(os.listdir(proj_data)) == src_files
+                for fname in src_files:
+                    with open(os.path.join(source_dir, 'Данные', fname), 'rb') as f:
+                        src_bytes = f.read()
+                    with open(os.path.join(proj_data, fname), 'rb') as f:
+                        assert f.read() == src_bytes
+
+
+def test_nested_settings_json_structure_and_content():
+    """docxforge_settings.json lists employee projects with required keys."""
+    if not HAS_NESTED:
+        pytest.skip('pending: create_nested_employee_projects not implemented (Phase 3)')
+    with tempfile.TemporaryDirectory() as tmp:
+        source_dir = _make_nested_source_project(tmp)
+        output_base = os.path.join(tmp, 'Projects')
+        gen_module.create_nested_employee_projects(
+            source_dir, 'report.docx', COMPOSITE_TEMPLATE, output_base)
+        for emp in os.listdir(output_base):
+            emp_dir = os.path.join(output_base, emp)
+            if not os.path.isdir(emp_dir):
+                continue
+            settings_path = os.path.join(emp_dir, 'docxforge_settings.json')
+            assert os.path.exists(settings_path)
+            with open(settings_path, encoding='utf-8') as f:
+                settings = json.load(f)
+            assert 'employee' in settings
+            assert 'employee_folder' in settings
+            assert 'created_at' in settings
+            assert 'projects' in settings
+            assert len(settings['projects']) == 3
+            for entry in settings['projects']:
+                assert 'name' in entry
+                assert 'folder' in entry
+                assert 'template' in entry
+                assert 'row_index' in entry
+                assert 'created_at' in entry
+                assert entry['template'] == 'report.docx'
+
+
+def test_nested_settings_json_contract_shape():
+    """SPEC settings.json contract round-trips through json (no new API)."""
+    sample = {
+        'employee': 'Иванов Иван',
+        'employee_folder': 'Иванов_Иван',
+        'created_at': '2025-09-12T14:30:00',
+        'projects': [
+            {
+                'name': 'Договор_001',
+                'folder': 'Договор_001',
+                'template': 'report.docx',
+                'row_index': 0,
+                'created_at': '2025-09-12T14:30:00',
+            },
+        ],
+    }
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, 'docxforge_settings.json')
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump(sample, f, ensure_ascii=False)
+        with open(path, encoding='utf-8') as f:
+            loaded = json.load(f)
+    assert set(loaded) == {'employee', 'employee_folder', 'created_at', 'projects'}
+    assert set(loaded['projects'][0]) == {
+        'name', 'folder', 'template', 'row_index', 'created_at'}

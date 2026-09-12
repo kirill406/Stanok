@@ -1,10 +1,12 @@
 # -*- coding: utf-8 -*-
 """Project generation function: UI-free entry point for rendering documents."""
 
+import json
 import os
 import shutil
 import logging
-from typing import List, Optional, Tuple, Dict
+from datetime import datetime, timezone
+from typing import Any, List, Optional, Tuple, Dict
 
 from docxforge.engine.schema import (
     Project, ResumeState, TemplateConfig, FieldMapping, FieldType,
@@ -277,7 +279,6 @@ def _build_project_config(
             new_fm.file = fm.file
             new_fm.column = fm.column
             new_fm.linked_to = fm.linked_to
-            new_fm.function = fm.function
             new_fm.multiplier = fm.multiplier
             new_fm.start = fm.start
             new_fm.step = fm.step
@@ -309,6 +310,164 @@ def _copy_template_files(src_template: str, dst_templates_dir: str) -> None:
     dst_template = os.path.join(dst_templates_dir, os.path.basename(src_template))
     if os.path.exists(src_template):
         shutil.copy2(src_template, dst_template)
+
+
+# ---------------------------------------------------------------------------
+# Phase 4: nested project file operations (used by Phase 3 grouping core).
+# Layout per SPEC: <project>/данные/ + <project>/шаблоны/ + <project>/результат/
+#                  + <project>/проект.docxforge ; settings live in employee dir.
+# ---------------------------------------------------------------------------
+
+#: Accepted source data-folder spellings (existing projects use capital).
+DATA_DIR_CANDIDATES = ('Данные', 'данные')
+#: Nested project subfolder names (SPEC, lowercase).
+NESTED_DATA_DIR = 'данные'
+NESTED_TEMPLATES_DIR = 'шаблоны'
+NESTED_RESULT_DIR = 'результат'
+NESTED_PROJECT_FILE = 'проект.docxforge'
+EMPLOYEE_SETTINGS_FILE = 'docxforge_settings.json'
+
+
+def _resolve_source_data_dir(src_project_dir: str) -> Optional[str]:
+    """Return existing data folder in source project (tries both spellings)."""
+    for name in DATA_DIR_CANDIDATES:
+        candidate = os.path.join(src_project_dir, name)
+        if os.path.isdir(candidate):
+            return candidate
+    return None
+
+
+def copy_data_folder(src_project_dir: str, dst_project_dir: str) -> str:
+    """Copy the entire source `Данные/` folder (no slicing, all files as-is).
+
+    Returns destination path. Raises GenerationError if source data missing.
+    """
+    src_data = _resolve_source_data_dir(src_project_dir)
+    if src_data is None:
+        raise GenerationError(
+            f'Data folder not found in source project: {src_project_dir}'
+        )
+    dst_data = os.path.join(dst_project_dir, NESTED_DATA_DIR)
+    try:
+        shutil.copytree(src_data, dst_data, dirs_exist_ok=True)
+    except PermissionError as e:
+        raise GenerationError(f'Permission denied copying data folder: {e}') from e
+    except OSError as e:
+        raise GenerationError(f'Failed to copy data folder: {e}') from e
+    logger.info(f'Copied data folder: {src_data} -> {dst_data}')
+    return dst_data
+
+
+def copy_template_file(src_template_path: str, dst_project_dir: str) -> str:
+    """Copy template .docx into nested `<project>/шаблоны/`. Returns dst path."""
+    if not os.path.exists(src_template_path):
+        raise GenerationError(f'Template file not found: {src_template_path}')
+    dst_dir = os.path.join(dst_project_dir, NESTED_TEMPLATES_DIR)
+    os.makedirs(dst_dir, exist_ok=True)
+    dst_template = os.path.join(dst_dir, os.path.basename(src_template_path))
+    try:
+        shutil.copy2(src_template_path, dst_template)
+    except PermissionError as e:
+        raise GenerationError(f'Permission denied copying template: {e}') from e
+    except OSError as e:
+        raise GenerationError(f'Failed to copy template file: {e}') from e
+    logger.info(f'Copied template: {src_template_path} -> {dst_template}')
+    return dst_template
+
+
+def create_result_folder(dst_project_dir: str) -> str:
+    """Create empty nested `<project>/результат/`. Returns its path."""
+    result_dir = os.path.join(dst_project_dir, NESTED_RESULT_DIR)
+    try:
+        os.makedirs(result_dir, exist_ok=True)
+    except PermissionError as e:
+        raise GenerationError(
+            f'Permission denied creating result folder: {e}'
+        ) from e
+    return result_dir
+
+
+def write_nested_project_config(
+    dst_project_dir: str,
+    template_name: str,
+    new_config: TemplateConfig,
+    version: int = 2,
+) -> str:
+    """Write `проект.docxforge` for a nested project. Returns file path."""
+    new_project = Project(version=version)
+    new_project.templates[template_name] = new_config
+    config_path = os.path.join(dst_project_dir, NESTED_PROJECT_FILE)
+    try:
+        new_project.to_file(config_path)
+    except (PermissionError, OSError) as e:
+        raise GenerationError(f'Failed to write project config: {e}') from e
+    return config_path
+
+
+def write_employee_settings(
+    employee_dir: str,
+    employee: str,
+    employee_folder: str,
+    projects: List[Dict[str, Any]],
+) -> str:
+    """Write `docxforge_settings.json` listing employee's projects (SPEC schema)."""
+    now = datetime.now(timezone.utc).isoformat(timespec='seconds')
+    payload = {
+        'employee': employee,
+        'employee_folder': employee_folder,
+        'created_at': now,
+        'projects': [
+            {
+                'name': p.get('name', ''),
+                'folder': p.get('folder', ''),
+                'template': p.get('template', ''),
+                'row_index': p.get('row_index', 0),
+                'created_at': p.get('created_at', now),
+            }
+            for p in projects
+        ],
+    }
+    settings_path = os.path.join(employee_dir, EMPLOYEE_SETTINGS_FILE)
+    try:
+        with open(settings_path, 'w', encoding='utf-8') as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+    except (PermissionError, OSError) as e:
+        raise GenerationError(f'Failed to write employee settings: {e}') from e
+    logger.info(f'Wrote employee settings: {settings_path}')
+    return settings_path
+
+
+def setup_nested_project_files(
+    src_project_dir: str,
+    dst_project_dir: str,
+    src_template_path: str,
+    template_name: str,
+    new_config: TemplateConfig,
+    version: int = 2,
+) -> Dict[str, str]:
+    """Per-project file assembly for the Phase 3 nested loop.
+
+    Creates <project>/{данные/,шаблоны/,результат/,проект.docxforge}.
+    Rolls back (removes dst dir) on any failure. Returns dict of created paths.
+    """
+    os.makedirs(dst_project_dir, exist_ok=True)
+    try:
+        data_dir = copy_data_folder(src_project_dir, dst_project_dir)
+        template_copy = copy_template_file(src_template_path, dst_project_dir)
+        result_dir = create_result_folder(dst_project_dir)
+        config_path = write_nested_project_config(
+            dst_project_dir, template_name, new_config, version
+        )
+    except Exception:
+        shutil.rmtree(dst_project_dir, ignore_errors=True)
+        raise
+    return {
+        'project_dir': dst_project_dir,
+        'data_dir': data_dir,
+        'template': template_copy,
+        'result_dir': result_dir,
+        'config': config_path,
+    }
 
 
 def generate_cli(project_path: str, template: str = None, count: int = None, out: str = None) -> List[str]:

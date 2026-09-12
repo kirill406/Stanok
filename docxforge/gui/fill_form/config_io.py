@@ -249,27 +249,22 @@ class ConfigIOMixin:
             if not ok:
                 return
 
-        # Dispatch: composite template (employee/project) goes to the nested
-        # entry point when available, otherwise use the flat entry point.
-        # generate.py itself is never modified here, only called.
-        from docxforge import generate as generate_module
-        nested_fn = getattr(generate_module, 'create_nested_employee_projects', None)
-        is_composite = '/' in (config.folder_name_template or '') and callable(nested_fn)
+        # Single engine entry point: create_projects_from_template() routes
+        # composite (employee/project) templates to nested generation
+        # internally. generate.py itself is never modified here, only called.
+        from docxforge.generate import create_projects_from_template
         try:
-            if is_composite:
-                result = nested_fn(
-                    self.project_dir, self.template_rel_path,
-                    config.folder_name_template, max_projects=chosen)
-            else:
-                result = generate_module.create_projects_from_template(
-                    self.project_dir, self.template_rel_path,
-                    config.folder_name_template, max_projects=chosen)
+            result = create_projects_from_template(
+                self.project_dir, self.template_rel_path,
+                config.folder_name_template, max_projects=chosen)
         except Exception as e:
             logger.error('Create projects failed: %s', e)
             QMessageBox.warning(self, STRINGS['msg_error'], str(e))
             return
 
-        if is_composite and len(result) == 3:
+        # Nested (Phase 3) returns (path, employees, projects);
+        # flat returns (path, count). Both are supported.
+        if len(result) == 3:
             projects_dir, n_employees, n_projects = result
             message = STRINGS['fill_nested_projects_created'].format(
                 employees=n_employees, count=n_projects, path=projects_dir)

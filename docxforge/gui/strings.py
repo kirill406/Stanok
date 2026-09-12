@@ -88,6 +88,8 @@ STRINGS = {
     'fill_projects_created': 'Создано проектов: {count}\nПапка: {path}',
     'fill_create_projects_btn': 'Создать проекты',
     'msg_folder_template_required': 'Для создания проектов укажите шаблон имени папки',
+    'fill_nested_projects_created': 'Создано сотрудников: {employees}, проектов: {count} в {path}',
+    'msg_no_batch_rows': 'Нет строк данных для создания проектов. Проверьте источник «По строкам» и файл данных.',
 
     # Messages
     'msg_error': 'Ошибка',

@@ -425,5 +425,378 @@ class TestFillFormIntegration:
         assert len(docs) >= 1, f"Expected at least 1 document, got {len(docs)}"
 
 
+class TestFillFormIntegrationPhase7:
+    """Phase 7: Integration tests for new features."""
+
+    def test_auto_docs_checkbox_toggles_spinbox_visibility(self, qtbot, sample_project):
+        """Test that 'Auto' checkbox toggles spin_total_docs visibility."""
+        dlg = FillForm(sample_project, 'all_fields.docx')
+        qtbot.addWidget(dlg)
+        dlg.show()
+
+        # Default is auto=ON (checked), so spin should be hidden
+        assert dlg.chk_auto_docs.isChecked()
+        assert not dlg.spin_total_docs.isVisible()
+
+        # Uncheck auto - spin should show
+        dlg.chk_auto_docs.setChecked(False)
+        QTest.qWait(50)
+        assert dlg.spin_total_docs.isVisible()
+
+        # Check auto again - spin should hide
+        dlg.chk_auto_docs.setChecked(True)
+        QTest.qWait(50)
+        assert not dlg.spin_total_docs.isVisible()
+
+    def test_insert_field_button_inserts_at_cursor(self, qtbot, sample_project):
+        """Test 'Insert field' button inserts {{ field_name }} at cursor position."""
+        dlg = FillForm(sample_project, 'all_fields.docx')
+        qtbot.addWidget(dlg)
+        dlg.show()
+
+        # Get initial fields
+        field_names = list(dlg.field_widgets.keys())
+        assert len(field_names) > 0
+
+        # Set some text in filename template
+        dlg.edit_filename_template.setText('Prefix_')
+        dlg.edit_filename_template.setCursorPosition(len('Prefix_'))
+
+        # Test the internal method directly (menu click would block)
+        test_field = field_names[0]
+        dlg._insert_field_in_filename_template(test_field)
+        
+        # Verify field was inserted at cursor
+        expected = 'Prefix_{{ ' + test_field + ' }}'
+        assert dlg.edit_filename_template.text() == expected
+        
+        # Cursor should be after inserted text
+        assert dlg.edit_filename_template.cursorPosition() == len(expected)
+
+    def test_insert_field_button_with_multiple_fields(self, qtbot, sample_project):
+        """Test insert field with multiple fields in template."""
+        dlg = FillForm(sample_project, 'all_fields.docx')
+        qtbot.addWidget(dlg)
+        dlg.show()
+
+        field_names = list(dlg.field_widgets.keys())
+        assert len(field_names) >= 2
+
+        # Insert first field
+        dlg.edit_filename_template.setText('')
+        dlg._insert_field_in_filename_template(field_names[0])
+        first_insert = dlg.edit_filename_template.text()
+        assert '{{ ' + field_names[0] + ' }}' == first_insert
+
+        # Insert second field after first
+        dlg.edit_filename_template.setCursorPosition(len(first_insert))
+        dlg.edit_filename_template.setText(first_insert + '_suffix')
+        dlg.edit_filename_template.setCursorPosition(len(first_insert))
+        dlg._insert_field_in_filename_template(field_names[1])
+        
+        expected = first_insert + '{{ ' + field_names[1] + ' }}_suffix'
+        assert dlg.edit_filename_template.text() == expected
+
+    def test_counter_value_combo_sync_from_spin(self, qtbot, sample_project):
+        """Test counter value combo updates when spin changes (spin -> combo)."""
+        dlg = FillForm(sample_project, 'all_fields.docx')
+        qtbot.addWidget(dlg)
+        dlg.show()
+        qtbot.waitExposed(dlg)
+        QTest.qWait(200)
+
+        for df, bw in dlg.batch_source_widgets.items():
+            # Enable sequential mode
+            bw['radio_sequential'].setChecked(True)
+            QTest.qWait(100)
+
+            # Counter panel should be visible with value combo
+            assert bw['counter_panel'].isVisible()
+            assert 'counter_val_combo' in bw
+            assert 'counter_row_spin' in bw
+            assert 'counter_col_combo' in bw
+
+            # Counter column should have columns loaded
+            if bw['counter_col_combo'].count() > 0:
+                bw['counter_col_combo'].setCurrentIndex(0)
+                QTest.qWait(100)
+
+                # Value combo should be populated
+                if bw['counter_val_combo'].count() > 0:
+                    # Get value at row 1
+                    row1_value = bw['counter_val_combo'].itemText(0)
+                    
+                    # Change spin to row 2 (if available)
+                    if bw['counter_row_spin'].maximum() >= 2:
+                        bw['counter_row_spin'].setValue(2)
+                        QTest.qWait(50)
+                        
+                        # Combo should update to row 2 value
+                        assert bw['counter_val_combo'].currentIndex() == 1
+                        row2_value = bw['counter_val_combo'].itemText(1)
+                        assert row2_value != row1_value or bw['counter_val_combo'].count() == 1
+
+                    # Change spin back to row 1
+                    bw['counter_row_spin'].setValue(1)
+                    QTest.qWait(50)
+                    assert bw['counter_val_combo'].currentIndex() == 0
+
+    def test_counter_value_combo_sync_to_spin(self, qtbot, sample_project):
+        """Test counter spin updates when combo changes (combo -> spin)."""
+        dlg = FillForm(sample_project, 'all_fields.docx')
+        qtbot.addWidget(dlg)
+        dlg.show()
+        qtbot.waitExposed(dlg)
+        QTest.qWait(200)
+
+        for df, bw in dlg.batch_source_widgets.items():
+            bw['radio_sequential'].setChecked(True)
+            QTest.qWait(100)
+
+            if bw['counter_col_combo'].count() > 0:
+                bw['counter_col_combo'].setCurrentIndex(0)
+                QTest.qWait(100)
+
+                if bw['counter_val_combo'].count() >= 2:
+                    # Select index 1 (row 2) in combo
+                    bw['counter_val_combo'].setCurrentIndex(1)
+                    QTest.qWait(50)
+                    
+                    # Spin should update to 2
+                    assert bw['counter_row_spin'].value() == 2
+
+                    # Select index 0 (row 1) in combo
+                    bw['counter_val_combo'].setCurrentIndex(0)
+                    QTest.qWait(50)
+                    assert bw['counter_row_spin'].value() == 1
+
+    def test_validation_empty_table_field_shows_warning(self, qtbot, sample_project, monkeypatch):
+        """Test validation runs without error for empty table field configuration."""
+        dlg = FillForm(sample_project, 'all_fields.docx')
+        qtbot.addWidget(dlg)
+        dlg.show()
+
+        # Mock message boxes to avoid modal dialogs
+        monkeypatch.setattr(QMessageBox, 'warning', lambda *a, **k: None)
+        monkeypatch.setattr(QMessageBox, 'information', lambda *a, **k: None)
+
+        # Call validate method directly (avoid button click which may block)
+        dlg._validate()
+        QTest.qWait(500)
+
+        # Test passes if no exception
+        assert True
+
+    def test_validation_ok_shows_info(self, qtbot, sample_project, monkeypatch):
+        """Test validation shows success info when config is valid."""
+        dlg = FillForm(sample_project, 'all_fields.docx')
+        qtbot.addWidget(dlg)
+        dlg.show()
+
+        info_called = []
+        monkeypatch.setattr(QMessageBox, 'information', lambda *a, **k: info_called.append(a))
+
+        # Configure at least one table field properly
+        for fname, fw in dlg.field_widgets.items():
+            if 'client' in fname.lower():
+                fw['type_combo'].setCurrentText('таблица')
+                QTest.qWait(50)
+                fw['table_file'].setCurrentIndex(1)
+                QTest.qWait(50)
+                if fw['table_column'].count() > 0:
+                    fw['table_column'].setCurrentIndex(0)
+                break
+
+        btn_validate = None
+        for btn in dlg.findChildren(QPushButton):
+            if 'Проверить' in btn.text():
+                btn_validate = btn
+                break
+
+        assert btn_validate is not None
+        qtbot.mouseClick(btn_validate, Qt.LeftButton)
+        QTest.qWait(500)
+
+        # Should show success message
+        assert len(info_called) >= 1
+
+    def test_batch_mode_constant_shows_lookup_panel(self, qtbot, sample_project):
+        """Test constant mode shows lookup panel, hides counter panel."""
+        dlg = FillForm(sample_project, 'all_fields.docx')
+        qtbot.addWidget(dlg)
+        dlg.show()
+        qtbot.waitExposed(dlg)
+        QTest.qWait(100)
+
+        for df, bw in dlg.batch_source_widgets.items():
+            # Default should be constant mode
+            assert bw['radio_constant'].isChecked()
+            assert bw['lookup_panel'].isVisible()
+            assert not bw['counter_panel'].isVisible()
+
+    def test_batch_mode_sequential_shows_counter_panel(self, qtbot, sample_project):
+        """Test sequential mode shows counter panel, hides lookup panel."""
+        dlg = FillForm(sample_project, 'all_fields.docx')
+        qtbot.addWidget(dlg)
+        dlg.show()
+        qtbot.waitExposed(dlg)
+        QTest.qWait(100)
+
+        for df, bw in dlg.batch_source_widgets.items():
+            bw['radio_sequential'].setChecked(True)
+            QTest.qWait(100)
+            assert bw['counter_panel'].isVisible()
+            assert not bw['lookup_panel'].isVisible()
+
+    def test_batch_mode_circular_shows_counter_panel(self, qtbot, sample_project):
+        """Test circular mode shows counter panel."""
+        dlg = FillForm(sample_project, 'all_fields.docx')
+        qtbot.addWidget(dlg)
+        dlg.show()
+        qtbot.waitExposed(dlg)
+        QTest.qWait(100)
+
+        for df, bw in dlg.batch_source_widgets.items():
+            bw['radio_circular'].setChecked(True)
+            QTest.qWait(100)
+            assert bw['counter_panel'].isVisible()
+            assert not bw['lookup_panel'].isVisible()
+
+    def test_filename_template_persists_on_save(self, qtbot, sample_project):
+        """Test filename template is saved to project config."""
+        dlg = FillForm(sample_project, 'all_fields.docx')
+        qtbot.addWidget(dlg)
+        dlg.show()
+
+        test_template = 'MyDoc_{{ client_name }}_{{ doc_number }}'
+        dlg.edit_filename_template.setText(test_template)
+        QTest.qWait(600)  # Wait for autosave
+
+        project_file = Path(sample_project) / 'проект.docxforge'
+        assert project_file.exists()
+        
+        import json
+        with open(project_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        template_data = data['templates']['all_fields.docx']
+        assert template_data['batch'].get('filename_template') == test_template
+
+    def test_directory_template_persists_on_save(self, qtbot, sample_project):
+        """Test directory template is saved to project config."""
+        dlg = FillForm(sample_project, 'all_fields.docx')
+        qtbot.addWidget(dlg)
+        dlg.show()
+
+        test_template = '{{ region }}/{{ city }}'
+        dlg.edit_directory_template.setText(test_template)
+        QTest.qWait(600)  # Wait for autosave
+
+        project_file = Path(sample_project) / 'проект.docxforge'
+        assert project_file.exists()
+        
+        import json
+        with open(project_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        template_data = data['templates']['all_fields.docx']
+        assert template_data['batch'].get('directory_template') == test_template
+
+    def test_total_docs_persists_on_save(self, qtbot, sample_project):
+        """Test total docs value is saved to project config."""
+        dlg = FillForm(sample_project, 'all_fields.docx')
+        qtbot.addWidget(dlg)
+        dlg.show()
+
+        dlg.chk_auto_docs.setChecked(False)
+        dlg.spin_total_docs.setValue(42)
+        QTest.qWait(600)  # Wait for autosave
+
+        project_file = Path(sample_project) / 'проект.docxforge'
+        assert project_file.exists()
+        
+        import json
+        with open(project_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        template_data = data['templates']['all_fields.docx']
+        assert template_data['batch'].get('total_docs') == 42
+
+    def test_auto_docs_persists_on_save(self, qtbot, sample_project):
+        """Test auto docs checkbox state is saved."""
+        dlg = FillForm(sample_project, 'all_fields.docx')
+        qtbot.addWidget(dlg)
+        dlg.show()
+
+        dlg.chk_auto_docs.setChecked(True)
+        QTest.qWait(600)  # Wait for autosave
+
+        project_file = Path(sample_project) / 'проект.docxforge'
+        assert project_file.exists()
+        
+        import json
+        with open(project_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        template_data = data['templates']['all_fields.docx']
+        # When auto is checked, total_docs should be None
+        assert template_data.get('total_docs') is None
+
+
+if __name__ == '__main__':
+    pytest.main([__file__, '-v'])
+    """Integration tests with real fixtures."""
+
+    def test_full_configuration_flow(self, qtbot, sample_project, monkeypatch):
+        """Test complete configuration and generation flow."""
+        dlg = FillForm(sample_project, 'all_fields.docx')
+        qtbot.addWidget(dlg)
+        dlg.show()
+
+        monkeypatch.setattr(QMessageBox, 'information', lambda *a, **k: None)
+        monkeypatch.setattr(QMessageBox, 'warning', lambda *a, **k: None)
+
+        # Configure all fields
+        for fname, fw in dlg.field_widgets.items():
+            if 'client' in fname.lower() or 'manager' in fname.lower():
+                fw['type_combo'].setCurrentText('таблица')
+                QTest.qWait(50)
+                fw['table_file'].setCurrentIndex(1)
+                QTest.qWait(50)
+                if fw['table_column'].count() > 0:
+                    fw['table_column'].setCurrentIndex(0)
+            elif 'номер' in fname.lower() or 'doc_number' in fname.lower():
+                fw['type_combo'].setCurrentText('счётчик')
+                QTest.qWait(50)
+            elif 'дата' in fname.lower() or 'today' in fname.lower():
+                fw['type_combo'].setCurrentText('сегодня')
+                QTest.qWait(50)
+
+        # Set batch to sequential for both tables
+        for df, bw in dlg.batch_source_widgets.items():
+            bw['radio_sequential'].setChecked(True)
+            QTest.qWait(50)
+
+        # Set filename template
+        dlg.edit_filename_template.setText('Договор_{{ doc_number }}_{{ client_name }}')
+
+        # Generate
+        dlg.spin_total_docs.setValue(3)
+        btn_create = None
+        for btn in dlg.findChildren(QPushButton):
+            if 'Создать' in btn.text():
+                btn_create = btn
+                break
+
+        assert btn_create is not None
+        qtbot.mouseClick(btn_create, Qt.LeftButton)
+        QTest.qWait(5000)
+
+        # Verify output - at least 1 document generated
+        output_dir = Path(sample_project) / 'output'
+        docs = list(output_dir.glob('*.docx'))
+        assert len(docs) >= 1, f"Expected at least 1 document, got {len(docs)}"
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])

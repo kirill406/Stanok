@@ -41,6 +41,10 @@ STRINGS = {
     'fill_validate_btn': 'Проверить',
     'fill_create_btn': 'Создать',
     'fill_cancel_btn': 'Отмена',
+    'fill_create_projects': 'Создать проекты вместо документов',
+    'fill_folder_name_template': 'Шаблон имени папки проекта',
+    'fill_found_rows': 'Найдено строк: {count}. Сколько проектов создать?',
+    'fill_projects_created': 'Создано {count} проектов в {path}',
 
     # Field types
     'field_type_constant': 'константа',
@@ -74,6 +78,16 @@ STRINGS = {
     'fill_directory_template': 'Шаблон папки:',
     'fill_directory_placeholder': '{{ region }}/{{ city }} (пусто = без подпапок)',
     'fill_directory_tooltip': 'Используйте {{ field_name }} для подстановки. Папки будут созданы внутри выходной директории. Пусто = файлы напрямую в папку результатов.',
+
+    # Create projects mode
+    'fill_create_projects_checkbox': 'Создать проекты',
+    'fill_folder_name_template': 'Шаблон имени папки:',
+    'fill_folder_name_placeholder': '{{ region }}_{{ city }} (обязательно для режима проектов)',
+    'fill_folder_name_tooltip': 'Используйте {{ field_name }} для подстановки значений из таблицы. Каждая строка = одна папка проекта в Projects/. Обязательно в режиме "Создать проекты".',
+    'fill_found_rows': 'Найдено строк в таблице: {count}.\nСоздать {count} проектов в папке Projects/?',
+    'fill_projects_created': 'Создано проектов: {count}\nПапка: {path}',
+    'fill_create_projects_btn': 'Создать проекты',
+    'msg_folder_template_required': 'Для создания проектов укажите шаблон имени папки',
 
     # Messages
     'msg_error': 'Ошибка',

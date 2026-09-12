@@ -6,7 +6,7 @@ import re
 from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
                               QLabel, QComboBox, QLineEdit, QScrollArea,
                               QWidget, QGroupBox, QCheckBox, QFrame,
-                              QRadioButton, QSpinBox, QSizePolicy)
+                              QRadioButton, QSpinBox, QSizePolicy, QMessageBox, QMenu)
 from PyQt5.QtCore import Qt, QTimer, QEvent, QObject
 from PyQt5.QtGui import QFont
 
@@ -208,27 +208,49 @@ class FillForm(FieldRowsMixin, AdvancedSectionMixin, BatchSectionMixin, ConfigIO
         batch_layout.setContentsMargins(10, 10, 10, 10)
         batch_layout.setSpacing(10)
 
-        # Filename template row
-        filename_row = QHBoxLayout()
-        filename_row.addWidget(QLabel(STRINGS['fill_filename_template']))
+# Filename template row
+        self.filename_row = QHBoxLayout()
+        self.lbl_filename_template = QLabel(STRINGS['fill_filename_template'])
+        self.filename_row.addWidget(self.lbl_filename_template)
         self.edit_filename_template = QLineEdit()
         self.edit_filename_template.setPlaceholderText(STRINGS['fill_filename_placeholder'])
         self.edit_filename_template.setToolTip(STRINGS['fill_filename_tooltip'])
-        filename_row.addWidget(self.edit_filename_template)
+        self.filename_row.addWidget(self.edit_filename_template)
         self.btn_insert_field = QPushButton(STRINGS['fill_insert_field_btn'])
         self.btn_insert_field.setFont(QFont('Segoe UI', 9))
         self.btn_insert_field.clicked.connect(self._show_insert_field_menu)
-        filename_row.addWidget(self.btn_insert_field)
-        batch_layout.addLayout(filename_row)
+        self.filename_row.addWidget(self.btn_insert_field)
+        batch_layout.addLayout(self.filename_row)
 
         # Directory template row
-        directory_row = QHBoxLayout()
-        directory_row.addWidget(QLabel(STRINGS['fill_directory_template']))
+        self.directory_row = QHBoxLayout()
+        self.lbl_directory_template = QLabel(STRINGS['fill_directory_template'])
+        self.directory_row.addWidget(self.lbl_directory_template)
         self.edit_directory_template = QLineEdit()
         self.edit_directory_template.setPlaceholderText(STRINGS['fill_directory_placeholder'])
         self.edit_directory_template.setToolTip(STRINGS['fill_directory_tooltip'])
-        directory_row.addWidget(self.edit_directory_template)
-        batch_layout.addLayout(directory_row)
+        self.directory_row.addWidget(self.edit_directory_template)
+        batch_layout.addLayout(self.directory_row)
+
+        # Create projects mode row
+        create_projects_row = QHBoxLayout()
+        self.chk_create_projects = QCheckBox(STRINGS['fill_create_projects_checkbox'])
+        self.chk_create_projects.setFont(QFont('Segoe UI', 9))
+        self.chk_create_projects.toggled.connect(self._on_create_projects_toggled)
+        create_projects_row.addWidget(self.chk_create_projects)
+        create_projects_row.addStretch()
+        batch_layout.addLayout(create_projects_row)
+
+        # Folder name template row (initially hidden)
+        self.folder_name_row = QHBoxLayout()
+        self.lbl_folder_name_template = QLabel(STRINGS['fill_folder_name_template'])
+        self.folder_name_row.addWidget(self.lbl_folder_name_template)
+        self.edit_folder_name_template = QLineEdit()
+        self.edit_folder_name_template.setPlaceholderText(STRINGS['fill_folder_name_placeholder'])
+        self.edit_folder_name_template.setToolTip(STRINGS['fill_folder_name_tooltip'])
+        self.folder_name_row.addWidget(self.edit_folder_name_template)
+        batch_layout.addLayout(self.folder_name_row)
+        self.folder_name_row.setContentsMargins(0, 0, 0, 0)
 
         total_row = QHBoxLayout()
         total_row.addWidget(QLabel(STRINGS['fill_total_docs']))
@@ -277,8 +299,38 @@ class FillForm(FieldRowsMixin, AdvancedSectionMixin, BatchSectionMixin, ConfigIO
         btn_validate = QPushButton(STRINGS['fill_validate_btn'])
         btn_validate.clicked.connect(self._validate)
         btn_layout.addWidget(btn_validate)
-        btn_create = QPushButton(STRINGS['fill_create_btn'])
-        btn_create.setMinimumWidth(120)
-        btn_create.clicked.connect(self._create)
-        btn_layout.addWidget(btn_create)
+        self.btn_create = QPushButton(STRINGS['fill_create_btn'])
+        self.btn_create.setMinimumWidth(120)
+        self.btn_create.clicked.connect(self._create)
+        btn_layout.addWidget(self.btn_create)
         main_layout.addLayout(btn_layout)
+
+        # Set initial UI state for create projects mode
+        self._set_folder_name_visible(False)
+
+    def _set_folder_name_visible(self, visible: bool):
+        """Show/hide folder name template row and toggle filename/directory rows."""
+        # Folder name template row
+        for i in range(self.folder_name_row.count()):
+            widget = self.folder_name_row.itemAt(i).widget()
+            if widget:
+                widget.setVisible(visible)
+        # Filename template row
+        for i in range(self.filename_row.count()):
+            widget = self.filename_row.itemAt(i).widget()
+            if widget:
+                widget.setVisible(not visible)
+        # Directory template row
+        for i in range(self.directory_row.count()):
+            widget = self.directory_row.itemAt(i).widget()
+            if widget:
+                widget.setVisible(not visible)
+        # Update button text
+        if visible:
+            self.btn_create.setText(STRINGS['fill_create_projects_btn'])
+        else:
+            self.btn_create.setText(STRINGS['fill_create_btn'])
+
+    def _on_create_projects_toggled(self, checked: bool):
+        """Handle create projects checkbox toggle."""
+        self._set_folder_name_visible(checked)

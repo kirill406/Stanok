@@ -2,8 +2,7 @@
 """Config I/O mixin: load existing config, collect config, autosave, validate, create."""
 
 import os
-from typing import Dict, List
-from PyQt5.QtWidgets import (QGroupBox, QMessageBox, QProgressDialog)
+from PyQt5.QtWidgets import (QGroupBox, QMessageBox, QProgressDialog, QInputDialog)
 
 from docxforge.engine.schema import (
     TemplateConfig, FieldMapping, FieldType, CycleMapping, AggregationMapping,
@@ -190,27 +189,8 @@ class ConfigIOMixin:
             total_docs = 1
         
         if config.create_projects:
-            # Create projects mode
-            progress = QProgressDialog('\u0421\u043e\u0437\u0434\u0430\u043d\u0438\u0435 \u043f\u0440\u043e\u0435\u043a\u0442\u043e\u0432...', None, 0, total_docs, self)
-            progress.setWindowTitle('\u0421\u043e\u0437\u0434\u0430\u043d\u0438\u0435 \u043f\u0440\u043e\u0435\u043a\u0442\u043e\u0432')
-            outputs = self._create_projects(config, total_docs, progress)
-            progress.close()
-            if outputs:
-                QMessageBox.information(
-                    self, '\u0413\u043e\u0442\u043e\u0432\u043e',
-                    '\u0421\u043e\u0437\u0434\u0430\u043d\u043e \u043f\u0440\u043e\u0435\u043a\u0442\u043e\u0432: %d\n%s' % (
-                        len(outputs), '\n'.join(os.path.basename(o) for o in outputs)))
-                # Save template name and doc count to main window settings
-                main_window = self._get_main_window()
-                if main_window:
-                    if hasattr(main_window, '_set_last_template'):
-                        main_window._set_last_template(self.project_dir, os.path.basename(self.template_path))
-                    if hasattr(main_window, '_set_last_doc_count'):
-                        main_window._set_last_doc_count(self.project_dir, total_docs)
-                    if hasattr(main_window, '_refresh_recent_list'):
-                        main_window._refresh_recent_list()
-            else:
-                QMessageBox.warning(self, '\u041e\u0448\u0438\u0431\u043a\u0430', '\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0441\u043e\u0437\u0434\u0430\u0442\u044c \u043f\u0440\u043e\u0435\u043a\u0442\u044b')
+            # Create projects mode (flat or nested employee/project structure)
+            self._create_projects_mode(config)
         else:
             # Normal document generation mode
             progress = QProgressDialog('\u0413\u0435\u043d\u0435\u0440\u0430\u0446\u0438\u044f...', None, 0, total_docs, self)
@@ -240,100 +220,92 @@ class ConfigIOMixin:
             else:
                 QMessageBox.warning(self, '\u041e\u0448\u0438\u0431\u043a\u0430', '\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0441\u043e\u0437\u0434\u0430\u0442\u044c \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b')
     
-    def _create_projects(self, config: 'TemplateConfig', total_docs: int, progress: 'QProgressDialog') -> List[str]:
-        """Create project folders with filled templates."""
-        import shutil
-        from docxforge.engine.schema import Project, TemplateConfig
-        
-        outputs = []
-        results_dir = os.path.join(self.project_dir, 'output')
-        os.makedirs(results_dir, exist_ok=True)
-        
-        for doc_index in range(total_docs):
-            progress.setValue(doc_index)
-            progress.setLabelText('\u0421\u043e\u0437\u0434\u0430\u043d\u0438\u0435 \u043f\u0440\u043e\u0435\u043a\u0442\u0430 %d \u0438\u0437 %d' % (doc_index + 1, total_docs))
-            
-            # Get effective values for this document index
-            effective_values = self._get_effective_values_for_doc(config, doc_index)
-            
-            # Compute folder name from template
-            folder_name = config.folder_name_template
-            for key, value in effective_values.items():
-                folder_name = folder_name.replace('{{ %s }}' % key, str(value))
-                folder_name = folder_name.replace('{{%s}}' % key, str(value))
-            
-            # Create project folder
-            project_folder = os.path.join(results_dir, folder_name)
-            os.makedirs(project_folder, exist_ok=True)
-            
-            # Render document directly to project folder
-            doc_outputs = self.renderer.render(
-                self.template_rel_path,
-                {},
-                output_dir=project_folder,
-                max_docs=1,
-            )
-            
-            if doc_outputs:
-                outputs.extend(doc_outputs)
-        
-        return outputs
-    
-    def _get_effective_values_for_doc(self, config: 'TemplateConfig', doc_index: int) -> Dict[str, str]:
-        """Get effective field values for a specific document index (for folder name template)."""
-        from datetime import datetime
-        from docxforge.engine.renderer import Renderer
-        from docxforge.engine.data_reader import DataReader
-        from docxforge.engine.render_loop import (
-            scan_raw_placeholders, resolve_field_values, process_xml,
-        )
-        
-        # This is a simplified version - we need to compute effective values
-        # similar to what the renderer does, but without writing the file
-        template_path = self.renderer.get_template_path(self.template_rel_path)
-        
-        import zipfile
-        with zipfile.ZipFile(template_path, 'r') as zf:
-            zdata = {name: zf.read(name) for name in zf.namelist()}
-        
-        all_raw_phs = scan_raw_placeholders(zdata)
-        now = datetime.now()
-        
-        # Read all table data
-        all_table_data = {}
-        for fn, fm in config.fields.items():
-            if fm.type == 'table' and fm.file and fm.file not in all_table_data:
-                all_table_data[fm.file] = self.renderer._read_table_data(fm.file)
-        for source_file in config.batch_sources:
-            if source_file not in all_table_data:
-                all_table_data[source_file] = self.renderer._read_table_data(source_file)
-        
-        # Resolve rows for this document index
-        per_source_rows = {}
-        for source_file, bsc in config.batch_sources.items():
-            rows = all_table_data.get(source_file, [])
-            row = self.renderer._resolve_row_for_source(
-                source_file, doc_index, config.batch_sources, config.resume, rows)
-            per_source_rows[source_file] = row
-        
-        # Load cycle data
-        cycle_data = {}
-        for cycle in config.cycles:
-            if cycle.table not in all_table_data:
-                cycle_data[cycle.table] = self.renderer._read_table_data(cycle.table)
+    def _create_projects_mode(self, config: 'TemplateConfig'):
+        """Create-projects mode: row-count dialog, engine call, result dialog.
+
+        Runs in the GUI thread with modal dialogs only (no threads/timers),
+        so the Qt event loop handling stays unchanged.
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+
+        # Engine reads проект.docxforge from disk, so persist the config first.
+        self.renderer.project.templates[self.template_rel_path] = config
+        self.renderer.save_project()
+
+        # Total rows of the primary batch source = total projects to create.
+        try:
+            total_rows = self._count_primary_rows(config)
+        except Exception as e:
+            logger.error('Failed to count batch rows: %s', e)
+            QMessageBox.warning(self, STRINGS['msg_error'], str(e))
+            return
+        if total_rows < 1:
+            QMessageBox.warning(self, STRINGS['msg_error'], STRINGS['msg_no_batch_rows'])
+            return
+
+        # Row-count dialog (cancel aborts before anything is created).
+        chosen = total_rows
+        if total_rows > 1:
+            chosen, ok = QInputDialog.getInt(
+                self,
+                STRINGS['fill_create_projects_btn'],
+                STRINGS['fill_found_rows'].format(count=total_rows),
+                total_rows, 1, total_rows, 1)
+            if not ok:
+                return
+
+        # Dispatch: composite template (employee/project) goes to the nested
+        # entry point when available, otherwise use the flat entry point.
+        # generate.py itself is never modified here, only called.
+        from docxforge import generate as generate_module
+        nested_fn = getattr(generate_module, 'create_nested_employee_projects', None)
+        is_composite = '/' in (config.folder_name_template or '') and callable(nested_fn)
+        try:
+            if is_composite:
+                result = nested_fn(
+                    self.project_dir, self.template_rel_path,
+                    config.folder_name_template, max_projects=chosen)
             else:
-                cycle_data[cycle.table] = all_table_data[cycle.table]
-        for agg in config.aggregations.values():
-            if agg.table not in cycle_data:
-                if agg.table not in all_table_data:
-                    cycle_data[agg.table] = self.renderer._read_table_data(agg.table)
-                else:
-                    cycle_data[agg.table] = all_table_data[agg.table]
-        
-        # Get effective values
-        effective, _ = resolve_field_values(
-            config, all_raw_phs, doc_index, per_source_rows,
-            all_table_data, cycle_data, config.resume, now, {})
-        
-        return effective
+                result = generate_module.create_projects_from_template(
+                    self.project_dir, self.template_rel_path,
+                    config.folder_name_template, max_projects=chosen)
+        except Exception as e:
+            logger.error('Create projects failed: %s', e)
+            QMessageBox.warning(self, STRINGS['msg_error'], str(e))
+            return
+
+        if is_composite and len(result) == 3:
+            projects_dir, n_employees, n_projects = result
+            message = STRINGS['fill_nested_projects_created'].format(
+                employees=n_employees, count=n_projects, path=projects_dir)
+            created_count = n_projects
+        else:
+            projects_dir, created_count = result[0], result[1]
+            message = STRINGS['fill_projects_created'].format(
+                count=created_count, path=projects_dir)
+        QMessageBox.information(self, STRINGS['msg_success'], message)
+
+        # Save template name and doc count to main window settings
+        main_window = self._get_main_window()
+        if main_window:
+            if hasattr(main_window, '_set_last_template'):
+                main_window._set_last_template(self.project_dir, os.path.basename(self.template_path))
+            if hasattr(main_window, '_set_last_doc_count'):
+                main_window._set_last_doc_count(self.project_dir, chosen)
+            if hasattr(main_window, '_refresh_recent_list'):
+                main_window._refresh_recent_list()
+
+    def _count_primary_rows(self, config: 'TemplateConfig') -> int:
+        """Return total row count of the first SEQUENTIAL batch source."""
+        primary_file = None
+        for _source_name, bsc in config.batch_sources.items():
+            if bsc.mode == RowIterationMode.SEQUENTIAL:
+                primary_file = bsc.file
+                break
+        if primary_file is None:
+            raise ValueError(STRINGS['msg_no_batch_rows'])
+        all_data = self.data_reader.read_all_batch_sources(
+            self.project_dir, config.batch_sources)
+        return len(all_data.get(primary_file, []))
 

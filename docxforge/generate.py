@@ -631,9 +631,12 @@ def create_nested_employee_projects(
     whole template resolves the project folder (backward compatible).
 
     The grouping/project column names are inferred from the template
-    placeholders (``{{фио_сотрудника}}/{{проект}}`` groups by the
-    ``фио_сотрудника`` column), unless explicit ``employee_column`` /
-    ``project_column`` arguments are passed.
+    placeholders (``{{фио_сотрудника}}/{{проект}}`` groups by the batch
+    column behind the ``фио_сотрудника`` field), unless explicit
+    ``employee_column`` / ``project_column`` arguments are passed.
+    Placeholders name fields: a TABLE field's file/column mapping is
+    resolved, so ``{{фио_клиента}}`` (Таблица "клиенты", столбец "фио")
+    groups by the ``фио`` batch column.
 
     NOTE: ``max_projects`` is the 4th positional parameter so the composite
     routing in ``create_projects_from_template`` can pass it positionally.
@@ -690,15 +693,27 @@ def create_nested_employee_projects(
     available_columns = set()
     for row in primary_rows:
         available_columns.update(row.keys())
-    # Infer grouping/project columns from dynamic template placeholders
-    # ("{{фио_сотрудника}}/{{проект}}" -> columns "фио_сотрудника"/"проект"),
-    # unless the caller passed explicit non-default column names.
+    # Template placeholders name FIELDS, not batch columns: "{{фио_клиента}}"
+    # may be a TABLE field reading column "фио" from "клиенты.xlsx".
+    # Infer placeholder names from the template, then resolve each one to
+    # the real batch column via the field mapping (TABLE file/column).
+    # A placeholder with no field entry names a batch column directly.
     _parsed_columns = parse_composite_template(folder_name_template or '')
     if _parsed_columns['is_composite']:
         if employee_column == 'employee' and _parsed_columns.get('employee_column'):
             employee_column = _parsed_columns['employee_column']
         if project_column == 'project_name' and _parsed_columns.get('project_column'):
             project_column = _parsed_columns['project_column']
+    _employee_field = template_config.fields.get(employee_column)
+    _project_field = template_config.fields.get(project_column)
+    if (_employee_field is not None and _employee_field.type == FieldType.TABLE
+            and _employee_field.column):
+        if _employee_field.column in available_columns or employee_column not in available_columns:
+            employee_column = _employee_field.column
+    if (_project_field is not None and _project_field.type == FieldType.TABLE
+            and _project_field.column):
+        if _project_field.column in available_columns or project_column not in available_columns:
+            project_column = _project_field.column
     if employee_column not in available_columns:
         raise GenerationError(
             f'Column "{employee_column}" not found in batch source '

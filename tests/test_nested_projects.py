@@ -245,6 +245,57 @@ def test_nested_generation_with_dynamic_column_names():
         assert employees == ['Иванов Иван', 'Петров Петр']
 
 
+def test_nested_generation_resolves_field_mapping_to_batch_column():
+    """Placeholder names fields: {{фио_клиента}} (Таблица 'клиенты', столбец 'фио')."""
+    if not HAS_NESTED:
+        pytest.skip('pending: create_nested_employee_projects not implemented (Phase 3)')
+    from docx import Document
+    from openpyxl import Workbook
+
+    with tempfile.TemporaryDirectory() as tmp:
+        project_dir = os.path.join(tmp, 'mapped_source')
+        data_dir = os.path.join(project_dir, 'Данные')
+        tmpl_dir = os.path.join(project_dir, 'Шаблоны')
+        os.makedirs(data_dir, exist_ok=True)
+        os.makedirs(tmpl_dir, exist_ok=True)
+
+        doc = Document()
+        doc.add_paragraph('Клиент: {{ фио_клиента }}')
+        doc.add_paragraph('Договор: {{ договор }}')
+        doc.save(os.path.join(tmpl_dir, 'contract.docx'))
+
+        wb = Workbook()
+        ws = wb.active
+        ws.append(['фио', 'номер'])
+        ws.append(['Иванов Иван', 'Д-001'])
+        ws.append(['Иванов Иван', 'Д-002'])
+        ws.append(['Петров Петр', 'Д-003'])
+        wb.save(os.path.join(data_dir, 'клиенты.xlsx'))
+
+        prj = Project()
+        tc = TemplateConfig()
+        tc.fields['фио_клиента'] = FieldMapping(
+            type=FieldType.TABLE, file='клиенты.xlsx', column='фио')
+        tc.fields['договор'] = FieldMapping(
+            type=FieldType.TABLE, file='клиенты.xlsx', column='номер')
+        tc.batch_sources = {
+            'клиенты.xlsx': BatchSourceConfig(
+                file='клиенты.xlsx', mode=RowIterationMode.SEQUENTIAL),
+        }
+        tc.filename_template = '{{ договор }}.docx'
+        prj.templates['contract.docx'] = tc
+        prj.to_file(os.path.join(project_dir, 'проект.docxforge'))
+
+        projects_dir, employee_count, project_count = (
+            gen_module.create_projects_from_template(
+                project_dir, 'contract.docx', '{{фио_клиента}}/{{договор}}'))
+        assert (employee_count, project_count) == (2, 3)
+        employees = sorted(
+            d for d in os.listdir(projects_dir)
+            if os.path.isdir(os.path.join(projects_dir, d)))
+        assert employees == ['Иванов Иван', 'Петров Петр']
+
+
 def test_nested_composite_template_parsing_fallback_resolves_both_placeholders():
     """Existing resolver handles composite template with row data (no new API)."""
     from docxforge.generate import _resolve_folder_name_template

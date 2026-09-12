@@ -232,4 +232,55 @@ def _build_project_config(
         new_fm = FieldMapping(type=fm.type)
         if fm.type == FieldType.CONSTANT:
             new_fm.value = fm.value
-        elif fm.type == FieldTy
+        elif fm.type == FieldType.TABLE:
+            if fm.file and fm.column and fm.file in row_data:
+                new_fm = FieldMapping(type=FieldType.CONSTANT, value=row_data.get(fm.column, ''))
+            else:
+                new_fm.value = fm.value
+        elif fm.type == FieldType.COUNTER:
+            new_fm.start = fm.start
+            new_fm.step = fm.step
+            new_fm.format = fm.format
+        else:
+            new_fm.value = fm.value
+            new_fm.format = fm.format
+            new_fm.file = fm.file
+            new_fm.column = fm.column
+            new_fm.linked_to = fm.linked_to
+            new_fm.function = fm.function
+            new_fm.multiplier = fm.multiplier
+        new_config.fields[fn] = new_fm
+
+    new_config.batch_sources = {}
+    for name, bsc in template_config.batch_sources.items():
+        if name == primary_source_file:
+            new_config.batch_sources[name] = BatchSourceConfig(file=bsc.file, mode=RowIterationMode.CONSTANT)
+        else:
+            new_config.batch_sources[name] = bsc
+
+    new_config.filename_template = template_config.filename_template
+    new_config.directory_template = template_config.directory_template
+    new_config.resume = ResumeState(continue_from_last=False)
+
+    return new_config
+
+
+def _copy_template_files(src_template: str, dst_templates_dir: str) -> None:
+    dst_template = os.path.join(dst_templates_dir, os.path.basename(src_template))
+    if os.path.exists(src_template):
+        shutil.copy2(src_template, dst_template)
+
+
+def generate_cli(project_path: str, template: str = None, count: int = None, out: str = None) -> List[str]:
+    """CLI-friendly wrapper that prints progress."""
+    print(f'Project: {project_path}')
+    print(f'Template: {template or "first configured"}')
+    print(f'Count: {count or "auto"}')
+    print(f'Output: {out or "<project>/output/"}')
+
+    outputs = generate_project(project_path, template, count, out)
+
+    print(f'Generated: {len(outputs)} document(s)')
+    for o in outputs:
+        print(f'  {os.path.basename(o)}')
+    return outputs

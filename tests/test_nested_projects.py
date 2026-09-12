@@ -309,6 +309,66 @@ def test_nested_composite_template_parsing_fallback_resolves_both_placeholders()
     assert resolved == 'Иванов Иван/Договор_001'
 
 
+def test_nested_folder_resolve_tolerates_placeholder_spacing():
+    """Any whitespace inside {{ ... }} resolves (no literal '{{ }}' folders)."""
+    from docxforge.generate import _resolve_folder_name_template
+    tc = TemplateConfig()
+    tc.fields['фио_сотрудника'] = FieldMapping(
+        type=FieldType.TABLE, file='клиенты.xlsx', column='фио')
+    row = {'фио': 'Иванов Иван'}
+    for template in ('{{фио_сотрудника}}', '{{ фио_сотрудника }}',
+                     '{{  фио_сотрудника  }}', '{{фио_сотрудника }}',
+                     '{{ фио_сотрудника}}'):
+        assert _resolve_folder_name_template(template, row, tc, []) == 'Иванов Иван'
+
+
+def test_nested_generation_never_creates_literal_placeholder_folders():
+    """Unmapped field (no table/column) falls back to batch values, not '{{ }}'."""
+    if not HAS_NESTED:
+        pytest.skip('pending: create_nested_employee_projects not implemented (Phase 3)')
+    from docx import Document
+    from openpyxl import Workbook
+
+    with tempfile.TemporaryDirectory() as tmp:
+        project_dir = os.path.join(tmp, 'unmapped_source')
+        data_dir = os.path.join(project_dir, 'Данные')
+        tmpl_dir = os.path.join(project_dir, 'Шаблоны')
+        os.makedirs(data_dir, exist_ok=True)
+        os.makedirs(tmpl_dir, exist_ok=True)
+
+        doc = Document()
+        doc.add_paragraph('Сотрудник: {{ фио }}')
+        doc.save(os.path.join(tmpl_dir, 'contract.docx'))
+
+        wb = Workbook()
+        ws = wb.active
+        ws.append(['фио', 'номер'])
+        ws.append(['Иванов Иван', 'Д-001'])
+        ws.append(['Петров Петр', 'Д-002'])
+        wb.save(os.path.join(data_dir, 'batch.xlsx'))
+
+        prj = Project()
+        tc = TemplateConfig()
+        # Field with no table/column mapping at all.
+        tc.fields['фио_сотрудника'] = FieldMapping(
+            type=FieldType.TABLE, file='', column='')
+        tc.batch_sources = {
+            'batch.xlsx': BatchSourceConfig(
+                file='batch.xlsx', mode=RowIterationMode.SEQUENTIAL),
+        }
+        prj.templates['contract.docx'] = tc
+        prj.to_file(os.path.join(project_dir, 'проект.docxforge'))
+
+        projects_dir, employee_count, project_count = (
+            gen_module.create_nested_employee_projects(
+                project_dir, 'contract.docx', '{{  фио_сотрудника  }}/{{ номер }}',
+                employee_column='фио', project_column='номер'))
+        assert (employee_count, project_count) == (2, 2)
+        for root, dirs, _files in os.walk(projects_dir):
+            for d in dirs:
+                assert '{{' not in d and '}}' not in d, d
+
+
 def test_nested_config_transformation_applies_constant_counter_batch():
     """CONSTANT preserved, COUNTER reset, batch->CONSTANT (existing helper)."""
     from docxforge.generate import _build_project_config

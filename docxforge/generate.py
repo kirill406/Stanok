@@ -302,7 +302,10 @@ def _resolve_folder_name_template(
 
     for fn, fm in config.fields.items():
         if fm.type == FieldType.TABLE and not fm.linked_to:
-            if fm.file and fm.column and fm.column in row_data:
+            # The file only designates the source table; the value always
+            # comes from the current row, so a missing file selection must
+            # not block resolution when the column is present in the row.
+            if fm.column and fm.column in row_data:
                 effective[fn] = row_data.get(fm.column, '')
 
     for key, value in row_data.items():
@@ -311,8 +314,17 @@ def _resolve_folder_name_template(
 
     result = template
     for key, value in effective.items():
-        result = result.replace('{{ ' + key + ' }}', str(value))
-        result = result.replace('{{' + key + '}}', str(value))
+        # Tolerate any whitespace inside braces: {{key}}, {{ key }},
+        # {{  key  }}, {{key }}, etc. (exact-match replace missed these
+        # and produced literal "{{ ... }}" folder names).
+        result = re.sub(
+            r'\{\{\s*' + re.escape(key) + r'\s*\}\}', str(value), result)
+
+    unresolved = _GENERIC_PLACEHOLDER_RE.findall(result)
+    if unresolved:
+        logger.warning(
+            'Unresolved placeholders %s in folder template %r '
+            '(check field table/column mapping)', unresolved, template)
 
     return result.strip()
 
@@ -767,6 +779,14 @@ def create_nested_employee_projects(
                     employee_part, items[0][1], template_config, raw_placeholders)
             else:
                 resolved_employee = raw_employee
+            if _GENERIC_PLACEHOLDER_RE.search(resolved_employee):
+                # Never create literal "{{ ... }}" folders: fall back to the
+                # grouped batch value (field mapping incomplete).
+                logger.warning(
+                    'Employee part %r did not resolve for row %s; '
+                    'using batch value %r', employee_part,
+                    items[0][0], raw_employee)
+                resolved_employee = raw_employee
             employee_base = _sanitize_folder_name(resolved_employee)
             if not employee_base:
                 employee_base = f'employee_{employee_counter}'
@@ -786,6 +806,15 @@ def create_nested_employee_projects(
                 resolved_project = _resolve_folder_name_template(
                     project_part or '{{%s}}' % project_column,
                     row, template_config, raw_placeholders)
+                if _GENERIC_PLACEHOLDER_RE.search(resolved_project):
+                    # Never create literal "{{ ... }}" folders: fall back to
+                    # the batch value (field mapping incomplete).
+                    fallback_project = str(row.get(project_column, '') or '').strip()
+                    logger.warning(
+                        'Project part %r did not resolve for row %s; '
+                        'using batch value %r', project_part,
+                        row_idx, fallback_project)
+                    resolved_project = fallback_project
                 project_base = _sanitize_folder_name(resolved_project)
                 if not project_base:
                     project_base = f'project_{project_counter}'

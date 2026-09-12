@@ -46,20 +46,20 @@
 ## Phases
 
 ### Phase 1: Strings & Constants
-- [ ] Add 4 new string constants to `docxforge/gui/strings.py`
-- [ ] Verify strings used correctly in UI
+- [x] Add 4 new string constants to `docxforge/gui/strings.py`
+- [x] Verify strings used correctly in UI
 
 ### Phase 2: Fill Form UI — Checkbox & Folder Name Template
-- [ ] Add `chk_create_projects` checkbox to Fill Form
-- [ ] Add `edit_folder_name_template` input field
-- [ ] Implement UI toggle: when checked, show folder template, hide filename/dir templates, change button text
-- [ ] Add validation: folder name template required when mode active
+- [x] Add `chk_create_projects` checkbox to Fill Form
+- [x] Add `edit_folder_name_template` input field
+- [x] Implement UI toggle: when checked, show folder template, hide filename/dir templates, change button text
+- [x] Add validation: folder name template required when mode active
 
 ### Phase 3: Fill Form Logic — Mode Switch in `_create()`
-- [ ] Modify `_create()` to detect checkbox state
-- [ ] Call new `create_projects_from_template()` when mode active
-- [ ] Show row count dialog when table rows > 1
-- [ ] Show success message with created count and path
+- [x] Modify `_create()` to detect checkbox state
+- [x] Call new `create_projects_from_template()` when mode active
+- [x] Show row count dialog when table rows > 1
+- [x] Show success message with created count and path
 
 ### Phase 4: Core Logic — `create_projects_from_template()` in `generate.py`
 - [ ] Implement `create_projects_from_template()` function
@@ -118,9 +118,9 @@
 
 | Phase | Tasks | Verification | Status |
 |-------|-------|--------------|--------|
-| 1 | Strings & Constants | grep strings.py | ⬜ |
-| 2 | Fill Form UI | Manual + UI tests | ⬜ |
-| 3 | Fill Form Logic | Manual + integration test | ⬜ |
+| 1 | Strings & Constants | grep strings.py | ✅ |
+| 2 | Fill Form UI | Manual + UI tests | ✅ |
+| 3 | Fill Form Logic | Manual + integration test | ✅ |
 | 4 | Core Logic | Unit tests | ⬜ |
 | 5 | Folder Name Resolution | Unit tests | ⬜ |
 | 6 | Unit Tests | pytest test_create_projects.py | ⬜ |

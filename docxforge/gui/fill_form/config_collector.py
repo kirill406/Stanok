@@ -72,6 +72,11 @@ class ConfigCollectorMixin:
         config.filename_template = self.edit_filename_template.text().strip() or None
         # Directory template
         config.directory_template = self.edit_directory_template.text().strip() or None
+        # Create projects mode
+        if hasattr(self, 'chk_create_projects'):
+            config.ui_state['create_projects'] = self.chk_create_projects.isChecked()
+        if hasattr(self, 'edit_folder_name_template'):
+            config.ui_state['folder_name_template'] = self.edit_folder_name_template.text().strip() or None
         # Build resume state from per-source counters
         resume_sources = {}
         for df, bw in self.batch_source_widgets.items():
@@ -82,5 +87,4 @@ class ConfigCollectorMixin:
             sources=resume_sources,
             continue_from_last=True,  # Legacy field, kept for compatibility
         )
-        config.ui_state = {}
         return config

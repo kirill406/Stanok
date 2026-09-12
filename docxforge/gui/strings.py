@@ -75,6 +75,15 @@ STRINGS = {
     'fill_directory_placeholder': '{{ region }}/{{ city }} (пусто = без подпапок)',
     'fill_directory_tooltip': 'Используйте {{ field_name }} для подстановки. Папки будут созданы внутри выходной директории. Пусто = файлы напрямую в папку результатов.',
 
+    # Create projects mode
+    'fill_create_projects_checkbox': 'Создать проекты',
+    'fill_folder_name_template': 'Шаблон имени папки:',
+    'fill_folder_name_placeholder': '{{ region }}_{{ city }} (обязательно для режима проектов)',
+    'fill_folder_name_tooltip': 'Используйте {{ field_name }} для подстановки значений из таблицы. Каждая строка = одна папка проекта в Projects/. Обязательно в режиме "Создать проекты".',
+    'fill_found_rows': 'Найдено строк в таблице: {count}.\nСоздать {count} проектов в папке Projects/?',
+    'fill_projects_created': 'Создано проектов: {count}\nПапка: {path}',
+    'fill_create_projects_btn': 'Создать проекты',
+
     # Messages
     'msg_error': 'Ошибка',
     'msg_warning': 'Предупреждение',

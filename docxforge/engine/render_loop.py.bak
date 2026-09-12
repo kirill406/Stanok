@@ -126,7 +126,6 @@ def resolve_field_values(
     return effective, image_paths
 
 
-
 def resolve_folder_name_template(
     template: str,
     row_data: Optional[Dict[str, str]] = None,
@@ -197,6 +196,7 @@ def resolve_folder_name_template(
 
     return result
 
+
 def process_xml(zdata: dict, config: TemplateConfig,
                 cycle_data: Dict[str, List[Dict[str, str]]],
                 effective: Dict[str, str],
@@ -207,156 +207,4 @@ def process_xml(zdata: dict, config: TemplateConfig,
     if image_paths is None:
         image_paths = {}
 
-    doc_xml = etree.fromstring(zdata['word/document.xml'])
-    body = doc_xml.find(W_NS + 'body')
-
-    for cycle in config.cycles:
-        data = cycle_data.get(cycle.table, [])
-        for tbl in body.findall('.//' + W_NS + 'tbl'):
-            expand_table_cycle(tbl, cycle, data, effective)
-
-    # Insert images before text replacement
-    image_index = 1
-    for p in body.findall('.//' + W_NS + 'p'):
-        runs = p.findall(W_NS + 'r')
-        if not runs:
-            continue
-        merged_text = ''
-        for r in runs:
-            for t in r.findall(W_NS + 't'):
-                if t.text:
-                    merged_text += t.text
-        for m in re.finditer(r'\{\{\s*image:(.+?)\s*\}\}', merged_text):
-            img_name = m.group(1).strip()
-            if img_name in image_paths:
-                img_path = image_paths[img_name]
-                if project_dir:
-                    img_path = os.path.join(project_dir, img_path) if not os.path.isabs(img_path) else img_path
-                if os.path.exists(img_path):
-                    r_id = 'rIdImg{:d}'.format(image_index)
-                    add_image_to_zdata(zdata, img_path, image_index)
-                    add_image_relationship(zdata, r_id,
-                                          'word/media/image{:d}{}'.format(
-                                              image_index,
-                                              os.path.splitext(img_path)[1] or '.png'))
-                    insert_image_in_paragraph(p, r_id, name=img_name)
-                    image_index += 1
-                    break
-
-    for p in body.findall('.//' + W_NS + 'p'):
-        merge_and_replace_paragraph(p, effective)
-
-    for part_name in list(zdata.keys()):
-        if 'header' in part_name or 'footer' in part_name:
-            part_xml = etree.fromstring(zdata[part_name])
-            for p in part_xml.findall('.//' + W_NS + 'p'):
-                # Check for image placeholders in headers/footers too
-                runs = p.findall(W_NS + 'r')
-                if runs:
-                    merged_text = ''
-                    for r in runs:
-                        for t in r.findall(W_NS + 't'):
-                            if t.text:
-                                merged_text += t.text
-                    for m in re.finditer(r'\{\{\s*image:(.+?)\s*\}\}', merged_text):
-                        img_name = m.group(1).strip()
-                        if img_name in image_paths:
-                            img_path = image_paths[img_name]
-                            if project_dir:
-                                img_path = os.path.join(project_dir, img_path) if not os.path.isabs(img_path) else img_path
-                            if os.path.exists(img_path):
-                                r_id = 'rIdImgHF{:d}'.format(image_index)
-                                add_image_to_zdata(zdata, img_path, image_index)
-                                add_image_relationship(zdata, r_id,
-                                                      'word/media/image{:d}{}'.format(
-                                                          image_index,
-                                                          os.path.splitext(img_path)[1] or '.png'))
-                                insert_image_in_paragraph(p, r_id, name=img_name)
-                                image_index += 1
-                                break
-                merge_and_replace_paragraph(p, effective)
-            zdata[part_name] = etree.tostring(part_xml, xml_declaration=True,
-                                               encoding='UTF-8', standalone=True)
-
-    zdata['word/document.xml'] = etree.tostring(
-        doc_xml, xml_declaration=True, encoding='UTF-8', standalone=True)
-
-    return zdata
-
-
-def write_output_doc(zdata: dict, output_dir: str,
-                     template_rel_path: str,
-                     doc_index: int, total_docs: int,
-                     batch_primary: Optional[str],
-                     filename_template: Optional[str] = None,
-                     directory_template: Optional[str] = None,
-                     effective_values: Optional[Dict[str, str]] = None,
-                     row_data: Optional[Dict[str, str]] = None,
-                     constants: Optional[Dict[str, str]] = None,
-                     user_values: Optional[Dict[str, str]] = None,
-                     counter_value: Optional[int] = None,
-                     counter_format: str = '0001',
-                     now: Optional[datetime] = None) -> str:
-    """Write a single output .docx file and return its path."""
-    if filename_template and effective_values:
-        out_name = filename_template
-        for key, value in effective_values.items():
-            out_name = out_name.replace('{{ %s }}' % key, str(value))
-            out_name = out_name.replace('{{%s}}' % key, str(value))
-        if not out_name.lower().endswith('.docx'):
-            out_name += '.docx'
-    elif total_docs > 1 or batch_primary:
-        out_name = '%s_%04d.docx' % (os.path.splitext(template_rel_path)[0], doc_index + 1)
-    else:
-        out_name = os.path.basename(template_rel_path).replace(
-            '.docx', '_заполнен.docx')
-
-    out_dir = output_dir
-    if directory_template:
-        if row_data is not None or constants is not None or user_values is not None or counter_value is not None:
-            dir_path = resolve_folder_name_template(
-                directory_template,
-                row_data=row_data,
-                constants=constants,
-                user_values=user_values,
-                counter_value=counter_value,
-                counter_format=counter_format,
-                now=now)
-        elif effective_values:
-            dir_path = directory_template
-            for key, value in effective_values.items():
-                dir_path = dir_path.replace('{{ %s }}' % key, str(value))
-                dir_path = dir_path.replace('{{%s}}' % key, str(value))
-            dir_path = re.sub(r'\{\{\s*.+?\s*\}\}', '', dir_path)
-        else:
-            dir_path = directory_template
-
-        if dir_path:
-            out_dir = os.path.join(output_dir, dir_path)
-            os.makedirs(out_dir, exist_ok=True)
-
-    out_path = os.path.join(out_dir, out_name)
-
-    with zipfile.ZipFile(out_path, 'w', zipfile.ZIP_DEFLATED) as zout:
-        for name, data in zdata.items():
-            zout.writestr(name, data)
-
-    return out_path
-
-def update_resume_state(resume: ResumeState, resume_compute: ResumeState,
-                        config: TemplateConfig, batch_configs: Dict[str, BatchSourceConfig],
-                        doc_index: int):
-    """Update resume state after a successful render batch."""
-    counter_field = next(
-        (fn for fn, fm in config.fields.items() if fm.type == FieldType.COUNTER), None)
-    if counter_field:
-        counter_offset = 0
-        if resume_compute.continue_from_last:
-            counter_offset = resume_compute.last_counter_value
-        resume.last_counter_value = counter_offset + doc_index
-    for source_file, bsc in batch_configs.items():
-        if bsc.mode in (RowIterationMode.SEQUENTIAL, RowIterationMode.CIRCULAR):
-            start_offset = 0
-            if resume_compute.continue_from_last:
-                start_offset = resume_compute.sources.get(source_file, 0)
-            resume.sources[source_file] = start_offset + doc_index
+    doc_xml = etree

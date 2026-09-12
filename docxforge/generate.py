@@ -243,6 +243,50 @@ def create_projects_from_template(
     return projects_dir, created_count
 
 
+def create_nested_employee_projects(
+    project_path: str,
+    template_name: str,
+    folder_name_template: str,
+    max_projects: Optional[int] = None,
+) -> Tuple[str, int]:
+    """
+    Create nested employee/project folders from a composite folder template.
+
+    NOTE (Phase 2 stub): full implementation belongs to Phase 3. This stub
+    only reserves the contract used by the composite routing in
+    :func:`create_projects_from_template`.
+
+    Phase 3 contract:
+      - Read batch data, group rows by the ``employee`` column.
+      - For each employee: create folder, write ``docxforge_settings.json``.
+      - For each project row: resolve folder name, copy ``Данные/`` fully,
+        copy templates to ``шаблоны/``, create empty ``результат/``,
+        write ``проект.docxforge`` (TABLE->CONSTANT, COUNTER reset,
+        batch sources->CONSTANT).
+
+    Args:
+        project_path: Path to project directory (containing проект.docxforge).
+        template_name: Template filename (relative to Шаблоны/).
+        folder_name_template: Composite template, e.g. ``"{{employee}}/{{project_name}}"``.
+        max_projects: Maximum number of projects to create (None = all rows).
+
+    Returns:
+        Tuple ``(projects_dir, total_projects_created)``.
+
+    Raises:
+        NotImplementedError: Always (until Phase 3 implements it).
+        GenerationError: (Phase 3) on missing columns, empty data, I/O errors.
+    """
+    logger.info(
+        'Nested employee/project generation requested: project=%s template=%s',
+        project_path, template_name,
+    )
+    raise NotImplementedError(
+        'create_nested_employee_projects() is not implemented yet (Phase 3). '
+        f'Composite template: {folder_name_template!r}'
+    )
+
+
 def _resolve_folder_name_template(
     template: str,
     row_data: Dict[str, str],

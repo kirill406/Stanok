@@ -1,65 +1,78 @@
-# Plan: Phase 2 — Fill Form UI: Create Projects Checkbox & Folder Name Template
-**Spec:** New Feature | **Status:** In Progress
+# PLAN_Phase2 — Template Parsing & Detection
+
+**Parent:** PLAN.md Phase 2 | **Spec:** SPEC.md (Nested Employee/Project Generation) | **Status:** In Progress
+**Scope:** ONLY `docxforge/generate.py` (helper + detection + routing). No GUI, no tests.
 
 ---
 
 ## Goal
 
-Add a "Create Projects" mode to the Fill Form dialog that allows users to generate project folders instead of documents. When enabled:
-- Show a folder name template input field
-- Hide/disable filename template and directory template inputs
-- Change generate button text to "Создать проекты"
-- Validate that folder name template is provided when mode is active
+Add composite-template parsing and flat/composite mode detection in `create_projects_from_template()`,
+routing composite templates to `create_nested_employee_projects()` (stub in this phase, full impl = Phase 3).
+Flat path must remain byte-for-byte behavior-compatible.
 
 ---
 
 ## Subtasks
 
-### 1. Add String Constants
-- [ ] Add string constants to `docxforge/gui/strings.py`:
-  - `fill_create_projects_checkbox`: "Создать проекты вместо документов"
-  - `fill_folder_name_template`: "Шаблон имени папки проекта:"
-  - `fill_folder_name_placeholder`: "{{ field_name }} (обязательно)"
-  - `fill_folder_name_tooltip`: "Используйте {{ field_name }} для подстановки значений. Обязательно при создании проектов."
-  - `fill_create_projects_btn`: "Создать проекты"
-  - `msg_folder_template_required`: "Для создания проектов укажите шаблон имени папки"
+### 2.1 `parse_composite_template()` helper in `docxforge/generate.py`
+- [ ] Add `parse_composite_template(template: str) -> Dict[str, Any]` returning:
+  - `is_composite: bool`
+  - `employee_part: str` (segment before first `/`)
+  - `project_part: str` (remainder after first `/`)
+- [ ] Composite criteria (ALL must hold, else flat):
+  - template is non-empty string AND
+  - contains `/` AND
+  - contains `{{employee}}` placeholder (whitespace-tolerant: `{{ employee }}`) AND
+  - contains `{{project_name}}` placeholder (whitespace-tolerant)
+- [ ] Edge cases → flat (`is_composite=False`):
+  - empty / `None` / whitespace-only template
+  - no `/`
+  - only one of the two placeholders
+- [ ] Use `logging`, no `print()`; pure Python, no Qt deps.
 
-### 2. Update TemplateConfig Schema
-- [ ] Add `create_projects: bool = False` field to `TemplateConfig` in `docxforge/engine/schema.py`
-- [ ] Add `folder_name_template: Optional[str] = None` field to `TemplateConfig` in `docxforge/engine/schema.py`
+### 2.2 Detection + routing in `create_projects_from_template()`
+- [ ] At the top of `create_projects_from_template()`, call `parse_composite_template(folder_name_template)`.
+- [ ] If `is_composite` → delegate immediately to `create_nested_employee_projects(project_path, template_name, folder_name_template, max_projects)` and return its result.
+- [ ] Else → existing flat path unchanged (backward compat, no behavior change).
 
-### 3. Update Fill Form UI (form_dialog.py)
-- [ ] Add `chk_create_projects` checkbox ("Создать проекты вместо документов") after the directory template row
-- [ ] Add `edit_folder_name_template` input field with label "Шаблон имени папки проекта:"
-- [ ] Implement `_on_create_projects_toggled(checked)` method:
-  - When checked: show folder name template, hide/disable filename template and directory template, change button text to "Создать проекты"
-  - When unchecked: restore filename template and directory template visibility, change button text back to "Создать"
-- [ ] Connect checkbox `toggled` signal to handler
+### 2.3 Stub `create_nested_employee_projects()` (Phase 3 contract)
+- [ ] Add signature: `create_nested_employee_projects(project_path: str, template_name: str, folder_name_template: str, max_projects: Optional[int] = None) -> Tuple[str, int]`.
+- [ ] Body: log + `raise NotImplementedError(...)` (full implementation is Phase 3).
+- [ ] Documented contract for Phases 3–4 (return `(projects_dir, count)`; raises `GenerationError` on bad columns/data).
 
-### 4. Update Config Collection (config_collector.py)
-- [ ] Collect `create_projects` from checkbox in `_collect_config()`
-- [ ] Collect `folder_name_template` from input field in `_collect_config()`
+### 2.4 Verification
+- [ ] `python -m pytest tests/ -q` → all pass (no regressions; flat path untouched).
+- [ ] Manual sanity: flat template (`Project_{{client}}`) → flat; composite (`{{employee}}/{{project_name}}`) → routes to stub (`NotImplementedError`); empty/single-placeholder → flat.
 
-### 5. Update Config I/O (config_io.py)
-- [ ] Load `create_projects` and `folder_name_template` from config in `_load_existing_config()`
-- [ ] Apply UI state (show/hide fields, update button text) in `_load_existing_config()`
-- [ ] Connect folder name template textChanged to autosave in `_connect_autosave()`
-- [ ] Add validation: folder name template required when `create_projects` is True in `_validate()`
-- [ ] Update `_create()` to handle project creation mode:
-  - Use `folder_name_template` for output directory structure
-  - Call renderer with appropriate parameters
-  - Change progress dialog title/message
+---
 
-### 6. Update Renderer (renderer.py / render_execute.py)
-- [ ] Modify render logic to support project creation mode
-- [ ] When `create_projects=True`, create folders based on `folder_name_template` instead of generating documents
-- [ ] Each folder should contain a copy of the template with filled fields (or just the filled template as a document inside the folder?)
+## API Contract (for Phases 3–4)
 
-### 7. Testing
-- [ ] Run existing tests: `python -m pytest tests/ -q`
-- [ ] Manual test: open fill form, check "Create Projects", verify UI changes
-- [ ] Manual test: enter folder name template, generate, verify project folders created
-- [ ] Manual test: validation error when folder name template empty
+```python
+from docxforge.generate import parse_composite_template, create_nested_employee_projects
+
+parsed = parse_composite_template("{{employee}}/{{project_name}}")
+# {"is_composite": True, "employee_part": "{{employee}}", "project_part": "{{project_name}}"}
+
+parsed = parse_composite_template("Project_{{client}}")
+# {"is_composite": False, "employee_part": "", "project_part": "Project_{{client}}"}
+
+# Routing inside create_projects_from_template():
+#   parsed = parse_composite_template(folder_name_template)
+#   if parsed["is_composite"]:
+#       return create_nested_employee_projects(project_path, template_name, folder_name_template, max_projects)
+#   ... flat path ...
+
+def create_nested_employee_projects(project_path, template_name, folder_name_template, max_projects=None):
+    # Phase 3: group rows by `employee`, resolve folders, copy Данные/, write проект.docxforge + docxforge_settings.json
+    # Returns: Tuple[str, int] = (projects_dir, total_projects_created)
+    raise NotImplementedError(...)
+```
+
+- Split rule: split on FIRST `/` (`template.split("/", 1)`); extra `/` stay in `project_part`.
+- Placeholder match: regex `\{\{\s*employee\s*\}\}` and `\{\{\s*project_name\s*\}\}`, case-sensitive.
+- Flat fallback returns `employee_part=""`, `project_part=<original template or "">`.
 
 ---
 
@@ -67,31 +80,15 @@ Add a "Create Projects" mode to the Fill Form dialog that allows users to genera
 
 | AC | Description |
 |----|-------------|
-| AC-1 | Checkbox "Создать проекты вместо документов" appears in Fill Form |
-| AC-2 | When checked: folder name template shows, filename/directory templates hide, button says "Создать проекты" |
-| AC-3 | When unchecked: UI restores to normal document generation mode |
-| AC-4 | Validation error if folder name template empty when mode active |
-| AC-5 | Settings persist in project file |
-| AC-6 | Project folders created with correct structure |
+| AC-1 | `parse_composite_template("{{employee}}/{{project_name}}")` → `is_composite=True` with correct parts |
+| AC-2 | Empty template / no `/` / single placeholder → `is_composite=False` (flat) |
+| AC-3 | `create_projects_from_template()` with composite template calls `create_nested_employee_projects()` |
+| AC-4 | Flat templates follow the old code path unchanged (existing tests pass) |
+| AC-5 | Only `docxforge/generate.py` (+ this doc) modified |
 
 ---
 
-## Files to Modify
+## Files
 
-1. `docxforge/gui/strings.py` — new string constants
-2. `docxforge/engine/schema.py` — TemplateConfig fields
-3. `docxforge/gui/fill_form/form_dialog.py` — UI elements and toggle logic
-4. `docxforge/gui/fill_form/config_collector.py` — config collection
-5. `docxforge/gui/fill_form/config_io.py` — config load/save/validation/create
-6. `docxforge/engine/renderer.py` or `docxforge/engine/render_execute.py` — project creation logic
-
----
-
-## Constraints
-
-- Follow existing code style: 4 spaces, UTF-8, snake_case functions, PascalCase classes
-- Russian UI text (existing convention)
-- Imports: stdlib → third-party → local, one per line
-- Use existing patterns in referenced files
-- No new dependencies
-- No hardcoded Russian strings — use STRINGS dict
+1. `docxforge/generate.py` — helper + detection + routing + stub
+2. `PLAN_Phase2.md` — this file (planning doc, committed separately)

@@ -337,39 +337,6 @@ class TestFillForm:
         template_data = data['templates']['all_fields.docx']
         assert 'fields' in template_data
 
-        qtbot.mouseClick(btn_create, Qt.LeftButton)
-        QTest.qWait(3000)  # Wait for generation
-
-        # Check output files created
-        output_dir = Path(sample_project) / 'output'
-        if output_dir.exists():
-            docs = list(output_dir.glob('*.docx'))
-            assert len(docs) >= 1
-
-    def test_autosave_on_field_change(self, qtbot, sample_project):
-        """Test that config autosaves on field changes."""
-        dlg = FillForm(sample_project, 'all_fields.docx')
-        qtbot.addWidget(dlg)
-        dlg.show()
-
-        # Change a field
-        first_fw = list(dlg.field_widgets.values())[0]
-        first_fw['const_value'].setText('Test Value')
-        
-        # Wait for autosave timer
-        QTest.qWait(600)
-        
-        # Project file should be updated
-        project_file = Path(sample_project) / 'проект.docxforge'
-        assert project_file.exists()
-        
-        import json
-        with open(project_file, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-        
-        template_data = data['templates']['all_fields.docx']
-        assert 'fields' in template_data
-
 
 class TestFillFormIntegration:
     """Integration tests with real fixtures."""
@@ -741,61 +708,6 @@ class TestFillFormIntegrationPhase7:
         template_data = data['templates']['all_fields.docx']
         # When auto is checked, total_docs should be None
         assert template_data.get('total_docs') is None
-
-
-if __name__ == '__main__':
-    pytest.main([__file__, '-v'])
-    """Integration tests with real fixtures."""
-
-    def test_full_configuration_flow(self, qtbot, sample_project, monkeypatch):
-        """Test complete configuration and generation flow."""
-        dlg = FillForm(sample_project, 'all_fields.docx')
-        qtbot.addWidget(dlg)
-        dlg.show()
-
-        monkeypatch.setattr(QMessageBox, 'information', lambda *a, **k: None)
-        monkeypatch.setattr(QMessageBox, 'warning', lambda *a, **k: None)
-
-        # Configure all fields
-        for fname, fw in dlg.field_widgets.items():
-            if 'client' in fname.lower() or 'manager' in fname.lower():
-                fw['type_combo'].setCurrentText('таблица')
-                QTest.qWait(50)
-                fw['table_file'].setCurrentIndex(1)
-                QTest.qWait(50)
-                if fw['table_column'].count() > 0:
-                    fw['table_column'].setCurrentIndex(0)
-            elif 'номер' in fname.lower() or 'doc_number' in fname.lower():
-                fw['type_combo'].setCurrentText('счётчик')
-                QTest.qWait(50)
-            elif 'дата' in fname.lower() or 'today' in fname.lower():
-                fw['type_combo'].setCurrentText('сегодня')
-                QTest.qWait(50)
-
-        # Set batch to sequential for both tables
-        for df, bw in dlg.batch_source_widgets.items():
-            bw['radio_sequential'].setChecked(True)
-            QTest.qWait(50)
-
-        # Set filename template
-        dlg.edit_filename_template.setText('Договор_{{ doc_number }}_{{ client_name }}')
-
-        # Generate
-        dlg.spin_total_docs.setValue(3)
-        btn_create = None
-        for btn in dlg.findChildren(QPushButton):
-            if 'Создать' in btn.text():
-                btn_create = btn
-                break
-
-        assert btn_create is not None
-        qtbot.mouseClick(btn_create, Qt.LeftButton)
-        QTest.qWait(5000)
-
-        # Verify output - at least 1 document generated
-        output_dir = Path(sample_project) / 'output'
-        docs = list(output_dir.glob('*.docx'))
-        assert len(docs) >= 1, f"Expected at least 1 document, got {len(docs)}"
 
 
 if __name__ == '__main__':

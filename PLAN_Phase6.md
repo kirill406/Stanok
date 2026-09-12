@@ -1,5 +1,9 @@
 # Plan: Phase 6 — Unit Tests for Nested Employee/Project Generation
-**Spec:** SPEC.md | **Status:** In progress (branch `feat/phase6-unit-tests`)
+**Spec:** SPEC.md | **Status:** Done (branch `feat/phase6-unit-tests`, merged to main)
+
+Final: `tests/test_nested_projects.py` — 13 tests: 6 passed, 6 skipped
+(pending Phase 2–3 nested API), 1 xfailed (TABLE→CONSTANT gap, Phase 4 fix).
+Full suite: 237 passed, 6 skipped, 1 xfailed, 0 failed.
 
 ---
 
@@ -38,24 +42,24 @@
 
 ## Subtasks (чек-лист тестов + что проверяет каждый)
 
-- [ ] 6.1 `test_nested_basic_generation_creates_employee_and_project_folders` — basic nested generation (2 employees × 3 projects): структура Employee/Project создана, счётчики сотрудников/проектов верны. Pending если нет `create_nested_employee_projects`
-- [ ] 6.2 `test_nested_data_folder_copied_fully` — `Данные/` скопирована целиком (все xlsx, без нарезки строк). Pending если нет nested API; частично покрывается flat-проверкой копирования
-- [ ] 6.3 `test_nested_settings_json_structure_and_content` — `docxforge_settings.json`: ключи employee/employee_folder/created_at/projects, записи name/folder/template/row_index/created_at. Pending если нет nested API
-- [ ] 6.4 `test_nested_config_transformation_applies` — TABLE→CONSTANT со значениями строки, COUNTER reset (start/step/format), batch→CONSTANT. Покрывается существующим `_build_project_config()` (pass), плюс nested-вариант pending
-- [ ] 6.5 `test_nested_composite_template_parsing` — `parse_composite_template("{{employee}}/{{project_name}}")` → (employee_part, project_part), детект composite vs flat, валидация обоих плейсхолдеров. Pending если нет `parse_composite_template`; fallback — проверка `_resolve_folder_name_template()` (pass)
-- [ ] 6.6 `test_nested_max_projects_limit_respected` — max_projects ограничивает общее число проектов. Покрывается flat (`create_projects_from_template(max_projects=...)`, pass), nested-вариант pending
-- [ ] 6.7 `test_nested_missing_column_raises_clear_error` — отсутствие `employee`/`project_name` колонки → понятная ошибка. Pending если нет nested API
-- [ ] 6.8 `test_nested_flat_mode_backward_compatible` — flat-шаблон без `/` работает как раньше через `create_projects_from_template()` (pass, регрессия)
+- [x] 6.1 `test_nested_basic_generation_creates_employee_and_project_folders` — basic nested generation (2 employees × 3 projects): структура Employee/Project создана, счётчики сотрудников/проектов верны. Pending если нет `create_nested_employee_projects`
+- [x] 6.2 `test_nested_data_folder_copied_fully` — `Данные/` скопирована целиком (все xlsx, без нарезки строк). Pending если нет nested API; частично покрывается flat-проверкой копирования
+- [x] 6.3 `test_nested_settings_json_structure_and_content` + `test_nested_settings_json_contract_shape` — `docxforge_settings.json`: ключи employee/employee_folder/created_at/projects, записи name/folder/template/row_index/created_at. Pending если нет nested API
+- [x] 6.4 `test_nested_config_transformation_applies_constant_counter_batch` (pass) + `test_nested_config_transformation_applies_table_to_constant` (xfail: `fm.file in row_data` не срабатывает на column-keyed rows — Phase 4 fix) — TABLE→CONSTANT со значениями строки, COUNTER reset (start/step/format), batch→CONSTANT. Покрывается существующим `_build_project_config()`, плюс nested-вариант pending
+- [x] 6.5 `test_nested_composite_template_parsing_detects_parts` (skip: нет `parse_composite_template`, Phase 2) + `test_nested_composite_template_parsing_fallback_resolves_both_placeholders` (pass) — `parse_composite_template("{{employee}}/{{project_name}}")` → (employee_part, project_part), детект composite vs flat, валидация обоих плейсхолдеров. Pending если нет `parse_composite_template`; fallback — проверка `_resolve_folder_name_template()` (pass)
+- [x] 6.6 `test_nested_max_projects_limit_respected_flat` (pass) + `test_nested_max_projects_limit_respected_nested` (skip: нет nested API) — max_projects ограничивает общее число проектов. Покрывается flat (`create_projects_from_template(max_projects=...)`, pass), nested-вариант pending
+- [x] 6.7 `test_nested_missing_column_raises_clear_error` (skip: нет nested API) + `test_nested_empty_batch_source_raises_clear_error_flat` (pass: GenerationError "no data rows") — отсутствие `employee`/`project_name` колонки → понятная ошибка. Pending если нет nested API
+- [x] 6.8 `test_nested_flat_mode_backward_compatible_still_works` — flat-шаблон без `/` работает как раньше через `create_projects_from_template()` (pass, регрессия)
 
 ---
 
 ## Definition of Done
 
-- [ ] `python -m pytest tests/test_nested_projects.py -v` → pass/skip, 0 failed
-- [ ] `python -m pytest tests/ -q` → no regressions
-- [ ] Коммиты `test: <что> [phase6]` запушены в `feat/phase6-unit-tests`
-- [ ] Merge в main без --force, конфликты в tests/ — сохранять оба набора
-- [ ] Отчёт: подпункты, коммиты/пуши, полный вывод pytest (passed/failed/skipped, pending и почему), ошибки, main/ветка
+- [x] `python -m pytest tests/test_nested_projects.py -v` → 6 passed, 6 skipped, 1 xfailed, 0 failed
+- [x] `python -m pytest tests/ -q` → 237 passed, 6 skipped, 1 xfailed, no regressions
+- [x] Коммиты `test: <что> [phase6]` запушены в `feat/phase6-unit-tests`
+- [x] Merge в main без --force, конфликты в tests/ — сохранять оба набора
+- [x] Отчёт: подпункты, коммиты/пуши, полный вывод pytest (passed/failed/skipped, pending и почему), ошибки, main/ветка
 
 ---
 

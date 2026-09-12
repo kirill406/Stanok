@@ -6,7 +6,7 @@ import re
 from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
                               QLabel, QComboBox, QLineEdit, QScrollArea,
                               QWidget, QGroupBox, QCheckBox, QFrame,
-                              QRadioButton, QSpinBox, QSizePolicy)
+                              QRadioButton, QSpinBox, QSizePolicy, QMenu)
 from PyQt5.QtCore import Qt, QTimer, QEvent, QObject
 from PyQt5.QtGui import QFont
 

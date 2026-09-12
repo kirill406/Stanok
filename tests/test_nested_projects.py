@@ -250,3 +250,77 @@ def test_nested_flat_mode_backward_compatible_still_works():
         for proj in generated:
             assert os.path.exists(
                 os.path.join(projects_dir, proj, 'проект.docxforge'))
+
+
+def test_nested_max_projects_limit_respected_flat():
+    """max_projects caps created projects (existing flat entry point)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        source_dir = _make_flat_source_project(tmp)
+        projects_dir, created = gen_module.create_projects_from_template(
+            source_dir, 'contract.docx', FLAT_TEMPLATE, max_projects=1)
+        assert created == 1
+        generated = [d for d in os.listdir(projects_dir)
+                     if os.path.isdir(os.path.join(projects_dir, d))]
+        assert len(generated) == 1
+
+
+def test_nested_max_projects_limit_respected_nested():
+    """max_projects caps total projects across employees (nested API)."""
+    if not HAS_NESTED:
+        pytest.skip('pending: create_nested_employee_projects not implemented (Phase 3)')
+    with tempfile.TemporaryDirectory() as tmp:
+        source_dir = _make_nested_source_project(tmp)
+        output_base = os.path.join(tmp, 'Projects')
+        gen_module.create_nested_employee_projects(
+            source_dir, 'report.docx', COMPOSITE_TEMPLATE, output_base,
+            max_projects=4)
+        total = sum(
+            len([d for d in os.listdir(os.path.join(output_base, emp))
+                 if os.path.isdir(os.path.join(output_base, emp, d))])
+            for emp in os.listdir(output_base)
+            if os.path.isdir(os.path.join(output_base, emp)))
+        assert total == 4
+
+
+def test_nested_missing_column_raises_clear_error():
+    """Missing employee/project_name column -> clear error (nested API)."""
+    if not HAS_NESTED:
+        pytest.skip('pending: create_nested_employee_projects not implemented (Phase 3)')
+    with tempfile.TemporaryDirectory() as tmp:
+        source_dir = _make_flat_source_project(tmp)
+        output_base = os.path.join(tmp, 'Projects')
+        with pytest.raises(Exception, match='(?i)(employee|project_name|column)'):
+            gen_module.create_nested_employee_projects(
+                source_dir, 'contract.docx', COMPOSITE_TEMPLATE, output_base)
+
+
+def test_nested_empty_batch_source_raises_clear_error_flat():
+    """Primary source with no rows -> GenerationError (existing behavior)."""
+    from docx import Document
+    from openpyxl import Workbook
+    with tempfile.TemporaryDirectory() as tmp:
+        project_dir = os.path.join(tmp, 'empty_source')
+        data_dir = os.path.join(project_dir, 'Данные')
+        tmpl_dir = os.path.join(project_dir, 'Шаблоны')
+        os.makedirs(data_dir, exist_ok=True)
+        os.makedirs(tmpl_dir, exist_ok=True)
+        doc = Document()
+        doc.add_paragraph('Client: {{ client_name }}')
+        doc.save(os.path.join(tmpl_dir, 'contract.docx'))
+        wb = Workbook()
+        ws = wb.active
+        ws.append(['client_name'])
+        wb.save(os.path.join(data_dir, 'empty.xlsx'))
+        prj = Project()
+        tc = TemplateConfig()
+        tc.fields['client_name'] = FieldMapping(
+            type=FieldType.TABLE, file='empty.xlsx', column='client_name')
+        tc.batch_sources = {
+            'empty.xlsx': BatchSourceConfig(
+                file='empty.xlsx', mode=RowIterationMode.SEQUENTIAL),
+        }
+        prj.templates['contract.docx'] = tc
+        prj.to_file(os.path.join(project_dir, 'проект.docxforge'))
+        with pytest.raises(gen_module.GenerationError, match='no data rows'):
+            gen_module.create_projects_from_template(
+                project_dir, 'contract.docx', FLAT_TEMPLATE)

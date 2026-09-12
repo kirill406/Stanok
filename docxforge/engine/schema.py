@@ -161,6 +161,9 @@ class Project:
             tc.total_docs = tpl_data.get('batch', {}).get('total_docs')
             tc.filename_template = tpl_data.get('batch', {}).get('filename_template')
             tc.directory_template = tpl_data.get('batch', {}).get('directory_template')
+            # Create-projects mode (absent in older files -> defaults)
+            tc.create_projects = tpl_data.get('create_projects', False)
+            tc.folder_name_template = tpl_data.get('folder_name_template')
             # Resume
             resume_data = tpl_data.get('resume', {})
             tc.resume = ResumeState(
@@ -237,6 +240,12 @@ class Project:
                 batch['directory_template'] = tc.directory_template
             if batch:
                 td['batch'] = batch
+
+            # Create-projects mode (only when used; older readers ignore it)
+            if tc.create_projects:
+                td['create_projects'] = True
+            if tc.folder_name_template is not None:
+                td['folder_name_template'] = tc.folder_name_template
 
             # Resume
             td['resume'] = {

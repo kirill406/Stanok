@@ -273,7 +273,7 @@ def _resolve_folder_name_template(
 
     for fn, fm in config.fields.items():
         if fm.type == FieldType.TABLE and not fm.linked_to:
-            if fm.file and fm.column and fm.file in row_data:
+            if fm.file and fm.column and fm.column in row_data:
                 effective[fn] = row_data.get(fm.column, '')
 
     for key, value in row_data.items():

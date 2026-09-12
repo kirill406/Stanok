@@ -1,63 +1,114 @@
-# Phase 3: Fill Form Logic — Mode Switch in `_create()`
+# PLAN_Phase3 — Core Nested Generation Logic
 
-**Based on:** PLAN.md Phase 3  
-**Status:** Completed
+**Parent:** PLAN.md Phase 3 | **Spec:** SPEC.md (Nested Employee/Project Generation)
+**Scope:** `docxforge/generate.py` only. GUI (Phases 1/5) and tests (Phases 6/7) are NOT touched.
+**Status:** In Progress | **Branch:** `feat/phase3-nested-core`
+
+---
+
+## Function contract (for Phases 2/4/5/6)
+
+```python
+def create_nested_employee_projects(
+    project_path: str,
+    template_name: str,
+    folder_name_template: str,          # composite, e.g. "{{employee}}/{{project_name}}"
+    employee_column: str = 'employee',
+    project_column: str = 'project_name',
+    max_projects: Optional[int] = None, # cap on TOTAL projects (only when > 0)
+) -> Tuple[str, int, int]:              # (projects_dir, employee_count, project_count)
+```
+
+- Raises `GenerationError` (from `docxforge.generate`) with a clear message on all failures.
+- Phase 2 routes composite templates here; Phase 5 passes the composite string through
+  `folder_name_template`. Template is split on the first `/`: left part resolves the
+  employee folder, right part resolves the project folder (via existing
+  `_resolve_folder_name_template` + sanitizing). No `/` → employee folder from the raw
+  `employee` value, whole template used for the project folder (backward compatible).
+- Phase 4 may take over config/file-op details; current implementation reuses the existing
+  `_build_project_config()` + `_copy_template_files()` and copies `Данные/` fully via
+  `shutil.copytree` (per SPEC.md). Folder names use codebase convention
+  `Данные/`, `Шаблоны/`, `Результат/` (capitalized, as everywhere else in the project).
+- `row_index` in settings.json = 0-based index of the row in the primary batch source.
+
+## `docxforge_settings.json` format (per employee folder)
+
+```json
+{
+  "employee": "Иванов Иван",
+  "employee_folder": "Иванов_Иван",
+  "created_at": "2025-09-12T14:30:00",
+  "projects": [
+    {"name": "Договор_001", "folder": "Договор_001",
+     "template": "all_fields.docx", "row_index": 0,
+     "created_at": "2025-09-12T14:30:00"}
+  ]
+}
+```
+
+`created_at` = `datetime.now().isoformat(timespec='seconds')`.
 
 ---
 
 ## Subtasks
 
-### 3.1 Add Required String Constants (from Phase 1)
-- [x] Add `fill_create_projects_checkbox` string to STRINGS in `docxforge/gui/strings.py`
-- [x] Add `fill_folder_name_template` string to STRINGS
-- [x] Add `fill_folder_name_placeholder` string to STRINGS
-- [x] Add `fill_folder_name_tooltip` string to STRINGS
-- [x] Add `fill_found_rows` string to STRINGS (for row count dialog)
-- [x] Add `fill_projects_created` string to STRINGS (for success message)
-- [x] Add `fill_create_projects_btn` string to STRINGS (button text when mode active)
+### 3.1 Planning & contract
+- [x] Write this `PLAN_Phase3.md` (checklist, criteria, settings.json format, edges, contract)
+- [x] Commit + push: `docs: add PLAN_Phase3 breakdown`
 
-### 3.2 Add UI Elements for Create Projects Mode (from Phase 2)
-- [x] Add `chk_create_projects` checkbox to Fill Form in `_build_ui()`
-- [x] Add `edit_folder_name_template` input field in `_build_ui()`
-- [x] Implement UI toggle logic in `_on_create_projects_toggled()`:
-  - When checked: show folder template, hide filename/dir templates, change button text to "Создать проекты"
-  - When unchecked: restore normal UI
-- [x] Add validation: folder name template required when mode active
-- [x] Connect checkbox toggled signal to toggle handler
+### 3.2 Private helpers in `generate.py`
+- [ ] `_sanitize_folder_name(name)` — replace `<>:"/\|?*` + control chars with `_`,
+      strip trailing dots/spaces, truncate to 100 chars, `''` if nothing left
+- [ ] `_unique_folder_name(base, used, parent_dir)` — append `_1`, `_2`… while the name
+      is taken (in-run set or already on disk); registers the chosen name in `used`
+- [ ] `_split_composite_template(template)` — split on first `/` → `(employee_part|None, project_part)`
+- [ ] `_rollback_created(paths)` — `shutil.rmtree` in reverse order, `ignore_errors=True`
+- [ ] Criteria: helpers pure/local, `logging` only, no `print()`, no new TODOs
 
-### 3.3 Modify `_create()` for Mode Switch (Phase 3 Core)
-- [x] Detect `chk_create_projects.isChecked()` at start of `_create()`
-- [x] When create projects mode active:
-  - [x] Validate folder name template is not empty
-  - [x] Get primary batch source (first sequential table)
-  - [x] Count rows in primary batch source
-  - [x] If rows > 1: show confirmation dialog using `fill_found_rows` string
-  - [x] If user cancels: abort, return without creating projects
-  - [x] Call `create_projects_from_template()` with project_dir, template_rel_path, folder_name_template, max_projects (stubbed for Phase 4)
-  - [x] Show success message using `fill_projects_created` string with count and path (placeholder)
-  - [x] Handle errors with user-friendly QMessageBox
-- [x] When normal mode: existing document generation logic unchanged
+### 3.3 Core `create_nested_employee_projects()`
+- [ ] Load project / validate template + template file / require batch sources /
+      primary SEQUENTIAL source (same patterns as `create_projects_from_template`)
+- [ ] Read rows via `DataReader.read_all_batch_sources()`; empty → `GenerationError`
+- [ ] Validate `employee`/`project_name` columns present → else `GenerationError` naming the column
+- [ ] Attach original row indices, cap total rows when `max_projects > 0`, group by `employee`
+      (first-seen order; blank value → `employee_N` fallback)
+- [ ] Per employee: resolve + sanitize + dedupe folder, `makedirs`, track for rollback
+- [ ] Per project: resolve + sanitize + dedupe folder inside employee dir; create
+      `Данные/` (full `copytree` of source `Данные/`), `Шаблоны/` (copy template),
+      `Результат/` (empty); config via `_build_project_config()` with all batch sources
+      forced to CONSTANT; write `проект.docxforge`
+- [ ] Write `docxforge_settings.json` per employee after its projects; return
+      `(projects_dir, employee_count, project_count)`
+- [ ] Criteria: smoke 2 employees × 2–3 projects passes; structure + settings.json match SPEC
 
-### 3.4 Integration & Testing
-- [x] Ensure `_collect_config()` includes folder_name_template when mode active
-- [x] Ensure autosave saves folder_name_template and create_projects mode
-- [x] Run existing tests: `pytest tests/ -q` → all pass (181 passed)
-- [x] Run smoke test: `python test_engine.py` → exit 0
-
----
-
-## Dependencies
-- Phase 4: `create_projects_from_template()` in `docxforge/generate.py` (stubbed for now)
-- Phase 5: `resolve_folder_name_template()` for placeholder resolution
+### 3.4 Verification & merge
+- [ ] `python -m pytest tests/ -q` → exit 0 after each sub-implementation
+- [ ] Manual smoke via `python -c` in temp dir (2 employees × 2–3 projects)
+- [ ] Commit + push per subitem (`feat: <что> [phase3]`)
+- [ ] Final: `git pull origin main` → merge branch to `main` → push (no `--force`;
+      on conflict keep both sides, never drop `parse_composite_template`/Phase 4 code)
 
 ---
 
-## Acceptance Criteria - ALL MET
-1. ✅ Checkbox "Создать проекты" appears in Fill Form
-2. ✅ When checked: folder name template shown, filename/dir templates hidden, button changes to "Создать проекты"
-3. ✅ When unchecked: normal UI restored
-4. ✅ Clicking "Создать проекты" with table data > 1 row shows confirmation dialog
-5. ✅ User cancel on confirmation aborts without creating projects
-6. ✅ Successful creation shows message with project count and Projects/ path (placeholder)
-7. ✅ Errors show user-friendly messages
-8. ✅ All existing tests pass (181 passed)
+## Edge cases
+
+| Case | Handling |
+|------|----------|
+| Missing `employee` / `project_name` column | `GenerationError` naming the column + batch file |
+| No batch sources / no SEQUENTIAL source / empty rows | `GenerationError` (same messages as flat mode) |
+| Empty employee value | Fallback `employee_N` (N = 1-based employee counter) |
+| Empty project folder name | Fallback `project_N` (N = 1-based counter within employee) |
+| Duplicate employee folders | Suffix `_1`, `_2`… (also against pre-existing dirs on disk) |
+| Duplicate project folders in one employee | Suffix `_1`, `_2`… |
+| Filesystem-unsafe chars | Sanitized to `_` |
+| Permission / OS error mid-run | Rollback all dirs created in this call, then `GenerationError` |
+| `max_projects <= 0` / `None` | No cap (same semantics as flat `create_projects_from_template`) |
+| Missing template file | `GenerationError` before creating anything |
+
+## Acceptance criteria
+
+1. `create_nested_employee_projects()` importable from `docxforge.generate`
+2. Grouping by `employee` correct; employee folders + `docxforge_settings.json` per SPEC format
+3. Project folders contain `Данные/` (full copy), `Шаблоны/` (template), `Результат/` (empty), `проект.docxforge` (TABLE→CONSTANT, COUNTER reset, batch→CONSTANT)
+4. All edge cases above behave as specified
+5. `pytest tests/ -q` green; smoke green; no files outside `generate.py` + `PLAN_Phase3.md` modified

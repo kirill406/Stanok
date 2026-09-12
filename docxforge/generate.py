@@ -2,8 +2,10 @@
 """Project generation function: UI-free entry point for rendering documents."""
 
 import os
+import json
 import shutil
 import logging
+from datetime import datetime
 from typing import List, Optional, Tuple, Dict
 
 from docxforge.engine.schema import (
@@ -269,6 +271,64 @@ def _copy_template_files(src_template: str, dst_templates_dir: str) -> None:
     dst_template = os.path.join(dst_templates_dir, os.path.basename(src_template))
     if os.path.exists(src_template):
         shutil.copy2(src_template, dst_template)
+
+
+_INVALID_FOLDER_CHARS = '<>:"/\\|?*'
+
+
+def _sanitize_folder_name(name: Optional[str]) -> str:
+    """Make a filesystem-safe folder name from a resolved value.
+
+    Replaces Windows-unsafe characters and control characters with '_',
+    strips trailing dots/spaces and truncates to 100 characters.
+    Returns '' when nothing usable is left (caller applies N-fallback).
+    """
+    if name is None:
+        return ''
+    text = ''.join('_' if (ch in _INVALID_FOLDER_CHARS or ord(ch) < 32) else ch
+                   for ch in str(name).strip())
+    text = text.strip().rstrip('.')
+    if len(text) > 100:
+        text = text[:100].rstrip('.').strip()
+    return text
+
+
+def _unique_folder_name(base: str, used: set, parent_dir: str) -> str:
+    """Return a unique folder name, appending _1, _2... on collision.
+
+    Checks both the in-run ``used`` set and pre-existing directories on disk.
+    Registers the chosen name in ``used``.
+    """
+    candidate = base
+    suffix = 0
+    while candidate in used or os.path.exists(os.path.join(parent_dir, candidate)):
+        suffix += 1
+        candidate = f'{base}_{suffix}'
+    used.add(candidate)
+    return candidate
+
+
+def _split_composite_template(template: str) -> Tuple[Optional[str], str]:
+    """Split a composite folder template on the first '/'.
+
+    Returns (employee_part, project_part). When there is no '/', the whole
+    template is the project part and employee_part is None (flat-compatible).
+    """
+    if not template:
+        return None, ''
+    parts = template.split('/', 1)
+    if len(parts) == 1:
+        return None, parts[0]
+    return parts[0], parts[1]
+
+
+def _rollback_created(paths: List[str]) -> None:
+    """Remove directories created during a failed run, in reverse order."""
+    for path in reversed(paths):
+        try:
+            shutil.rmtree(path, ignore_errors=True)
+        except Exception as e:
+            logger.warning(f'Rollback failed for {path}: {e}')
 
 
 def generate_cli(project_path: str, template: str = None, count: int = None, out: str = None) -> List[str]:

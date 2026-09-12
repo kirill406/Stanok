@@ -2,9 +2,10 @@
 """Project generation function: UI-free entry point for rendering documents."""
 
 import os
+import re
 import shutil
 import logging
-from typing import List, Optional, Tuple, Dict
+from typing import List, Optional, Tuple, Dict, Any
 
 from docxforge.engine.schema import (
     Project, ResumeState, TemplateConfig, FieldMapping, FieldType,
@@ -21,6 +22,56 @@ logger = logging.getLogger(__name__)
 class GenerationError(Exception):
     """Raised when document generation fails."""
     pass
+
+
+# Placeholder patterns for composite (employee/project) folder templates.
+# Whitespace inside braces is tolerated, e.g. both "{{employee}}" and "{{ employee }}".
+_EMPLOYEE_PLACEHOLDER_RE = re.compile(r'\{\{\s*employee\s*\}\}')
+_PROJECT_NAME_PLACEHOLDER_RE = re.compile(r'\{\{\s*project_name\s*\}\}')
+
+
+def parse_composite_template(template: Optional[str]) -> Dict[str, Any]:
+    """
+    Parse a folder-name template and detect composite (employee/project) mode.
+
+    A template is composite only if ALL of the following hold:
+      - it is a non-empty string,
+      - it contains ``/``,
+      - it contains the ``{{employee}}`` placeholder,
+      - it contains the ``{{project_name}}`` placeholder.
+
+    Everything else (empty/None template, no ``/``, only one placeholder)
+    is flat mode for backward compatibility.
+
+    Args:
+        template: Folder-name template, e.g. ``"{{employee}}/{{project_name}}"``.
+
+    Returns:
+        Dict with keys:
+          - ``is_composite`` (bool): True if composite mode detected.
+          - ``employee_part`` (str): segment before the first ``/``
+            (empty string when not composite).
+          - ``project_part`` (str): remainder after the first ``/``
+            (the original template, or "" when not composite).
+    """
+    if not template or not isinstance(template, str) or not template.strip():
+        return {'is_composite': False, 'employee_part': '', 'project_part': template or ''}
+
+    if '/' not in template:
+        return {'is_composite': False, 'employee_part': '', 'project_part': template}
+
+    if not _EMPLOYEE_PLACEHOLDER_RE.search(template):
+        return {'is_composite': False, 'employee_part': '', 'project_part': template}
+
+    if not _PROJECT_NAME_PLACEHOLDER_RE.search(template):
+        return {'is_composite': False, 'employee_part': '', 'project_part': template}
+
+    employee_part, project_part = template.split('/', 1)
+    return {
+        'is_composite': True,
+        'employee_part': employee_part,
+        'project_part': project_part,
+    }
 
 
 def generate_project(

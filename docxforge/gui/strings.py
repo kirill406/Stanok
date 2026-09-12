@@ -41,6 +41,10 @@ STRINGS = {
     'fill_validate_btn': 'Проверить',
     'fill_create_btn': 'Создать',
     'fill_cancel_btn': 'Отмена',
+    'fill_create_projects': 'Создать проекты вместо документов',
+    'fill_folder_name_template': 'Шаблон имени папки проекта',
+    'fill_found_rows': 'Найдено строк: {count}. Сколько проектов создать?',
+    'fill_projects_created': 'Создано {count} проектов в {path}',
 
     # Field types
     'field_type_constant': 'константа',
@@ -83,6 +87,7 @@ STRINGS = {
     'fill_found_rows': 'Найдено строк в таблице: {count}.\nСоздать {count} проектов в папке Projects/?',
     'fill_projects_created': 'Создано проектов: {count}\nПапка: {path}',
     'fill_create_projects_btn': 'Создать проекты',
+    'msg_folder_template_required': 'Для создания проектов укажите шаблон имени папки',
 
     # Messages
     'msg_error': 'Ошибка',

@@ -208,29 +208,29 @@ class FillForm(FieldRowsMixin, AdvancedSectionMixin, BatchSectionMixin, ConfigIO
         batch_layout.setContentsMargins(10, 10, 10, 10)
         batch_layout.setSpacing(10)
 
-        # Filename template row
-        filename_row = QHBoxLayout()
+# Filename template row
+        self.filename_row = QHBoxLayout()
         self.lbl_filename_template = QLabel(STRINGS['fill_filename_template'])
-        filename_row.addWidget(self.lbl_filename_template)
+        self.filename_row.addWidget(self.lbl_filename_template)
         self.edit_filename_template = QLineEdit()
         self.edit_filename_template.setPlaceholderText(STRINGS['fill_filename_placeholder'])
         self.edit_filename_template.setToolTip(STRINGS['fill_filename_tooltip'])
-        filename_row.addWidget(self.edit_filename_template)
+        self.filename_row.addWidget(self.edit_filename_template)
         self.btn_insert_field = QPushButton(STRINGS['fill_insert_field_btn'])
         self.btn_insert_field.setFont(QFont('Segoe UI', 9))
         self.btn_insert_field.clicked.connect(self._show_insert_field_menu)
-        filename_row.addWidget(self.btn_insert_field)
-        batch_layout.addLayout(filename_row)
+        self.filename_row.addWidget(self.btn_insert_field)
+        batch_layout.addLayout(self.filename_row)
 
         # Directory template row
-        directory_row = QHBoxLayout()
+        self.directory_row = QHBoxLayout()
         self.lbl_directory_template = QLabel(STRINGS['fill_directory_template'])
-        directory_row.addWidget(self.lbl_directory_template)
+        self.directory_row.addWidget(self.lbl_directory_template)
         self.edit_directory_template = QLineEdit()
         self.edit_directory_template.setPlaceholderText(STRINGS['fill_directory_placeholder'])
         self.edit_directory_template.setToolTip(STRINGS['fill_directory_tooltip'])
-        directory_row.addWidget(self.edit_directory_template)
-        batch_layout.addLayout(directory_row)
+        self.directory_row.addWidget(self.edit_directory_template)
+        batch_layout.addLayout(self.directory_row)
 
         # Create projects mode row
         create_projects_row = QHBoxLayout()
@@ -242,17 +242,15 @@ class FillForm(FieldRowsMixin, AdvancedSectionMixin, BatchSectionMixin, ConfigIO
         batch_layout.addLayout(create_projects_row)
 
         # Folder name template row (initially hidden)
-        folder_name_row = QHBoxLayout()
+        self.folder_name_row = QHBoxLayout()
         self.lbl_folder_name_template = QLabel(STRINGS['fill_folder_name_template'])
-        folder_name_row.addWidget(self.lbl_folder_name_template)
+        self.folder_name_row.addWidget(self.lbl_folder_name_template)
         self.edit_folder_name_template = QLineEdit()
         self.edit_folder_name_template.setPlaceholderText(STRINGS['fill_folder_name_placeholder'])
         self.edit_folder_name_template.setToolTip(STRINGS['fill_folder_name_tooltip'])
-        folder_name_row.addWidget(self.edit_folder_name_template)
-        batch_layout.addLayout(folder_name_row)
-        # Hide initially
-        self.lbl_folder_name_template.setVisible(False)
-        self.edit_folder_name_template.setVisible(False)
+        self.folder_name_row.addWidget(self.edit_folder_name_template)
+        batch_layout.addLayout(self.folder_name_row)
+        self.folder_name_row.setContentsMargins(0, 0, 0, 0)
 
         total_row = QHBoxLayout()
         total_row.addWidget(QLabel(STRINGS['fill_total_docs']))
@@ -307,34 +305,32 @@ class FillForm(FieldRowsMixin, AdvancedSectionMixin, BatchSectionMixin, ConfigIO
         btn_layout.addWidget(self.btn_create)
         main_layout.addLayout(btn_layout)
 
-    def _on_create_projects_toggled(self, checked):
-        """Toggle UI for create projects mode."""
-        # Show/hide folder name template
-        self.lbl_folder_name_template.setVisible(checked)
-        self.edit_folder_name_template.setVisible(checked)
-        # Show/hide filename and directory templates
-        self.edit_filename_template.setVisible(not checked)
-        self.btn_insert_field.setVisible(not checked)
-        # Find and toggle the filename template label
-        # It's in the same layout as edit_filename_template
-        # We need to find the parent layout's label
-        for i in range(self.lbl_folder_name_template.parentWidget().layout().count()):
-            item = self.lbl_folder_name_template.parentWidget().layout().itemAt(i)
-            if item and item.widget() == self.lbl_folder_name_template:
-                # The label is already handled above
-                pass
-        # Better approach: hide the entire filename_row and directory_row layouts
-        # But we don't have direct references to those layouts
-        # Let's find the labels by object name or iterate
-        # Actually, simpler: we can hide the label that's buddy to edit_filename_template
-        # The label is created inline in _build_ui without a reference
-        # Let's add a reference to it
-        if hasattr(self, 'lbl_filename_template'):
-            self.lbl_filename_template.setVisible(not checked)
-        if hasattr(self, 'lbl_directory_template'):
-            self.lbl_directory_template.setVisible(not checked)
-        # Change button text
-        if checked:
+        # Set initial UI state for create projects mode
+        self._set_folder_name_visible(False)
+
+    def _set_folder_name_visible(self, visible: bool):
+        """Show/hide folder name template row and toggle filename/directory rows."""
+        # Folder name template row
+        for i in range(self.folder_name_row.count()):
+            widget = self.folder_name_row.itemAt(i).widget()
+            if widget:
+                widget.setVisible(visible)
+        # Filename template row
+        for i in range(self.filename_row.count()):
+            widget = self.filename_row.itemAt(i).widget()
+            if widget:
+                widget.setVisible(not visible)
+        # Directory template row
+        for i in range(self.directory_row.count()):
+            widget = self.directory_row.itemAt(i).widget()
+            if widget:
+                widget.setVisible(not visible)
+        # Update button text
+        if visible:
             self.btn_create.setText(STRINGS['fill_create_projects_btn'])
         else:
             self.btn_create.setText(STRINGS['fill_create_btn'])
+
+    def _on_create_projects_toggled(self, checked: bool):
+        """Handle create projects checkbox toggle."""
+        self._set_folder_name_visible(checked)

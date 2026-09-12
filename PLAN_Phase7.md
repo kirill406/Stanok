@@ -48,20 +48,28 @@
 - [ ] Ручная сверка acceptance criteria (таблица ниже)
 - [ ] `git pull origin main` → merge ветки в main → push (без --force)
 
-## Acceptance criteria (из SPEC.md) — статусы заполняются по факту
+## Acceptance criteria (из SPEC.md) — статусы по факту (2026-09-12)
 
 | # | Criterion | Status |
 |---|-----------|--------|
-| 1 | Composite template `{{employee}}/{{project_name}}` works | ⬜ (код nested отсутствует → проверить flat + строковое значение; итог в отчёт) |
-| 2 | Employee folders with `docxforge_settings.json` created | ⬜ |
-| 3 | Project folders with `данные/` + `шаблоны/` + `результат/` + `проект.docxforge` | ⬜ |
-| 4 | `данные/` is full copy of source project's data | ⬜ |
-| 5 | `проект.docxforge`: TABLE→CONSTANT, COUNTER reset, batch→CONSTANT | ⬜ (покрыто e2e для flat) |
-| 6 | `docxforge_settings.json` lists all employee's projects | ⬜ |
-| 7 | Row count dialog works for total projects | ⬜ |
-| 8 | Success message shows employee and project counts | ⬜ |
-| 9 | Backward compatible with flat structure | ⬜ (flat — основной e2e-путь) |
-| 10 | All existing tests pass | ⬜ (`pytest tests/ -q` + `test_engine.py`) |
+| 1 | Composite template `{{employee}}/{{project_name}}` works | ⚠️ PARTIAL — composite-строка вводится/хранится в поле шаблона (UI-тест), но nested-кода нет |
+| 2 | Employee folders with `docxforge_settings.json` created | ❌ NOT IMPLEMENTED — `create_nested_employee_projects()` отсутствует в коде |
+| 3 | Project folders with `данные/` + `шаблоны/` + `результат/` + `проект.docxforge` | ⚠️ PARTIAL — flat создаёт `Шаблоны/` + `проект.docxforge`; `Данные/` не копируются |
+| 4 | `данные/` is full copy of source project's data | ❌ NOT IMPLEMENTED (см. #2) |
+| 5 | `проект.docxforge`: TABLE→CONSTANT, COUNTER reset, batch→CONSTANT | ✅ VERIFIED — e2e-тесты (после polish-фикса `fm.column in row_data`) |
+| 6 | `docxforge_settings.json` lists all employee's projects | ❌ NOT IMPLEMENTED (см. #2) |
+| 7 | Row count dialog works for total projects | ❌ NOT IMPLEMENTED — `fill_found_rows` объявлены, но нигде не используются |
+| 8 | Success message shows employee and project counts | ⚠️ PARTIAL — есть «Создано проектов: N» (flat, хардкод в `config_io.py`) |
+| 9 | Backward compatible with flat structure | ✅ VERIFIED — flat — основной e2e-путь, все старые тесты green |
+| 10 | All existing tests pass | ✅ VERIFIED — `pytest tests/ -q`: 239 passed; `test_engine.py`: ALL CHECKS PASSED |
+
+## Polish-правки вне tests/ (минимальные, за скоупом тестового файла)
+
+- `docxforge/engine/schema.py`: сериализация `create_projects` / `folder_name_template`
+  в `_to_dict` / `_from_dict` (раньше чекбокс и шаблон не переживали перезапуск диалога).
+- `docxforge/generate.py`: `fm.file in row_data` → `fm.column in row_data` в
+  `_resolve_folder_name_template()` и `_build_project_config()` (иначе TABLE-поля
+  никогда не превращались в CONSTANT — SPEC-требование не выполнялось). |
 
 ## Commits
 

@@ -16,6 +16,13 @@ from ..strings import STRINGS
 class ConfigIOMixin:
     """Methods for loading, saving, and validating FillForm configuration."""
 
+    def _get_main_window(self):
+        """Get reference to MainWindow via parent chain (ProjectWindow -> MainWindow)."""
+        parent = self.parent()
+        if parent and hasattr(parent, 'main_window'):
+            return parent.main_window
+        return None
+
     def _load_existing_config(self):
         for field_name, fm in self.config.fields.items():
             if field_name not in self.field_widgets:
@@ -185,6 +192,15 @@ class ConfigIOMixin:
                     self, '\u0413\u043e\u0442\u043e\u0432\u043e',
                     '\u0421\u043e\u0437\u0434\u0430\u043d\u043e \u043f\u0440\u043e\u0435\u043a\u0442\u043e\u0432: %d\n%s' % (
                         len(outputs), '\n'.join(os.path.basename(o) for o in outputs)))
+                # Save template name and doc count to main window settings
+                main_window = self._get_main_window()
+                if main_window:
+                    if hasattr(main_window, '_set_last_template'):
+                        main_window._set_last_template(self.project_dir, os.path.basename(self.template_path))
+                    if hasattr(main_window, '_set_last_doc_count'):
+                        main_window._set_last_doc_count(self.project_dir, total_docs)
+                    if hasattr(main_window, '_refresh_recent_list'):
+                        main_window._refresh_recent_list()
             else:
                 QMessageBox.warning(self, '\u041e\u0448\u0438\u0431\u043a\u0430', '\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0441\u043e\u0437\u0434\u0430\u0442\u044c \u043f\u0440\u043e\u0435\u043a\u0442\u044b')
         else:
@@ -204,11 +220,15 @@ class ConfigIOMixin:
                     self, '\u0413\u043e\u0442\u043e\u0432\u043e',
                     '\u0421\u043e\u0437\u0434\u0430\u043d\u043e \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u043e\u0432: %d\n%s' % (
                         len(outputs), '\n'.join(os.path.basename(o) for o in outputs)))
-                # Save template name to main window settings
-                if self.parent() and hasattr(self.parent(), '_set_last_template'):
-                    self.parent()._set_last_template(self.project_dir, os.path.basename(self.template_path))
-                if self.parent() and hasattr(self.parent(), '_set_last_doc_count'):
-                    self.parent()._set_last_doc_count(self.project_dir, total_docs)
+                # Save template name and doc count to main window settings
+                main_window = self._get_main_window()
+                if main_window:
+                    if hasattr(main_window, '_set_last_template'):
+                        main_window._set_last_template(self.project_dir, os.path.basename(self.template_path))
+                    if hasattr(main_window, '_set_last_doc_count'):
+                        main_window._set_last_doc_count(self.project_dir, total_docs)
+                    if hasattr(main_window, '_refresh_recent_list'):
+                        main_window._refresh_recent_list()
             else:
                 QMessageBox.warning(self, '\u041e\u0448\u0438\u0431\u043a\u0430', '\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0441\u043e\u0437\u0434\u0430\u0442\u044c \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b')
     

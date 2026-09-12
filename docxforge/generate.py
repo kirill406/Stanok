@@ -61,7 +61,13 @@ def generate_project(
 
     # Output directory
     if output_dir is None:
-        output_dir = os.path.join(project_path, 'output')
+        # Backward compatibility: use existing "output" folder if present
+        legacy_output = os.path.join(project_path, 'output')
+        new_output = os.path.join(project_path, 'Результат')
+        if os.path.exists(legacy_output):
+            output_dir = legacy_output
+        else:
+            output_dir = new_output
     os.makedirs(output_dir, exist_ok=True)
 
     # Get resume state from project config for persistence

@@ -83,7 +83,7 @@ class FieldRowsMixin:
 
         # Today format combo (for today type) - aligned with const_value
         today_format = QComboBox()
-        today_format.addItems(['dd.MM.yyyy', 'dd.MM.yyyy HH:mm', 'dd', 'MM', 'yyyy', 'dd.MM.yy'])
+        today_format.addItems(['dd.MM.yyyy', 'dd.MM.yyyy HH:mm', 'dd', 'MM', 'yyyy', 'dd.MM.yy', STRINGS['today_format_month']])
         today_format.installEventFilter(self._wheel_filter)
 
         # Image file input (for image type)

@@ -256,6 +256,7 @@ class Project:
 def create_project(project_dir: str) -> str:
     os.makedirs(os.path.join(project_dir, 'Данные'), exist_ok=True)
     os.makedirs(os.path.join(project_dir, 'Шаблоны'), exist_ok=True)
+    os.makedirs(os.path.join(project_dir, 'Результат'), exist_ok=True)
     project_file = os.path.join(project_dir, 'проект.docxforge')
     Project().to_file(project_file)
     return project_file

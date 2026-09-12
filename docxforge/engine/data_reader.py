@@ -1,9 +1,12 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """Read Excel files into list-of-dicts format used by the renderer."""
 
 import logging
+import os
 from typing import Dict, List
 import openpyxl
+
+from docxforge.engine.schema import BatchSourceConfig, RowIterationMode
 
 
 logger = logging.getLogger(__name__)
@@ -113,4 +116,18 @@ class DataReader:
             if val and val not in seen:
                 seen.add(val)
                 result.append(val)
+        return result
+
+    def read_all_batch_sources(self, project_dir: str,
+                                batch_sources: Dict[str, BatchSourceConfig]) -> Dict[str, List[Dict[str, str]]]:
+        """Read all batch source files and return dict of file -> rows."""
+        result = {}
+        for source_name, bsc in batch_sources.items():
+            if bsc.mode == RowIterationMode.SEQUENTIAL:
+                file_path = os.path.join(project_dir, 'Данные', bsc.file)
+                if os.path.exists(file_path):
+                    result[bsc.file] = self.read_excel(file_path)
+                else:
+                    logger.warning(f"Batch source file not found: {file_path}")
+                    result[bsc.file] = []
         return result

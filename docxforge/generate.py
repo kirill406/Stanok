@@ -2,9 +2,10 @@
 """Project generation function: UI-free entry point for rendering documents."""
 
 import os
+import re
 import shutil
 import logging
-from typing import List, Optional, Tuple, Dict
+from typing import List, Optional, Tuple, Dict, Any
 
 from docxforge.engine.schema import (
     Project, ResumeState, TemplateConfig, FieldMapping, FieldType,
@@ -21,6 +22,56 @@ logger = logging.getLogger(__name__)
 class GenerationError(Exception):
     """Raised when document generation fails."""
     pass
+
+
+# Placeholder patterns for composite (employee/project) folder templates.
+# Whitespace inside braces is tolerated, e.g. both "{{employee}}" and "{{ employee }}".
+_EMPLOYEE_PLACEHOLDER_RE = re.compile(r'\{\{\s*employee\s*\}\}')
+_PROJECT_NAME_PLACEHOLDER_RE = re.compile(r'\{\{\s*project_name\s*\}\}')
+
+
+def parse_composite_template(template: Optional[str]) -> Dict[str, Any]:
+    """
+    Parse a folder-name template and detect composite (employee/project) mode.
+
+    A template is composite only if ALL of the following hold:
+      - it is a non-empty string,
+      - it contains ``/``,
+      - it contains the ``{{employee}}`` placeholder,
+      - it contains the ``{{project_name}}`` placeholder.
+
+    Everything else (empty/None template, no ``/``, only one placeholder)
+    is flat mode for backward compatibility.
+
+    Args:
+        template: Folder-name template, e.g. ``"{{employee}}/{{project_name}}"``.
+
+    Returns:
+        Dict with keys:
+          - ``is_composite`` (bool): True if composite mode detected.
+          - ``employee_part`` (str): segment before the first ``/``
+            (empty string when not composite).
+          - ``project_part`` (str): remainder after the first ``/``
+            (the original template, or "" when not composite).
+    """
+    if not template or not isinstance(template, str) or not template.strip():
+        return {'is_composite': False, 'employee_part': '', 'project_part': template or ''}
+
+    if '/' not in template:
+        return {'is_composite': False, 'employee_part': '', 'project_part': template}
+
+    if not _EMPLOYEE_PLACEHOLDER_RE.search(template):
+        return {'is_composite': False, 'employee_part': '', 'project_part': template}
+
+    if not _PROJECT_NAME_PLACEHOLDER_RE.search(template):
+        return {'is_composite': False, 'employee_part': '', 'project_part': template}
+
+    employee_part, project_part = template.split('/', 1)
+    return {
+        'is_composite': True,
+        'employee_part': employee_part,
+        'project_part': project_part,
+    }
 
 
 def generate_project(
@@ -88,6 +139,20 @@ def create_projects_from_template(
     folder_name_template: str,
     max_projects: Optional[int] = None,
 ) -> Tuple[str, int]:
+    # Phase 2: detect composite (employee/project) vs flat mode up front.
+    # Composite templates are delegated to create_nested_employee_projects()
+    # (Phase 3); flat templates continue on the unchanged path below.
+    parsed = parse_composite_template(folder_name_template)
+    if parsed['is_composite']:
+        logger.info(
+            'Composite folder template detected (employee=%r project=%r); '
+            'routing to nested employee/project generation.',
+            parsed['employee_part'], parsed['project_part'],
+        )
+        return create_nested_employee_projects(
+            project_path, template_name, folder_name_template, max_projects
+        )
+
     project_file = os.path.join(project_path, 'проект.docxforge')
     if not os.path.exists(project_file):
         raise GenerationError(f'Project file not found: {project_file}')
@@ -190,6 +255,50 @@ def create_projects_from_template(
         created_count += 1
 
     return projects_dir, created_count
+
+
+def create_nested_employee_projects(
+    project_path: str,
+    template_name: str,
+    folder_name_template: str,
+    max_projects: Optional[int] = None,
+) -> Tuple[str, int]:
+    """
+    Create nested employee/project folders from a composite folder template.
+
+    NOTE (Phase 2 stub): full implementation belongs to Phase 3. This stub
+    only reserves the contract used by the composite routing in
+    :func:`create_projects_from_template`.
+
+    Phase 3 contract:
+      - Read batch data, group rows by the ``employee`` column.
+      - For each employee: create folder, write ``docxforge_settings.json``.
+      - For each project row: resolve folder name, copy ``Данные/`` fully,
+        copy templates to ``шаблоны/``, create empty ``результат/``,
+        write ``проект.docxforge`` (TABLE->CONSTANT, COUNTER reset,
+        batch sources->CONSTANT).
+
+    Args:
+        project_path: Path to project directory (containing проект.docxforge).
+        template_name: Template filename (relative to Шаблоны/).
+        folder_name_template: Composite template, e.g. ``"{{employee}}/{{project_name}}"``.
+        max_projects: Maximum number of projects to create (None = all rows).
+
+    Returns:
+        Tuple ``(projects_dir, total_projects_created)``.
+
+    Raises:
+        NotImplementedError: Always (until Phase 3 implements it).
+        GenerationError: (Phase 3) on missing columns, empty data, I/O errors.
+    """
+    logger.info(
+        'Nested employee/project generation requested: project=%s template=%s',
+        project_path, template_name,
+    )
+    raise NotImplementedError(
+        'create_nested_employee_projects() is not implemented yet (Phase 3). '
+        f'Composite template: {folder_name_template!r}'
+    )
 
 
 def _resolve_folder_name_template(

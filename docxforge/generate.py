@@ -139,6 +139,20 @@ def create_projects_from_template(
     folder_name_template: str,
     max_projects: Optional[int] = None,
 ) -> Tuple[str, int]:
+    # Phase 2: detect composite (employee/project) vs flat mode up front.
+    # Composite templates are delegated to create_nested_employee_projects()
+    # (Phase 3); flat templates continue on the unchanged path below.
+    parsed = parse_composite_template(folder_name_template)
+    if parsed['is_composite']:
+        logger.info(
+            'Composite folder template detected (employee=%r project=%r); '
+            'routing to nested employee/project generation.',
+            parsed['employee_part'], parsed['project_part'],
+        )
+        return create_nested_employee_projects(
+            project_path, template_name, folder_name_template, max_projects
+        )
+
     project_file = os.path.join(project_path, 'проект.docxforge')
     if not os.path.exists(project_file):
         raise GenerationError(f'Project file not found: {project_file}')

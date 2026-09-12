@@ -89,6 +89,14 @@ STRINGS = {
     'fill_create_projects_btn': 'Создать проекты',
     'msg_folder_template_required': 'Для создания проектов укажите шаблон имени папки',
 
+    # Composite path template (Phase 1: nested employee/project)
+    'fill_composite_template_label': 'Шаблон пути (сотрудник/проект)',
+    'fill_composite_template_placeholder': '{{employee}}/{{project_name}}',
+    'fill_composite_template_tooltip': '{{employee}} — папка сотрудника, {{project_name}} — папка проекта',
+    'msg_composite_template_required': 'Для создания проектов укажите шаблон пути с {{employee}} и {{project_name}}',
+    'msg_composite_employee_required': 'Шаблон пути должен содержать {{employee}}',
+    'msg_composite_project_required': 'Шаблон пути должен содержать {{project_name}}',
+
     # Messages
     'msg_error': 'Ошибка',
     'msg_warning': 'Предупреждение',

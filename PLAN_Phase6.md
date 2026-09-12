@@ -1,9 +1,12 @@
 # Plan: Phase 6 — Unit Tests for Nested Employee/Project Generation
 **Spec:** SPEC.md | **Status:** Done (branch `feat/phase6-unit-tests`, merged to main)
 
-Final: `tests/test_nested_projects.py` — 13 tests: 6 passed, 6 skipped
-(pending Phase 2–3 nested API), 1 xfailed (TABLE→CONSTANT gap, Phase 4 fix).
-Full suite: 237 passed, 6 skipped, 1 xfailed, 0 failed.
+Final: `tests/test_nested_projects.py` — 13 tests, ALL PASS.
+Update (post-merge main): Phase 3 landed `parse_composite_template()` (dict API)
+and `create_nested_employee_projects()` (returns `(projects_dir,
+employee_count, project_count)`), Phase 3/4 fixed `_build_project_config`
+TABLE→CONSTANT — тесты выровнены под реальный API в
+`fix/phase6-align-phase3-api`, xfail снят. Full suite: no regressions.
 
 ---
 
@@ -55,8 +58,8 @@ Full suite: 237 passed, 6 skipped, 1 xfailed, 0 failed.
 
 ## Definition of Done
 
-- [x] `python -m pytest tests/test_nested_projects.py -v` → 6 passed, 6 skipped, 1 xfailed, 0 failed
-- [x] `python -m pytest tests/ -q` → 237 passed, 6 skipped, 1 xfailed, no regressions
+- [x] `python -m pytest tests/test_nested_projects.py -v` → 13 passed, 0 failed
+- [x] `python -m pytest tests/ -q` → no regressions
 - [x] Коммиты `test: <что> [phase6]` запушены в `feat/phase6-unit-tests`
 - [x] Merge в main без --force, конфликты в tests/ — сохранять оба набора
 - [x] Отчёт: подпункты, коммиты/пуши, полный вывод pytest (passed/failed/skipped, pending и почему), ошибки, main/ветка

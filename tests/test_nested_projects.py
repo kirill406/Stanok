@@ -144,16 +144,20 @@ def test_nested_basic_generation_creates_employee_and_project_folders():
         pytest.skip('pending: create_nested_employee_projects not implemented (Phase 3)')
     with tempfile.TemporaryDirectory() as tmp:
         source_dir = _make_nested_source_project(tmp)
-        output_base = os.path.join(tmp, 'Projects')
-        result = gen_module.create_nested_employee_projects(
-            source_dir, 'report.docx', COMPOSITE_TEMPLATE, output_base)
-        logger.info('nested generation result: %s', result)
-        employees = [d for d in os.listdir(output_base)
-                     if os.path.isdir(os.path.join(output_base, d))]
+        projects_dir, employee_count, project_count = (
+            gen_module.create_nested_employee_projects(
+                source_dir, 'report.docx', COMPOSITE_TEMPLATE))
+        logger.info(
+            'nested generation result: %s employees, %s projects in %s',
+            employee_count, project_count, projects_dir)
+        assert employee_count == 2
+        assert project_count == 6
+        employees = [d for d in os.listdir(projects_dir)
+                     if os.path.isdir(os.path.join(projects_dir, d))]
         assert len(employees) == 2
         total_projects = 0
         for emp in employees:
-            emp_dir = os.path.join(output_base, emp)
+            emp_dir = os.path.join(projects_dir, emp)
             projects = [d for d in os.listdir(emp_dir)
                         if os.path.isdir(os.path.join(emp_dir, d))]
             assert len(projects) == 3
@@ -168,9 +172,12 @@ def test_nested_composite_template_parsing_detects_parts():
     """Composite '{{employee}}/{{project_name}}' parses into two parts."""
     if not HAS_PARSE_COMPOSITE:
         pytest.skip('pending: parse_composite_template not implemented (Phase 2)')
-    employee_part, project_part = gen_module.parse_composite_template(COMPOSITE_TEMPLATE)
-    assert 'employee' in employee_part
-    assert 'project_name' in project_part
+    parsed = gen_module.parse_composite_template(COMPOSITE_TEMPLATE)
+    assert parsed['is_composite'] is True
+    assert 'employee' in parsed['employee_part']
+    assert 'project_name' in parsed['project_part']
+    flat = gen_module.parse_composite_template('{{client_name}}_договор')
+    assert flat['is_composite'] is False
 
 
 def test_nested_composite_template_parsing_fallback_resolves_both_placeholders():
@@ -213,14 +220,8 @@ def test_nested_config_transformation_applies_constant_counter_batch():
     assert new_config.batch_sources['batch.xlsx'].mode == RowIterationMode.CONSTANT
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason='TABLE->CONSTANT never fires: _build_project_config checks '
-           '"fm.file in row_data" but row_data is column-keyed '
-           '(Phase 4 fix pending, source must not change in Phase 6)',
-)
 def test_nested_config_transformation_applies_table_to_constant():
-    """TABLE field becomes CONSTANT with row value (SPEC, currently gaps)."""
+    """TABLE field becomes CONSTANT with row value (SPEC; fixed in Phase 3/4)."""
     from docxforge.generate import _build_project_config
     tc = TemplateConfig()
     tc.fields['project_name'] = FieldMapping(
@@ -270,15 +271,16 @@ def test_nested_max_projects_limit_respected_nested():
         pytest.skip('pending: create_nested_employee_projects not implemented (Phase 3)')
     with tempfile.TemporaryDirectory() as tmp:
         source_dir = _make_nested_source_project(tmp)
-        output_base = os.path.join(tmp, 'Projects')
-        gen_module.create_nested_employee_projects(
-            source_dir, 'report.docx', COMPOSITE_TEMPLATE, output_base,
-            max_projects=4)
+        projects_dir, employee_count, project_count = (
+            gen_module.create_nested_employee_projects(
+                source_dir, 'report.docx', COMPOSITE_TEMPLATE,
+                max_projects=4))
+        assert project_count == 4
         total = sum(
-            len([d for d in os.listdir(os.path.join(output_base, emp))
-                 if os.path.isdir(os.path.join(output_base, emp, d))])
-            for emp in os.listdir(output_base)
-            if os.path.isdir(os.path.join(output_base, emp)))
+            len([d for d in os.listdir(os.path.join(projects_dir, emp))
+                 if os.path.isdir(os.path.join(projects_dir, emp, d))])
+            for emp in os.listdir(projects_dir)
+            if os.path.isdir(os.path.join(projects_dir, emp)))
         assert total == 4
 
 
@@ -288,10 +290,9 @@ def test_nested_missing_column_raises_clear_error():
         pytest.skip('pending: create_nested_employee_projects not implemented (Phase 3)')
     with tempfile.TemporaryDirectory() as tmp:
         source_dir = _make_flat_source_project(tmp)
-        output_base = os.path.join(tmp, 'Projects')
         with pytest.raises(Exception, match='(?i)(employee|project_name|column)'):
             gen_module.create_nested_employee_projects(
-                source_dir, 'contract.docx', COMPOSITE_TEMPLATE, output_base)
+                source_dir, 'contract.docx', COMPOSITE_TEMPLATE)
 
 
 def test_nested_empty_batch_source_raises_clear_error_flat():
@@ -332,17 +333,19 @@ def test_nested_data_folder_copied_fully():
         pytest.skip('pending: create_nested_employee_projects not implemented (Phase 3)')
     with tempfile.TemporaryDirectory() as tmp:
         source_dir = _make_nested_source_project(tmp)
-        output_base = os.path.join(tmp, 'Projects')
-        gen_module.create_nested_employee_projects(
-            source_dir, 'report.docx', COMPOSITE_TEMPLATE, output_base)
+        projects_dir, _, _ = gen_module.create_nested_employee_projects(
+            source_dir, 'report.docx', COMPOSITE_TEMPLATE)
         src_files = sorted(os.listdir(os.path.join(source_dir, 'Данные')))
         assert len(src_files) >= 2
-        for emp in os.listdir(output_base):
-            emp_dir = os.path.join(output_base, emp)
+        for emp in os.listdir(projects_dir):
+            emp_dir = os.path.join(projects_dir, emp)
             if not os.path.isdir(emp_dir):
                 continue
-            for proj in os.listdir(emp_dir):
-                proj_data = os.path.join(emp_dir, proj, 'Данные')
+                for proj in os.listdir(emp_dir):
+                    proj_dir = os.path.join(emp_dir, proj)
+                    if not os.path.isdir(proj_dir):
+                        continue
+                    proj_data = os.path.join(proj_dir, 'Данные')
                 assert sorted(os.listdir(proj_data)) == src_files
                 for fname in src_files:
                     with open(os.path.join(source_dir, 'Данные', fname), 'rb') as f:
@@ -357,11 +360,10 @@ def test_nested_settings_json_structure_and_content():
         pytest.skip('pending: create_nested_employee_projects not implemented (Phase 3)')
     with tempfile.TemporaryDirectory() as tmp:
         source_dir = _make_nested_source_project(tmp)
-        output_base = os.path.join(tmp, 'Projects')
-        gen_module.create_nested_employee_projects(
-            source_dir, 'report.docx', COMPOSITE_TEMPLATE, output_base)
-        for emp in os.listdir(output_base):
-            emp_dir = os.path.join(output_base, emp)
+        projects_dir, _, _ = gen_module.create_nested_employee_projects(
+            source_dir, 'report.docx', COMPOSITE_TEMPLATE)
+        for emp in os.listdir(projects_dir):
+            emp_dir = os.path.join(projects_dir, emp)
             if not os.path.isdir(emp_dir):
                 continue
             settings_path = os.path.join(emp_dir, 'docxforge_settings.json')

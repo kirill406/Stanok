@@ -1,103 +1,69 @@
-# Phase 4 Plan: Core Logic — `create_projects_from_template()` in `generate.py`
+# PLAN_Phase4 — Project Config & File Operations (nested mode)
 
-**Status:** Completed | **Parent:** PLAN.md Phase 4
+**Parent:** PLAN.md Phase 4 | **SPEC:** SPEC.md | **Scope:** `docxforge/generate.py` only (no GUI, no tests).
+**Branch:** `feat/phase4-config-fileops`
+**Rule:** grouping core (`parse_composite`, `create_nested_employee_projects`) belongs to Phases 2–3 — do NOT duplicate/break it. Flat `create_projects_from_template()` stays backward compatible.
 
----
-
-## Detailed Subtasks
-
-### 4.1 Function Signature & Imports
-- [x] Add `create_projects_from_template()` function to `docxforge/generate.py`
-- [x] Add required imports: `os`, `shutil`, `logging`, `typing` (List, Tuple, Optional, Dict)
-- [x] Import from `docxforge.engine.schema`: `Project`, `TemplateConfig`, `FieldMapping`, `FieldType`, `BatchSourceConfig`, `RowIterationMode`, `ResumeState`
-- [x] Import from `docxforge.engine.data_reader`: `DataReader`
-- [x] Import from `docxforge.engine.template_parser`: `scan_template`
-
-### 4.2 Load Project & Read Table Data
-- [x] Load project via `Project.from_file(project_file)`
-- [x] Get template config for the specified template
-- [x] Read all batch sources via `DataReader.read_all_batch_sources()` (added method)
-- [x] Determine primary batch source (first sequential source)
-
-### 4.3 Create Projects Directory
-- [x] Create `Projects/` directory in project path
-- [x] Handle permission errors gracefully
-
-### 4.4 Iterate Over Rows (Main Loop)
-- [x] For each row (up to max_projects limit):
-  - [x] Resolve folder name using template (inline helper `_resolve_folder_name_template`)
-  - [x] Handle empty/duplicate folder names (append `_1`, `_2`, etc.)
-  - [x] Create project subdirectory with `Шаблоны/` subfolder
-  - [x] Build new config:
-    - CONSTANT fields: copied unchanged
-    - TABLE fields → CONSTANT with row value
-    - COUNTER fields: reset to start value
-    - TODAY fields: copied unchanged
-    - IMAGE fields: copied unchanged
-  - [x] Write `проект.docxforge` with new config
-  - [x] Copy template .docx files to new project/Шаблоны/
-
-### 4.5 Helper: Build New Config Per Row
-- [x] Implemented `_build_project_config(template_config, row_data, primary_source_file)`
-- [x] Convert TABLE fields to CONSTANT with values from current row
-- [x] Reset COUNTER fields to their start values
-- [x] Preserve batch_sources but with counter_current_row = 1
-- [x] Clear resume state (last_counter_value = 0, sources = {})
-
-### 4.6 Edge Case Handling
-- [x] Empty folder name resolution → use fallback (e.g., "project_N")
-- [x] Duplicate folder names → append `_1`, `_2`, etc.
-- [x] Missing template file → raise GenerationError with clear message
-- [x] No batch sources configured → raise GenerationError
-- [x] Permission denied on folder create → raise GenerationError with rollback of created folders
-- [x] Empty table data → raise GenerationError
-- [x] No sequential batch source → raise GenerationError
-
-### 4.7 Return Value
-- [x] Return tuple `(projects_dir: str, count: int)`
+> **Folder-case decision:** SPEC defines nested layout lowercase (`данные/`, `шаблоны/`, `результат/`).
+> Source lookup accepts both `Данные/` and `данные/` (existing projects use capital).
+> Destinations use SPEC lowercase. Platform is Windows (case-insensitive), so the engine
+> (which reads `Данные`/`Шаблоны`) resolves both spellings.
 
 ---
 
-## Acceptance Criteria (from PLAN.md)
+## Subtasks
 
-| Item | Description | Status |
-|------|-------------|--------|
-| Load project | `Project.from_file()` works correctly | ✅ |
-| Read table data | `DataReader.read_all_batch_sources()` returns dict of file -> rows | ✅ |
-| Primary batch source | First SEQUENTIAL source identified | ✅ |
-| Projects/ dir | Created in project path | ✅ |
-| Per-row project | Subdirectory created with resolved folder name | ✅ |
-| Config per project | `проект.docxforge` written with transformed config | ✅ |
-| Templates copied | .docx files copied to new project/Шаблоны/ | ✅ |
-| Edge cases | All handled with clear errors | ✅ |
+### 4.1 Fix `_build_project_config` — TABLE→CONSTANT, COUNTER reset, batch→CONSTANT
+- [x] TABLE field with `column` present in `row_data` → `FieldType.CONSTANT` with row value
+  (fix: old check `fm.file in row_data` never matched — `row_data` keys are columns, not file names)
+- [x] COUNTER fields: keep `start`/`step`/`format` (fresh counter, resume cleared)
+- [x] CONSTANT/TODAY/IMAGE/other: copied unchanged with all attrs
+- [x] ALL `batch_sources` → `RowIterationMode.CONSTANT`, `continue_from_last=False`,
+  `counter_current_row=1`, lookup cleared (was: only primary source converted)
+- [x] Preserve `cycles`, `aggregations`, `filename_template`, `directory_template`
+- [x] Fresh `ResumeState(continue_from_last=False)`
+- [x] Signature `(template_config, row_data, primary_source_file)` unchanged (Phase 3 + flat path compatible)
+
+### 4.2 `copy_data_folder` — full copy of `Данные/` (no slicing)
+- [x] `shutil.copytree(src, dst, dirs_exist_ok=True)` — entire folder, all files unchanged
+- [x] Source resolved as `Данные/` → fallback `данные/`; missing source → `GenerationError`
+- [x] Destination: `<project>/данные/`
+
+### 4.3 Template copy to `шаблоны/` + empty `результат/`
+- [x] `copy_template_file(src_template_path, dst_project_dir)` → `<project>/шаблоны/<name>.docx`
+  via `shutil.copy2`; missing source → `GenerationError`
+- [x] `create_result_folder(dst_project_dir)` → empty `<project>/результат/`
+- [x] `setup_nested_project_files(...)` — composed per-project op for the Phase 3 loop:
+  makedirs + data copy + template copy + result dir + `проект.docxforge` write,
+  with rollback (`shutil.rmtree`) on failure
+
+### 4.4 Writers — `проект.docxforge` + `docxforge_settings.json`
+- [x] `write_nested_project_config(dst_project_dir, template_name, new_config, version)`
+  → `Project(version).to_file(<project>/проект.docxforge)`
+- [x] `write_employee_settings(employee_dir, employee, employee_folder, projects)`
+  → `docxforge_settings.json` per SPEC schema:
+  `{employee, employee_folder, created_at (ISO), projects: [{name, folder, template, row_index, created_at}]}`
+
+### 4.5 Verification
+- [x] `python -m pytest tests/ -q` green after every subtask
+- [x] Smoke test in tmp: config transform + full file-ops chain (copytree, .docx copy,
+  empty result, both JSON files) verified on real FS
+- [x] Flat `create_projects_from_template()` untouched in behavior (only benefits from 4.1 fix)
 
 ---
 
-## Testing
+## Acceptance criteria → SPEC mapping
 
-All tests pass when loaded via importlib (workaround for WSL filesystem cache issue):
+| Criterion | Check |
+|-----------|-------|
+| TABLE→CONSTANT со значениями строки | 4.1: `new_config.fields[x].type == CONSTANT`, value == row value |
+| COUNTER reset | 4.1: `start/step/format` kept, resume fresh |
+| batch→CONSTANT | 4.1: every source `mode == CONSTANT`, `continue_from_last=False` |
+| `Данные/` — полная копия copytree без слайсинга | 4.2: `filecmp`-equal trees, no row filtering |
+| `шаблоны/` — копия .docx | 4.3: identical bytes |
+| `результат/` — пустая | 4.3: exists, empty |
+| `проект.docxforge` + `settings.json` | 4.4: valid JSON, loadable via `Project.from_file`, settings match SPEC schema |
 
-- `python -m pytest tests/test_functional_generate.py -v` → 9 passed
-- `python -m pytest tests/ -q` → 181 passed
-- `python test_engine.py` → ALL CHECKS PASSED
-- Custom test for `create_projects_from_template()` → SUCCESS: Created 2 projects with correct configs
-
----
-
-## Files Modified
-
-1. **docxforge/engine/data_reader.py** - Added `read_all_batch_sources()` method
-2. **docxforge/generate.py** - Added `create_projects_from_template()` function with helpers:
-   - `_resolve_folder_name_template()`
-   - `_build_project_config()`
-   - `_copy_template_files()`
-
----
-
-## Notes
-
-- Followed existing code style: 4 spaces, UTF-8, snake_case functions, PascalCase classes
-- Russian UI text for error messages
-- No new dependencies added
-- Reused existing patterns from `generate.py` and `render_execute.py`
-- WSL filesystem cache issue causes SyntaxError during normal import (pre-commit hook), but code is functionally correct and all tests pass when loaded via importlib
+## Files
+- Modified: `docxforge/generate.py` (helpers only), `PLAN_Phase4.md` (this file)
+- NOT touched: `docxforge/gui/`, `tests/`, `docxforge/engine/`, `.env`

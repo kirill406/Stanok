@@ -1,6 +1,6 @@
 # PLAN_Phase2 — Template Parsing & Detection
 
-**Parent:** PLAN.md Phase 2 | **Spec:** SPEC.md (Nested Employee/Project Generation) | **Status:** In Progress
+**Parent:** PLAN.md Phase 2 | **Spec:** SPEC.md (Nested Employee/Project Generation) | **Status:** Completed
 **Scope:** ONLY `docxforge/generate.py` (helper + detection + routing). No GUI, no tests.
 
 ---
@@ -16,34 +16,34 @@ Flat path must remain byte-for-byte behavior-compatible.
 ## Subtasks
 
 ### 2.1 `parse_composite_template()` helper in `docxforge/generate.py`
-- [ ] Add `parse_composite_template(template: str) -> Dict[str, Any]` returning:
+- [x] Add `parse_composite_template(template: str) -> Dict[str, Any]` returning:
   - `is_composite: bool`
   - `employee_part: str` (segment before first `/`)
   - `project_part: str` (remainder after first `/`)
-- [ ] Composite criteria (ALL must hold, else flat):
+- [x] Composite criteria (ALL must hold, else flat):
   - template is non-empty string AND
   - contains `/` AND
   - contains `{{employee}}` placeholder (whitespace-tolerant: `{{ employee }}`) AND
   - contains `{{project_name}}` placeholder (whitespace-tolerant)
-- [ ] Edge cases → flat (`is_composite=False`):
+- [x] Edge cases → flat (`is_composite=False`):
   - empty / `None` / whitespace-only template
   - no `/`
   - only one of the two placeholders
-- [ ] Use `logging`, no `print()`; pure Python, no Qt deps.
+- [x] Use `logging`, no `print()`; pure Python, no Qt deps.
 
 ### 2.2 Detection + routing in `create_projects_from_template()`
-- [ ] At the top of `create_projects_from_template()`, call `parse_composite_template(folder_name_template)`.
-- [ ] If `is_composite` → delegate immediately to `create_nested_employee_projects(project_path, template_name, folder_name_template, max_projects)` and return its result.
-- [ ] Else → existing flat path unchanged (backward compat, no behavior change).
+- [x] At the top of `create_projects_from_template()`, call `parse_composite_template(folder_name_template)`.
+- [x] If `is_composite` → delegate immediately to `create_nested_employee_projects(project_path, template_name, folder_name_template, max_projects)` and return its result.
+- [x] Else → existing flat path unchanged (backward compat, no behavior change).
 
 ### 2.3 Stub `create_nested_employee_projects()` (Phase 3 contract)
-- [ ] Add signature: `create_nested_employee_projects(project_path: str, template_name: str, folder_name_template: str, max_projects: Optional[int] = None) -> Tuple[str, int]`.
-- [ ] Body: log + `raise NotImplementedError(...)` (full implementation is Phase 3).
-- [ ] Documented contract for Phases 3–4 (return `(projects_dir, count)`; raises `GenerationError` on bad columns/data).
+- [x] Add signature: `create_nested_employee_projects(project_path: str, template_name: str, folder_name_template: str, max_projects: Optional[int] = None) -> Tuple[str, int]`.
+- [x] Body: log + `raise NotImplementedError(...)` (full implementation is Phase 3).
+- [x] Documented contract for Phases 3–4 (return `(projects_dir, count)`; raises `GenerationError` on bad columns/data).
 
 ### 2.4 Verification
-- [ ] `python -m pytest tests/ -q` → all pass (no regressions; flat path untouched).
-- [ ] Manual sanity: flat template (`Project_{{client}}`) → flat; composite (`{{employee}}/{{project_name}}`) → routes to stub (`NotImplementedError`); empty/single-placeholder → flat.
+- [x] `python -m pytest tests/ -q` → all pass (no regressions; flat path untouched).
+- [x] Manual sanity: flat template (`Project_{{client}}`) → flat; composite (`{{employee}}/{{project_name}}`) → routes to stub (`NotImplementedError`); empty/single-placeholder → flat.
 
 ---
 

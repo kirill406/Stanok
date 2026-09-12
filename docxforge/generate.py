@@ -206,7 +206,7 @@ def _resolve_folder_name_template(
 
     for fn, fm in config.fields.items():
         if fm.type == FieldType.TABLE and not fm.linked_to:
-            if fm.file and fm.column and fm.file in row_data:
+            if fm.file and fm.column and fm.column in row_data:
                 effective[fn] = row_data.get(fm.column, '')
 
     for key, value in row_data.items():
@@ -233,7 +233,7 @@ def _build_project_config(
         if fm.type == FieldType.CONSTANT:
             new_fm.value = fm.value
         elif fm.type == FieldType.TABLE:
-            if fm.file and fm.column and fm.file in row_data:
+            if fm.file and fm.column and fm.column in row_data:
                 new_fm = FieldMapping(type=FieldType.CONSTANT, value=row_data.get(fm.column, ''))
             else:
                 new_fm.value = fm.value

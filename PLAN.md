@@ -111,13 +111,13 @@
 
 | Phase | Tasks | Verification | Status |
 |-------|-------|--------------|--------|
-| 1 | Strings & Composite Template UI | Manual + grep | ⬜ |
-| 2 | Template Parsing & Detection | Unit test | ⬜ |
-| 3 | Core Nested Generation Logic | Unit test | ⬜ |
-| 4 | Project Config & File Operations | Unit test | ⬜ |
-| 5 | Fill Form Integration | Manual + integration test | ⬜ |
-| 6 | Unit Tests | pytest test_nested_projects.py | ⬜ |
-| 7 | Integration Tests & Polish | pytest tests/ -q | ⬜ |
+| 1 | Strings & Composite Template UI | Manual + grep | ✅ 231→244 passed |
+| 2 | Template Parsing & Detection | Unit test | ✅ 231 passed |
+| 3 | Core Nested Generation Logic | Unit test | ✅ 231 passed + smoke |
+| 4 | Project Config & File Operations | Unit test | ✅ 244 passed + smoke |
+| 5 | Fill Form Integration | Manual + integration test | ✅ 244 passed |
+| 6 | Unit Tests | pytest test_nested_projects.py | ✅ 13 passed, 244 total |
+| 7 | Integration Tests & Polish | pytest tests/ -q | ✅ 253 passed |
 
 ---
 

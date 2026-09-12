@@ -13,18 +13,21 @@ def create_nested_employee_projects(
     project_path: str,
     template_name: str,
     folder_name_template: str,          # composite, e.g. "{{employee}}/{{project_name}}"
+    max_projects: Optional[int] = None, # cap on TOTAL projects (only when > 0)
+                                        # 4th positional: composite routing in
+                                        # create_projects_from_template() passes it positionally
     employee_column: str = 'employee',
     project_column: str = 'project_name',
-    max_projects: Optional[int] = None, # cap on TOTAL projects (only when > 0)
 ) -> Tuple[str, int, int]:              # (projects_dir, employee_count, project_count)
 ```
 
 - Raises `GenerationError` (from `docxforge.generate`) with a clear message on all failures.
 - Phase 2 routes composite templates here; Phase 5 passes the composite string through
-  `folder_name_template`. Template is split on the first `/`: left part resolves the
-  employee folder, right part resolves the project folder (via existing
-  `_resolve_folder_name_template` + sanitizing). No `/` → employee folder from the raw
-  `employee` value, whole template used for the project folder (backward compatible).
+  `folder_name_template`. Parts come from the Phase 2 helper `parse_composite_template()`
+  (composite = `/` plus both `{{employee}}` and `{{project_name}}`): the employee part
+  resolves the employee folder, the project part the project folder (via existing
+  `_resolve_folder_name_template` + sanitizing). Non-composite → employee folder from
+  the raw `employee` value, whole template used for the project folder (backward compatible).
 - Phase 4 may take over config/file-op details; current implementation reuses the existing
   `_build_project_config()` + `_copy_template_files()` and copies `Данные/` fully via
   `shutil.copytree` (per SPEC.md). Folder names use codebase convention

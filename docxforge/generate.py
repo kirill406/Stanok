@@ -3,10 +3,11 @@
 
 import os
 import json
+import re
 import shutil
 import logging
 from datetime import datetime
-from typing import List, Optional, Tuple, Dict
+from typing import List, Optional, Tuple, Dict, Any
 
 from docxforge.engine.schema import (
     Project, ResumeState, TemplateConfig, FieldMapping, FieldType,
@@ -23,6 +24,56 @@ logger = logging.getLogger(__name__)
 class GenerationError(Exception):
     """Raised when document generation fails."""
     pass
+
+
+# Placeholder patterns for composite (employee/project) folder templates.
+# Whitespace inside braces is tolerated, e.g. both "{{employee}}" and "{{ employee }}".
+_EMPLOYEE_PLACEHOLDER_RE = re.compile(r'\{\{\s*employee\s*\}\}')
+_PROJECT_NAME_PLACEHOLDER_RE = re.compile(r'\{\{\s*project_name\s*\}\}')
+
+
+def parse_composite_template(template: Optional[str]) -> Dict[str, Any]:
+    """
+    Parse a folder-name template and detect composite (employee/project) mode.
+
+    A template is composite only if ALL of the following hold:
+      - it is a non-empty string,
+      - it contains ``/``,
+      - it contains the ``{{employee}}`` placeholder,
+      - it contains the ``{{project_name}}`` placeholder.
+
+    Everything else (empty/None template, no ``/``, only one placeholder)
+    is flat mode for backward compatibility.
+
+    Args:
+        template: Folder-name template, e.g. ``"{{employee}}/{{project_name}}"``.
+
+    Returns:
+        Dict with keys:
+          - ``is_composite`` (bool): True if composite mode detected.
+          - ``employee_part`` (str): segment before the first ``/``
+            (empty string when not composite).
+          - ``project_part`` (str): remainder after the first ``/``
+            (the original template, or "" when not composite).
+    """
+    if not template or not isinstance(template, str) or not template.strip():
+        return {'is_composite': False, 'employee_part': '', 'project_part': template or ''}
+
+    if '/' not in template:
+        return {'is_composite': False, 'employee_part': '', 'project_part': template}
+
+    if not _EMPLOYEE_PLACEHOLDER_RE.search(template):
+        return {'is_composite': False, 'employee_part': '', 'project_part': template}
+
+    if not _PROJECT_NAME_PLACEHOLDER_RE.search(template):
+        return {'is_composite': False, 'employee_part': '', 'project_part': template}
+
+    employee_part, project_part = template.split('/', 1)
+    return {
+        'is_composite': True,
+        'employee_part': employee_part,
+        'project_part': project_part,
+    }
 
 
 def generate_project(
@@ -90,6 +141,20 @@ def create_projects_from_template(
     folder_name_template: str,
     max_projects: Optional[int] = None,
 ) -> Tuple[str, int]:
+    # Phase 2: detect composite (employee/project) vs flat mode up front.
+    # Composite templates are delegated to create_nested_employee_projects()
+    # (Phase 3); flat templates continue on the unchanged path below.
+    parsed = parse_composite_template(folder_name_template)
+    if parsed['is_composite']:
+        logger.info(
+            'Composite folder template detected (employee=%r project=%r); '
+            'routing to nested employee/project generation.',
+            parsed['employee_part'], parsed['project_part'],
+        )
+        return create_nested_employee_projects(
+            project_path, template_name, folder_name_template, max_projects
+        )
+
     project_file = os.path.join(project_path, 'проект.docxforge')
     if not os.path.exists(project_file):
         raise GenerationError(f'Project file not found: {project_file}')
@@ -311,20 +376,6 @@ def _unique_folder_name(base: str, used: set, parent_dir: str) -> str:
     return candidate
 
 
-def _split_composite_template(template: str) -> Tuple[Optional[str], str]:
-    """Split a composite folder template on the first '/'.
-
-    Returns (employee_part, project_part). When there is no '/', the whole
-    template is the project part and employee_part is None (flat-compatible).
-    """
-    if not template:
-        return None, ''
-    parts = template.split('/', 1)
-    if len(parts) == 1:
-        return None, parts[0]
-    return parts[0], parts[1]
-
-
 def _rollback_created(paths: List[str]) -> None:
     """Remove directories created during a failed run, in reverse order."""
     for path in reversed(paths):
@@ -338,9 +389,9 @@ def create_nested_employee_projects(
     project_path: str,
     template_name: str,
     folder_name_template: str,
+    max_projects: Optional[int] = None,
     employee_column: str = 'employee',
     project_column: str = 'project_name',
-    max_projects: Optional[int] = None,
 ) -> Tuple[str, int, int]:
     """Create nested Employee/Project folders from a batch source.
 
@@ -351,16 +402,21 @@ def create_nested_employee_projects(
     ``Результат/`` and a ``проект.docxforge`` (TABLE fields frozen to row values
     as CONSTANT, COUNTER reset, batch sources forced to CONSTANT).
 
+    Folder parts are obtained via the Phase 2 helper ``parse_composite_template``:
+    for a composite template the employee/project parts resolve each folder;
+    otherwise the employee folder comes from the raw employee value and the
+    whole template resolves the project folder (backward compatible).
+
+    NOTE: ``max_projects`` is the 4th positional parameter so the composite
+    routing in ``create_projects_from_template`` can pass it positionally.
+
     Args:
         project_path: Source project directory (with проект.docxforge).
         template_name: Template filename (relative to Шаблоны/).
         folder_name_template: Composite template, e.g. "{{employee}}/{{project_name}}".
-            Split on the first '/': left part resolves the employee folder, right
-            part the project folder. Without '/', the employee folder comes from
-            the raw employee value and the whole template resolves the project.
+        max_projects: Cap on the TOTAL number of projects (only when > 0).
         employee_column: Batch column used for grouping.
         project_column: Batch column used for project folders/names.
-        max_projects: Cap on the TOTAL number of projects (only when > 0).
 
     Returns:
         Tuple (projects_dir, employee_count, project_count).
@@ -431,7 +487,13 @@ def create_nested_employee_projects(
     except Exception as e:
         logger.warning(f'Could not scan template for placeholders: {e}')
 
-    employee_part, project_part = _split_composite_template(folder_name_template or '')
+    parsed = parse_composite_template(folder_name_template or '')
+    if parsed['is_composite']:
+        employee_part: Optional[str] = parsed['employee_part']
+        project_part = parsed['project_part']
+    else:
+        employee_part = None
+        project_part = folder_name_template or ''
 
     projects_dir = os.path.join(project_path, 'Projects')
     try:

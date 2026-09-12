@@ -1,141 +1,99 @@
-# SPEC.md — Create Projects from Template Mode
+# SPEC.md — Nested Employee/Project Generation (v1.0)
 
 ## Overview
-Add a "Create Projects" mode to Fill Form that generates separate project folders (each with its own `проект.docxforge`) from the current template, instead of generating documents. Constant fields are preserved for later document generation; TABLE fields are populated from Excel data (one row per project); COUNTER fields reset to start.
+Extend "Create Projects" mode to generate **two-level nested folder structure**: Employee → Projects. Input: single Excel batch source with `employee` and `project_name` columns. Output: `EmployeeFolder/ProjectFolder/` with data, templates, result folders + `проект.docxforge`. Employee folder contains `docxforge_settings.json` listing their projects.
 
 ---
 
 ## User Flow
 
-1. User opens Fill Form for a template
-2. Checks new checkbox **"Создать проекты вместо документов"** (Create projects instead of documents)
-3. UI adapts:
-   - Shows **"Шаблон имени папки проекта"** (folder name template) input
-   - Hides filename/directory template outputs (not applicable)
-   - Shows **"Найдено строк: N. Сколько проектов создать?"** dialog if table rows > expected
-4. User clicks **"Создать проекты"**
-5. For each row (up to user-confirmed count):
-   - Create `Projects/<folder_name>/` subfolder
-   - Copy current project structure (templates, schemas)
-   - Write `проект.docxforge` with:
-     - Constant fields → same values
-     - TABLE fields → values from current row
-     - COUNTER fields → reset to start
-     - All other settings copied (batch sources, filename templates, etc.)
-6. Show summary: "Создано M проектов в Projects/"
+1. User opens Fill Form for template with batch source containing `employee` + `project_name` columns
+2. Checks **"Создать проекты вместо документов"**
+3. Enters **composite folder template**: e.g., `{{employee}}/{{project_name}}`
+4. Clicks **"Создать проекты"**
+5. System:
+   - Reads batch source, groups rows by `employee` value
+   - For each unique employee:
+     - Creates `EmployeeFolder/` (resolved from template)
+     - Creates `docxforge_settings.json` with list of their projects
+     - For each project row of that employee:
+       - Creates `ProjectFolder/` inside employee folder
+       - **Copies entire `Данные/` folder** from source project (all Excel files unchanged)
+       - Copies template → `шаблоны/`
+       - Creates empty `результат/`
+       - Generates `проект.docxforge` with:
+         - CONSTANT fields preserved
+         - TABLE fields → CONSTANT with row values
+         - COUNTER reset to start
+         - Batch sources → CONSTANT mode (data already in `данные/`)
+6. Shows summary: "Создано N сотрудников, M проектов в [path]"
 
 ---
 
-## UI Changes
+## Folder Structure
 
-### Fill Form (`docxforge/gui/fill_form/form_dialog.py`)
-- Add checkbox: `chk_create_projects` — "Создать проекты вместо документов"
-- When checked:
-  - Show `edit_folder_name_template` (string, e.g., `Project_{{client_name}}_{{doc_number}}`)
-  - Hide `edit_filename_template`, `edit_directory_template` (or disable)
-  - Change button text: "Создать проекты" (instead of "Сгенерировать")
-- Validation: folder name template must not be empty when mode active
-
-### Strings (`docxforge/gui/strings.py`)
-```python
-'fill_create_projects': 'Создать проекты вместо документов',
-'fill_folder_name_template': 'Шаблон имени папки проекта',
-'fill_found_rows': 'Найдено строк: {count}. Сколько проектов создать?',
-'fill_projects_created': 'Создано {count} проектов в {path}',
 ```
+<project_root>/
+  Projects/
+    {{employee_folder}}/             # e.g., "Иванов_Иван"
+      docxforge_settings.json        # {employee: "Иванов Иван", projects: [...]}
+      {{project_folder}}/            # e.g., "Договор_001"
+        данные/                      # FULL COPY of source project's Данные/
+        шаблоны/                     # copied .docx template
+        результат/                   # empty, for generated docs
+        проект.docxforge             # config for this project
+```
+
+---
+
+## docxforge_settings.json (Employee Folder)
+
+```json
+{
+  "employee": "Иванов Иван",
+  "employee_folder": "Иванов_Иван",
+  "created_at": "2025-09-12T14:30:00",
+  "projects": [
+    {
+      "name": "Договор_001",
+      "folder": "Договор_001",
+      "template": "all_fields.docx",
+      "row_index": 0,
+      "created_at": "2025-09-12T14:30:00"
+    }
+  ]
+}
+```
+
+---
+
+## UI Changes (Fill Form)
+
+- **Single composite template** field:
+  - Label: "Шаблон пути (сотрудник/проект)"
+  - Placeholder: `{{employee}}/{{project_name}}`
+  - Tooltip: "{{employee}} — папка сотрудника, {{project_name}} — папка проекта"
+- Validation: template must contain both placeholders
+- Strings: 6 new constants in `docxforge/gui/strings.py`
 
 ---
 
 ## Core Logic
 
-### Entry Point
-- New method in `generate.py` or `render_execute.py`: `create_projects_from_template()`
-- Called from `FillForm._create()` when checkbox checked
-
-### Algorithm
-```python
-def create_projects_from_template(project_path, template_name, folder_name_template, max_projects=None):
-    # 1. Load current project
-    project = Project.from_file(project_path + '/проект.docxforge')
-    config = project.templates[template_name]
-    
-    # 2. Read all table data for batch sources
-    all_table_data = DataReader.read_all_batch_sources(project_path, config.batch_sources)
-    primary_source = config.get_primary_batch_source()  # first sequential source
-    rows = all_table_data[primary_source.file]
-    
-    # 3. Determine count
-    total_rows = len(rows)
-    if max_projects is None:
-        max_projects = ask_user(f"Найдено строк: {total_rows}. Сколько проектов создать?")
-    max_projects = min(max_projects, total_rows)
-    
-    # 4. Create output folder
-    projects_dir = os.path.join(project_path, 'Projects')
-    os.makedirs(projects_dir, exist_ok=True)
-    
-    # 5. For each row
-    for i in range(max_projects):
-        row = rows[i]
-        
-        # 5a. Resolve folder name
-        folder_name = resolve_template(folder_name_template, row, constants=config.get_constants())
-        project_dir = os.path.join(projects_dir, folder_name)
-        os.makedirs(project_dir, exist_ok=True)
-        
-        # 5b. Build new project config
-        new_config = deepcopy(config)
-        new_config.fields = {}
-        
-        for field_name, field_mapping in config.fields.items():
-            if field_mapping.type == FieldType.CONSTANT:
-                # Copy constant as-is
-                new_config.fields[field_name] = field_mapping
-            elif field_mapping.type == FieldType.TABLE:
-                # Fill with row value
-                value = row.get(field_mapping.column, '')
-                new_config.fields[field_name] = FieldMapping(
-                    type=FieldType.CONSTANT, value=value
-                )
-            elif field_mapping.type == FieldType.COUNTER:
-                # Reset to start
-                new_config.fields[field_name] = FieldMapping(
-                    type=FieldType.COUNTER,
-                    start=field_mapping.start,
-                    step=field_mapping.step,
-                    format=field_mapping.format
-                )
-            else:
-                # Copy other types as-is (AGGREGATION, TODAY, etc.)
-                new_config.fields[field_name] = field_mapping
-        
-        # 5c. Copy batch sources, filename/dir templates, resume (empty)
-        # Resume state: fresh (no continue_from_last)
-        
-        # 5d. Write проект.docxforge
-        new_project = Project(
-            version=project.version,
-            templates={template_name: new_config}
-        )
-        new_project.to_file(os.path.join(project_dir, 'проект.docxforge'))
-        
-        # 5e. Copy template files to project/Шаблоны/
-        copy_templates(project_path, project_dir, [template_name])
-    
-    return projects_dir, max_projects
-```
+- New function `create_nested_employee_projects()` in `docxforge/generate.py`
+- Detects composite template (contains `/` and both placeholders)
+- Groups primary source rows by `employee` column
+- For each employee group: creates folder, writes settings.json, iterates projects
+- For each project: resolves folder name, copies `Данные/`, `шаблоны/`, creates `результат/`, writes `проект.docxforge`
+- Falls back to flat structure if template doesn't match composite pattern
 
 ---
 
-## Data Structures
+## Data Handling
 
-### FieldMapping changes
-- No changes needed; reuse existing `FieldMapping` with `type=CONSTANT` for populated TABLE fields
-
-### Project structure copied
-- `Шаблоны/<template_name>.docx` → new project/Шаблоны/
-- `проект.docxforge` regenerated with new field values
-- `Данные/` — NOT copied (each project references original Excel files via batch sources)
+- **No slicing**: `Данные/` folder copied entirely from source project (shutil.copytree)
+- Batch sources in new project config → CONSTANT mode (data already present)
+- Original Excel files unchanged, referenced by copied data
 
 ---
 
@@ -143,53 +101,24 @@ def create_projects_from_template(project_path, template_name, folder_name_templ
 
 | Case | Handling |
 |------|----------|
-| Folder name resolves to empty/duplicate | Append `_1`, `_2`... or show error |
-| Template file missing | Abort with error |
-| No batch sources configured | Disable checkbox / show warning |
-| User cancels row count dialog | Abort, no projects created |
-| Permission denied on folder create | Show error, rollback created folders |
-
----
-
-## Testing
-
-### Unit tests (`tests/test_create_projects.py`)
-- `test_create_projects_basic`: 1 template, 1 table, 3 rows → 3 projects
-- `test_constants_preserved`: constant fields copied unchanged
-- `test_table_fields_populated`: each project gets correct row values
-- `test_counter_reset`: each project counter starts at start value
-- `test_folder_name_template`: template resolved with row data
-- `test_max_projects_limit`: user limit respected
-- `test_no_batch_sources`: graceful handling
-
-### Integration tests
-- Full flow via Fill Form UI (QTest)
-- Verify generated `проект.docxforge` can generate documents
-
----
-
-## Files to Modify
-
-| File | Changes |
-|------|---------|
-| `docxforge/gui/fill_form/form_dialog.py` | Checkbox, folder name template input, logic switch |
-| `docxforge/gui/strings.py` | New string constants |
-| `docxforge/generate.py` | New `create_projects_from_template()` function |
-| `docxforge/engine/render_execute.py` | Reuse `resolve_field_values` logic for folder name |
-| `tests/test_create_projects.py` | New test file |
-| `tests/test_gui_fill_form.py` | UI tests for new mode |
+| Missing `employee`/`project_name` column | Error with clear message |
+| Duplicate project folders in same employee | Append `_1`, `_2` |
+| Empty resolved folder name | Fallback: `employee_N`, `project_N` |
+| No sequential batch source | Error (required) |
+| Permission denied | Rollback, show error |
+| User cancels row count dialog | Abort, no folders created |
 
 ---
 
 ## Acceptance Criteria
 
-- [ ] Checkbox appears in Fill Form, toggles UI correctly
-- [ ] Folder name template works with `{{field}}` placeholders
-- [ ] Projects created in `Projects/` subfolder
-- [ ] Each project has valid `проект.docxforge`
-- [ ] Constant fields preserved, TABLE fields populated per row, COUNTER reset
-- [ ] Template .docx files copied to each project
-- [ ] Row count dialog appears when rows > 1
-- [ ] Generated projects can generate documents normally
+- [ ] Composite template `{{employee}}/{{project_name}}` works
+- [ ] Employee folders with `docxforge_settings.json` created
+- [ ] Project folders with `данные/`, `шаблоны/`, `результат/`, `проект.docxforge`
+- [ ] `данные/` is full copy of source project's data
+- [ ] `проект.docxforge`: TABLE→CONSTANT, COUNTER reset, batch→CONSTANT
+- [ ] `docxforge_settings.json` lists all employee's projects
+- [ ] Row count dialog works for total projects
+- [ ] Success message shows employee and project counts
+- [ ] Backward compatible with flat structure
 - [ ] All existing tests pass
-- [ ] New tests cover core logic and UI

@@ -40,6 +40,13 @@ from .config_collector import ConfigCollectorMixin
 from ..strings import STRINGS
 
 
+# Composite path template placeholders (Phase 1: nested employee/project).
+# Validation accepts both compact ({{employee}}) and spaced ({{ employee }})
+# variants by stripping spaces before matching.
+COMPOSITE_PLACEHOLDER_EMPLOYEE = '{{employee}}'
+COMPOSITE_PLACEHOLDER_PROJECT = '{{project_name}}'
+
+
 class FillForm(FieldRowsMixin, AdvancedSectionMixin, BatchSectionMixin, ConfigIOMixin, ConfigCollectorMixin, QDialog):
     def __init__(self, project_dir: str, template_rel_path: str, parent=None):
         super().__init__(parent)
@@ -241,13 +248,14 @@ class FillForm(FieldRowsMixin, AdvancedSectionMixin, BatchSectionMixin, ConfigIO
         create_projects_row.addStretch()
         batch_layout.addLayout(create_projects_row)
 
-        # Folder name template row (initially hidden)
+        # Composite path template row (initially hidden).
+        # Single composite field: employee folder / project folder.
         self.folder_name_row = QHBoxLayout()
-        self.lbl_folder_name_template = QLabel(STRINGS['fill_folder_name_template'])
+        self.lbl_folder_name_template = QLabel(STRINGS['fill_composite_template_label'])
         self.folder_name_row.addWidget(self.lbl_folder_name_template)
         self.edit_folder_name_template = QLineEdit()
-        self.edit_folder_name_template.setPlaceholderText(STRINGS['fill_folder_name_placeholder'])
-        self.edit_folder_name_template.setToolTip(STRINGS['fill_folder_name_tooltip'])
+        self.edit_folder_name_template.setPlaceholderText(STRINGS['fill_composite_template_placeholder'])
+        self.edit_folder_name_template.setToolTip(STRINGS['fill_composite_template_tooltip'])
         self.folder_name_row.addWidget(self.edit_folder_name_template)
         batch_layout.addLayout(self.folder_name_row)
         self.folder_name_row.setContentsMargins(0, 0, 0, 0)
@@ -334,3 +342,22 @@ class FillForm(FieldRowsMixin, AdvancedSectionMixin, BatchSectionMixin, ConfigIO
     def _on_create_projects_toggled(self, checked: bool):
         """Handle create projects checkbox toggle."""
         self._set_folder_name_visible(checked)
+
+    @staticmethod
+    def validate_composite_template(template):
+        """Validate composite path template, return list of error strings.
+
+        The template must contain both ``{{employee}}`` and
+        ``{{project_name}}`` placeholders (spaced variants such as
+        ``{{ employee }}`` are also accepted).
+        """
+        errors = []
+        if not (template or '').strip():
+            errors.append(STRINGS['msg_composite_template_required'])
+            return errors
+        normalized = (template or '').replace(' ', '')
+        if COMPOSITE_PLACEHOLDER_EMPLOYEE not in normalized:
+            errors.append(STRINGS['msg_composite_employee_required'])
+        if COMPOSITE_PLACEHOLDER_PROJECT not in normalized:
+            errors.append(STRINGS['msg_composite_project_required'])
+        return errors

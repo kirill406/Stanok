@@ -180,6 +180,71 @@ def test_nested_composite_template_parsing_detects_parts():
     assert flat['is_composite'] is False
 
 
+def test_nested_composite_template_parsing_dynamic_column_names():
+    """Dynamic '{{фио_сотрудника}}/{{проект}}' infers column names from template."""
+    if not HAS_PARSE_COMPOSITE:
+        pytest.skip('pending: parse_composite_template not implemented (Phase 2)')
+    parsed = gen_module.parse_composite_template('{{фио_сотрудника}}/{{проект}}')
+    assert parsed['is_composite'] is True
+    assert parsed['employee_column'] == 'фио_сотрудника'
+    assert parsed['project_column'] == 'проект'
+    # Legacy literal names keep working with the same inferred contract.
+    legacy = gen_module.parse_composite_template(COMPOSITE_TEMPLATE)
+    assert legacy['employee_column'] == 'employee'
+    assert legacy['project_column'] == 'project_name'
+
+
+def test_nested_generation_with_dynamic_column_names():
+    """Template '{{фио_сотрудника}}/{{проект}}' groups by table columns."""
+    if not HAS_NESTED:
+        pytest.skip('pending: create_nested_employee_projects not implemented (Phase 3)')
+    from docx import Document
+    from openpyxl import Workbook
+
+    with tempfile.TemporaryDirectory() as tmp:
+        project_dir = os.path.join(tmp, 'dynamic_source')
+        data_dir = os.path.join(project_dir, 'Данные')
+        tmpl_dir = os.path.join(project_dir, 'Шаблоны')
+        os.makedirs(data_dir, exist_ok=True)
+        os.makedirs(tmpl_dir, exist_ok=True)
+
+        doc = Document()
+        doc.add_paragraph('Сотрудник: {{ фио_сотрудника }}')
+        doc.add_paragraph('Проект: {{ проект }}')
+        doc.save(os.path.join(tmpl_dir, 'contract.docx'))
+
+        wb = Workbook()
+        ws = wb.active
+        ws.append(['фио_сотрудника', 'проект'])
+        ws.append(['Иванов Иван', 'Договор_001'])
+        ws.append(['Иванов Иван', 'Договор_002'])
+        ws.append(['Петров Петр', 'Договор_003'])
+        wb.save(os.path.join(data_dir, 'batch.xlsx'))
+
+        prj = Project()
+        tc = TemplateConfig()
+        tc.fields['фио_сотрудника'] = FieldMapping(
+            type=FieldType.TABLE, file='batch.xlsx', column='фио_сотрудника')
+        tc.fields['проект'] = FieldMapping(
+            type=FieldType.TABLE, file='batch.xlsx', column='проект')
+        tc.batch_sources = {
+            'batch.xlsx': BatchSourceConfig(
+                file='batch.xlsx', mode=RowIterationMode.SEQUENTIAL),
+        }
+        tc.filename_template = '{{ проект }}.docx'
+        prj.templates['contract.docx'] = tc
+        prj.to_file(os.path.join(project_dir, 'проект.docxforge'))
+
+        projects_dir, employee_count, project_count = (
+            gen_module.create_projects_from_template(
+                project_dir, 'contract.docx', '{{фио_сотрудника}}/{{проект}}'))
+        assert (employee_count, project_count) == (2, 3)
+        employees = sorted(
+            d for d in os.listdir(projects_dir)
+            if os.path.isdir(os.path.join(projects_dir, d)))
+        assert employees == ['Иванов Иван', 'Петров Петр']
+
+
 def test_nested_composite_template_parsing_fallback_resolves_both_placeholders():
     """Existing resolver handles composite template with row data (no new API)."""
     from docxforge.generate import _resolve_folder_name_template

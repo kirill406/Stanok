@@ -160,7 +160,7 @@ class ConfigIOMixin:
             if fm.type == FieldType.TABLE and (not fm.file or not fm.column):
                 errors.append('\u041f\u043e\u043b\u0435 {{ %s }}: \u0443\u043a\u0430\u0436\u0438\u0442\u0435 \u0444\u0430\u0439\u043b \u0438 \u0441\u0442\u043e\u043b\u0431\u0435\u0446' % fn)
         # Validate composite path template when create_projects mode is active:
-        # both {{employee}} and {{project_name}} placeholders are required.
+        # format {{employee_column}}/{{project_column}} (dynamic column names).
         if config.create_projects:
             from .form_dialog import FillForm
             errors.extend(FillForm.validate_composite_template(config.folder_name_template))
@@ -176,7 +176,7 @@ class ConfigIOMixin:
         config = self._collect_config()
         
         # Validate composite path template for create_projects mode:
-        # both {{employee}} and {{project_name}} placeholders are required.
+        # format {{employee_column}}/{{project_column}} (dynamic column names).
         if config.create_projects:
             from .form_dialog import FillForm
             template_errors = FillForm.validate_composite_template(config.folder_name_template)

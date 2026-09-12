@@ -91,13 +91,15 @@ STRINGS = {
     'fill_nested_projects_created': 'Создано сотрудников: {employees}, проектов: {count} в {path}',
     'msg_no_batch_rows': 'Нет строк данных для создания проектов. Проверьте источник «По строкам» и файл данных.',
 
-    # Composite path template (Phase 1: nested employee/project)
+    # Composite path template (nested employee/project).
+    # Placeholder names are dynamic: first {{...}} is the employee column,
+    # second {{...}} is the project column, e.g. {{фио_сотрудника}}/{{проект}}.
     'fill_composite_template_label': 'Шаблон пути (сотрудник/проект)',
-    'fill_composite_template_placeholder': '{{employee}}/{{project_name}}',
-    'fill_composite_template_tooltip': '{{employee}} — папка сотрудника, {{project_name}} — папка проекта',
-    'msg_composite_template_required': 'Для создания проектов укажите шаблон пути с {{employee}} и {{project_name}}',
-    'msg_composite_employee_required': 'Шаблон пути должен содержать {{employee}}',
-    'msg_composite_project_required': 'Шаблон пути должен содержать {{project_name}}',
+    'fill_composite_template_placeholder': '{{фио_сотрудника}}/{{проект}}',
+    'fill_composite_template_tooltip': 'До «/» — {{столбец_сотрудника}} (папка сотрудника), после «/» — {{столбец_проекта}} (папка проекта). Имена берутся из столбцов таблицы',
+    'msg_composite_template_required': 'Для создания проектов укажите шаблон пути вида {{столбец_сотрудника}}/{{столбец_проекта}}',
+    'msg_composite_employee_required': 'Шаблон пути: до «/» нужен плейсхолдер {{столбец_сотрудника}} (папка сотрудника)',
+    'msg_composite_project_required': 'Шаблон пути: после «/» нужен плейсхолдер {{столбец_проекта}} (папка проекта)',
 
     # Messages
     'msg_error': 'Ошибка',

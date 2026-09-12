@@ -778,6 +778,8 @@ class TestFillFormCreateProjectsPhase7:
         # Static validator: composite OK, incomplete templates rejected
         assert FillForm.validate_composite_template(composite) == []
         assert FillForm.validate_composite_template('{{ employee }} / {{ project_name }}') == []
+        # Dynamic column names from table columns are accepted
+        assert FillForm.validate_composite_template('{{фио_сотрудника}}/{{проект}}') == []
         assert len(FillForm.validate_composite_template('')) >= 1
         assert len(FillForm.validate_composite_template('{{employee}}')) >= 1
         assert len(FillForm.validate_composite_template('{{project_name}}')) >= 1

@@ -27,9 +27,20 @@ class GenerationError(Exception):
 
 
 # Placeholder patterns for composite (employee/project) folder templates.
-# Whitespace inside braces is tolerated, e.g. both "{{employee}}" and "{{ employee }}".
-_EMPLOYEE_PLACEHOLDER_RE = re.compile(r'\{\{\s*employee\s*\}\}')
-_PROJECT_NAME_PLACEHOLDER_RE = re.compile(r'\{\{\s*project_name\s*\}\}')
+# Placeholder names are dynamic: the {{...}} before '/' names the employee
+# (grouping) column, the one after '/' names the project column, e.g.
+# "{{фио_сотрудника}}/{{проект}}". Whitespace inside braces is tolerated.
+_GENERIC_PLACEHOLDER_RE = re.compile(r'\{\{\s*([^}/]+?)\s*\}\}')
+
+
+def _extract_first_placeholder_name(part: str) -> Optional[str]:
+    """Return the first {{name}} placeholder name in a template part, or None."""
+    if not part:
+        return None
+    match = _GENERIC_PLACEHOLDER_RE.search(part)
+    if not match:
+        return None
+    return match.group(1).strip() or None
 
 
 def parse_composite_template(template: Optional[str]) -> Dict[str, Any]:
@@ -39,14 +50,21 @@ def parse_composite_template(template: Optional[str]) -> Dict[str, Any]:
     A template is composite only if ALL of the following hold:
       - it is a non-empty string,
       - it contains ``/``,
-      - it contains the ``{{employee}}`` placeholder,
-      - it contains the ``{{project_name}}`` placeholder.
+      - the part before the first ``/`` contains a ``{{...}}`` placeholder
+        (names the employee/grouping column),
+      - the part after the first ``/`` contains a ``{{...}}`` placeholder
+        (names the project column).
 
-    Everything else (empty/None template, no ``/``, only one placeholder)
-    is flat mode for backward compatibility.
+    Placeholder names are dynamic and taken from table columns, e.g.
+    ``"{{фио_сотрудника}}/{{проект}}"``. The legacy
+    ``"{{employee}}/{{project_name}}"`` keeps working: its column names are
+    ``employee`` and ``project_name``.
+
+    Everything else (empty/None template, no ``/``, placeholder on only
+    one side) is flat mode for backward compatibility.
 
     Args:
-        template: Folder-name template, e.g. ``"{{employee}}/{{project_name}}"``.
+        template: Folder-name template, e.g. ``"{{фио_сотрудника}}/{{проект}}"``.
 
     Returns:
         Dict with keys:
@@ -55,24 +73,33 @@ def parse_composite_template(template: Optional[str]) -> Dict[str, Any]:
             (empty string when not composite).
           - ``project_part`` (str): remainder after the first ``/``
             (the original template, or "" when not composite).
+          - ``employee_column`` (str|None): placeholder name from the
+            employee part (None when not composite).
+          - ``project_column`` (str|None): placeholder name from the
+            project part (None when not composite).
     """
     if not template or not isinstance(template, str) or not template.strip():
-        return {'is_composite': False, 'employee_part': '', 'project_part': template or ''}
+        return {'is_composite': False, 'employee_part': '', 'project_part': template or '',
+                'employee_column': None, 'project_column': None}
 
     if '/' not in template:
-        return {'is_composite': False, 'employee_part': '', 'project_part': template}
-
-    if not _EMPLOYEE_PLACEHOLDER_RE.search(template):
-        return {'is_composite': False, 'employee_part': '', 'project_part': template}
-
-    if not _PROJECT_NAME_PLACEHOLDER_RE.search(template):
-        return {'is_composite': False, 'employee_part': '', 'project_part': template}
+        return {'is_composite': False, 'employee_part': '', 'project_part': template,
+                'employee_column': None, 'project_column': None}
 
     employee_part, project_part = template.split('/', 1)
+    employee_column = _extract_first_placeholder_name(employee_part)
+    project_column = _extract_first_placeholder_name(project_part)
+
+    if not employee_column or not project_column:
+        return {'is_composite': False, 'employee_part': '', 'project_part': template,
+                'employee_column': None, 'project_column': None}
+
     return {
         'is_composite': True,
         'employee_part': employee_part,
         'project_part': project_part,
+        'employee_column': employee_column,
+        'project_column': project_column,
     }
 
 
@@ -152,7 +179,9 @@ def create_projects_from_template(
             parsed['employee_part'], parsed['project_part'],
         )
         return create_nested_employee_projects(
-            project_path, template_name, folder_name_template, max_projects
+            project_path, template_name, folder_name_template, max_projects,
+            employee_column=parsed.get('employee_column') or 'employee',
+            project_column=parsed.get('project_column') or 'project_name',
         )
 
     project_file = os.path.join(project_path, 'проект.docxforge')
@@ -601,6 +630,11 @@ def create_nested_employee_projects(
     otherwise the employee folder comes from the raw employee value and the
     whole template resolves the project folder (backward compatible).
 
+    The grouping/project column names are inferred from the template
+    placeholders (``{{фио_сотрудника}}/{{проект}}`` groups by the
+    ``фио_сотрудника`` column), unless explicit ``employee_column`` /
+    ``project_column`` arguments are passed.
+
     NOTE: ``max_projects`` is the 4th positional parameter so the composite
     routing in ``create_projects_from_template`` can pass it positionally.
 
@@ -656,6 +690,15 @@ def create_nested_employee_projects(
     available_columns = set()
     for row in primary_rows:
         available_columns.update(row.keys())
+    # Infer grouping/project columns from dynamic template placeholders
+    # ("{{фио_сотрудника}}/{{проект}}" -> columns "фио_сотрудника"/"проект"),
+    # unless the caller passed explicit non-default column names.
+    _parsed_columns = parse_composite_template(folder_name_template or '')
+    if _parsed_columns['is_composite']:
+        if employee_column == 'employee' and _parsed_columns.get('employee_column'):
+            employee_column = _parsed_columns['employee_column']
+        if project_column == 'project_name' and _parsed_columns.get('project_column'):
+            project_column = _parsed_columns['project_column']
     if employee_column not in available_columns:
         raise GenerationError(
             f'Column "{employee_column}" not found in batch source '

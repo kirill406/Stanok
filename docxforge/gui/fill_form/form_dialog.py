@@ -40,9 +40,11 @@ from .config_collector import ConfigCollectorMixin
 from ..strings import STRINGS
 
 
-# Composite path template placeholders (Phase 1: nested employee/project).
-# Validation accepts both compact ({{employee}}) and spaced ({{ employee }})
-# variants by stripping spaces before matching.
+# Composite path template placeholders (nested employee/project).
+# Placeholder names are dynamic: the {{...}} before '/' is the employee
+# column, the {{...}} after '/' is the project column, e.g.
+# "{{фио_сотрудника}}/{{проект}}". The constants below remain as the
+# canonical example; validation accepts any placeholder names.
 COMPOSITE_PLACEHOLDER_EMPLOYEE = '{{employee}}'
 COMPOSITE_PLACEHOLDER_PROJECT = '{{project_name}}'
 
@@ -347,17 +349,23 @@ class FillForm(FieldRowsMixin, AdvancedSectionMixin, BatchSectionMixin, ConfigIO
     def validate_composite_template(template):
         """Validate composite path template, return list of error strings.
 
-        The template must contain both ``{{employee}}`` and
-        ``{{project_name}}`` placeholders (spaced variants such as
-        ``{{ employee }}`` are also accepted).
+        Format: ``{{employee_column}}/{{project_column}}`` — the placeholder
+        before ``/`` names the employee (grouping) column, the one after
+        ``/`` names the project column, e.g. ``{{фио_сотрудника}}/{{проект}}``.
+        Names are dynamic (any column names accepted); spaced variants such
+        as ``{{ фио }}`` are also accepted.
         """
+        import re
         errors = []
         if not (template or '').strip():
             errors.append(STRINGS['msg_composite_template_required'])
             return errors
-        normalized = (template or '').replace(' ', '')
-        if COMPOSITE_PLACEHOLDER_EMPLOYEE not in normalized:
+        if '/' not in (template or ''):
+            errors.append(STRINGS['msg_composite_template_required'])
+            return errors
+        employee_part, project_part = (template or '').split('/', 1)
+        if not re.search(r'\{\{\s*[^}/]+\s*\}\}', employee_part):
             errors.append(STRINGS['msg_composite_employee_required'])
-        if COMPOSITE_PLACEHOLDER_PROJECT not in normalized:
+        if not re.search(r'\{\{\s*[^}/]+\s*\}\}', project_part):
             errors.append(STRINGS['msg_composite_project_required'])
         return errors

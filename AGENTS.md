@@ -59,6 +59,7 @@
 - Both files live in project root or `specs/` — commit them.
 
 ## Workflow
+- Before working: `git pull`
 - **Each plan item = new git branch**: `git checkout -b feat/<plan-item-slug>` before starting work
 - Branch naming: `feat/<short-desc>`, `fix/<issue-desc>`, `chore/<task>`
 - Commit messages: short, imperative, Russian allowed (e.g., "Добавить батч-режим в форму заполнения")

@@ -34,12 +34,17 @@ STRINGS = {
     'fill_filename_template': 'Шаблон имени файла:',
     'fill_filename_placeholder': '{{ doc_number }}_{{ client_name }} (пусто = авто)',
     'fill_filename_tooltip': 'Используйте {{ field_name }} для подстановки значений полей. Пусто = автоматическое именование.',
+    'fill_insert_field_btn': 'Вставить поле',
     'fill_total_docs': 'Количество документов:',
     'fill_auto_checkbox': 'Авто',
     'fill_continue_checkbox': 'Продолжить с последней строки',
     'fill_validate_btn': 'Проверить',
     'fill_create_btn': 'Создать',
     'fill_cancel_btn': 'Отмена',
+    'fill_create_projects': 'Создать проекты вместо документов',
+    'fill_folder_name_template': 'Шаблон имени папки проекта',
+    'fill_found_rows': 'Найдено строк: {count}. Сколько проектов создать?',
+    'fill_projects_created': 'Создано {count} проектов в {path}',
 
     # Field types
     'field_type_constant': 'константа',
@@ -74,6 +79,14 @@ STRINGS = {
     'fill_directory_placeholder': '{{ region }}/{{ city }} (пусто = без подпапок)',
     'fill_directory_tooltip': 'Используйте {{ field_name }} для подстановки. Папки будут созданы внутри выходной директории. Пусто = файлы напрямую в папку результатов.',
 
+    # Create projects mode
+    'fill_create_projects_checkbox': 'Создать проекты вместо документов',
+    'fill_folder_name_template': 'Шаблон имени папки проекта:',
+    'fill_folder_name_placeholder': '{{ field_name }} (обязательно)',
+    'fill_folder_name_tooltip': 'Используйте {{ field_name }} для подстановки значений. Обязательно при создании проектов.',
+    'fill_create_projects_btn': 'Создать проекты',
+    'msg_folder_template_required': 'Для создания проектов укажите шаблон имени папки',
+
     # Messages
     'msg_error': 'Ошибка',
     'msg_warning': 'Предупреждение',
@@ -98,4 +111,7 @@ STRINGS = {
     'field_label_counter_format': 'Формат:',
     'field_label_today_format': 'Формат:',
     'field_label_image': 'Изображение:',
+
+    # Today format options
+    'today_format_month': 'название месяца',
 }

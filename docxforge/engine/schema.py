@@ -258,3 +258,161 @@ def create_project(project_dir: str) -> str:
     project_file = os.path.join(project_dir, 'проект.docxforge')
     Project().to_file(project_file)
     return project_file
+
+
+def create_projects(
+    source_project_dir: str,
+    output_base_dir: str,
+    template_name: str,
+    batch_source_name: str,
+    max_projects: Optional[int] = None,
+) -> List[str]:
+    """
+    Create multiple projects from a template project and batch source.
+
+    Each row in the batch source (sequential mode) becomes a separate project
+    with constant fields populated from that row's data.
+
+    Args:
+        source_project_dir: Path to source project with configured template
+        output_base_dir: Base directory where new projects will be created
+        template_name: Name of template in source project to use
+        batch_source_name: Name of batch source in template config to iterate
+        max_projects: Maximum number of projects to create (None = all rows)
+
+    Returns:
+        List of created project directory paths.
+    """
+    from docxforge.engine.data_reader import DataReader
+
+    source_project = Project.from_file(
+        os.path.join(source_project_dir, 'проект.docxforge')
+    )
+
+    if template_name not in source_project.templates:
+        raise ValueError(f'Template not found: {template_name}')
+
+    template_config = source_project.templates[template_name]
+
+    if batch_source_name not in template_config.batch_sources:
+        raise ValueError(f'Batch source not found: {batch_source_name}')
+
+    batch_config = template_config.batch_sources[batch_source_name]
+
+    if batch_config.mode != RowIterationMode.SEQUENTIAL:
+        raise ValueError('create_projects only supports SEQUENTIAL mode batch sources')
+
+    data_reader = DataReader()
+    batch_file = batch_config.file
+    all_rows = data_reader.read_excel(os.path.join(source_project_dir, 'Данные', batch_file))
+
+    if not all_rows:
+        return []
+
+    if max_projects is not None:
+        if max_projects <= 0:
+            return []
+        all_rows = all_rows[:max_projects]
+
+    created_projects = []
+
+    for row_idx, row_data in enumerate(all_rows):
+        # Resolve folder name from directory_template
+        folder_name = f'project_{row_idx + 1}'
+        if template_config.directory_template:
+            dir_template = template_config.directory_template
+            for key, value in row_data.items():
+                placeholder = f'{{{{ {key} }}}}'
+                dir_template = dir_template.replace(placeholder, str(value))
+                placeholder2 = f'{{{{{key}}}}}'
+                dir_template = dir_template.replace(placeholder2, str(value))
+            folder_name = dir_template.strip()
+
+        project_dir = os.path.join(output_base_dir, folder_name)
+        os.makedirs(os.path.join(project_dir, 'Данные'), exist_ok=True)
+        os.makedirs(os.path.join(project_dir, 'Шаблоны'), exist_ok=True)
+        os.makedirs(os.path.join(project_dir, 'Результат'), exist_ok=True)
+
+        # Copy template file
+        import shutil
+        src_template = os.path.join(source_project_dir, 'Шаблоны', template_name)
+        dst_template = os.path.join(project_dir, 'Шаблоны', template_name)
+        if os.path.exists(src_template):
+            shutil.copy2(src_template, dst_template)
+
+        # Copy data file
+        src_data = os.path.join(source_project_dir, 'Данные', batch_file)
+        dst_data = os.path.join(project_dir, 'Данные', batch_file)
+        if os.path.exists(src_data):
+            shutil.copy2(src_data, dst_data)
+
+        # Create new project config with row data as constants
+        new_project = Project()
+        new_template = TemplateConfig()
+
+        # Copy fields, converting table fields to constants with row values
+        for fname, fm in template_config.fields.items():
+            new_fm = FieldMapping()
+            if fm.type == FieldType.CONSTANT:
+                new_fm.type = FieldType.CONSTANT
+                new_fm.value = fm.value
+            elif fm.type == FieldType.TABLE and fm.file == batch_file and fm.column in row_data:
+                # Convert table field to constant with row value
+                new_fm.type = FieldType.CONSTANT
+                new_fm.value = str(row_data[fm.column])
+            elif fm.type == FieldType.COUNTER:
+                # Reset counter to start value
+                new_fm.type = FieldType.COUNTER
+                new_fm.start = fm.start
+                new_fm.step = fm.step
+                new_fm.format = fm.format
+            elif fm.type == FieldType.TODAY:
+                new_fm.type = FieldType.TODAY
+                new_fm.format = fm.format
+            elif fm.type == FieldType.IMAGE:
+                new_fm.type = FieldType.IMAGE
+                new_fm.value = fm.value
+            else:
+                # Keep other table fields as-is (they'll need their data files copied)
+                new_fm.type = fm.type
+                new_fm.value = fm.value
+                new_fm.file = fm.file
+                new_fm.column = fm.column
+                new_fm.linked_to = fm.linked_to
+                new_fm.start = fm.start
+                new_fm.step = fm.step
+                new_fm.format = fm.format
+                new_fm.multiplier = fm.multiplier
+            new_template.fields[fname] = new_fm
+
+        # Copy cycles
+        new_template.cycles = template_config.cycles.copy()
+
+        # Copy aggregations
+        new_template.aggregations = template_config.aggregations.copy()
+
+        # Copy batch config - convert all sources to CONSTANT mode
+        new_batch_sources = {}
+        for bname, bsc in template_config.batch_sources.items():
+            new_bsc = BatchSourceConfig(
+                file=bsc.file,
+                mode=RowIterationMode.CONSTANT,
+                lookup_column=None,
+                lookup_value=None,
+                continue_from_last=False,
+            )
+            new_batch_sources[bname] = new_bsc
+        new_template.batch_sources = new_batch_sources
+
+        new_template.total_docs = 1  # Each project generates 1 document
+        new_template.filename_template = template_config.filename_template
+        new_template.directory_template = template_config.directory_template
+
+        new_project.templates[template_name] = new_template
+
+        project_file = os.path.join(project_dir, 'проект.docxforge')
+        new_project.to_file(project_file)
+
+        created_projects.append(project_dir)
+
+    return created_projects

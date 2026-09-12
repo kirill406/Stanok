@@ -48,20 +48,24 @@
 - [ ] Ручная сверка acceptance criteria (таблица ниже)
 - [ ] `git pull origin main` → merge ветки в main → push (без --force)
 
-## Acceptance criteria (из SPEC.md) — статусы по факту (2026-09-12)
+## Acceptance criteria (из SPEC.md) — статусы по факту (2026-09-12, после pull main)
+
+Main приземлил nested-реализацию фаз 1–6 (`create_nested_employee_projects`,
+`parse_composite_template`, composite-UI, `validate_composite_template`,
+row-count диалог, `tests/test_nested_projects.py`). Phase 7 покрыла это тестами.
 
 | # | Criterion | Status |
 |---|-----------|--------|
-| 1 | Composite template `{{employee}}/{{project_name}}` works | ⚠️ PARTIAL — composite-строка вводится/хранится в поле шаблона (UI-тест), но nested-кода нет |
-| 2 | Employee folders with `docxforge_settings.json` created | ❌ NOT IMPLEMENTED — `create_nested_employee_projects()` отсутствует в коде |
-| 3 | Project folders with `данные/` + `шаблоны/` + `результат/` + `проект.docxforge` | ⚠️ PARTIAL — flat создаёт `Шаблоны/` + `проект.docxforge`; `Данные/` не копируются |
-| 4 | `данные/` is full copy of source project's data | ❌ NOT IMPLEMENTED (см. #2) |
-| 5 | `проект.docxforge`: TABLE→CONSTANT, COUNTER reset, batch→CONSTANT | ✅ VERIFIED — e2e-тесты (после polish-фикса `fm.column in row_data`) |
-| 6 | `docxforge_settings.json` lists all employee's projects | ❌ NOT IMPLEMENTED (см. #2) |
-| 7 | Row count dialog works for total projects | ❌ NOT IMPLEMENTED — `fill_found_rows` объявлены, но нигде не используются |
-| 8 | Success message shows employee and project counts | ⚠️ PARTIAL — есть «Создано проектов: N» (flat, хардкод в `config_io.py`) |
+| 1 | Composite template `{{employee}}/{{project_name}}` works | ✅ VERIFIED — UI-тест (label/placeholder/validator) + nested e2e |
+| 2 | Employee folders with `docxforge_settings.json` created | ✅ VERIFIED — nested e2e (2 сотрудника, settings.json) |
+| 3 | Project folders with `данные/` + `шаблоны/` + `результат/` + `проект.docxforge` | ✅ VERIFIED — nested e2e (структура каждого проекта) |
+| 4 | `данные/` is full copy of source project's data | ✅ VERIFIED — nested e2e (`Данные/work.xlsx` в каждом проекте) |
+| 5 | `проект.docxforge`: TABLE→CONSTANT, COUNTER reset, batch→CONSTANT | ✅ VERIFIED — flat e2e + nested e2e |
+| 6 | `docxforge_settings.json` lists all employee's projects | ✅ VERIFIED — nested e2e (2 проекта на сотрудника) |
+| 7 | Row count dialog works for total projects | ✅ VERIFIED — код (`QInputDialog.getInt` в `_create_projects_mode`) |
+| 8 | Success message shows employee and project counts | ✅ VERIFIED — код (`fill_nested_projects_created`: сотрудники + проекты + путь) |
 | 9 | Backward compatible with flat structure | ✅ VERIFIED — flat — основной e2e-путь, все старые тесты green |
-| 10 | All existing tests pass | ✅ VERIFIED — `pytest tests/ -q`: 239 passed; `test_engine.py`: ALL CHECKS PASSED |
+| 10 | All existing tests pass | ✅ VERIFIED — `pytest tests/ -q`: 253 passed; `test_engine.py`: ALL CHECKS PASSED |
 
 ## Polish-правки вне tests/ (минимальные, за скоупом тестового файла)
 
@@ -69,7 +73,9 @@
   в `_to_dict` / `_from_dict` (раньше чекбокс и шаблон не переживали перезапуск диалога).
 - `docxforge/generate.py`: `fm.file in row_data` → `fm.column in row_data` в
   `_resolve_folder_name_template()` и `_build_project_config()` (иначе TABLE-поля
-  никогда не превращались в CONSTANT — SPEC-требование не выполнялось). |
+  никогда не превращались в CONSTANT). При merge с main взят вариант main
+  (`fm.file == primary_source_file and fm.column in row_data` + str/None-guard) —
+  фикс сохранён, обе стороны объединены.
 
 ## Commits
 

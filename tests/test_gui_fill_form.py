@@ -766,10 +766,21 @@ class TestFillFormCreateProjectsPhase7:
         dlg.chk_create_projects.setChecked(True)
         QTest.qWait(50)
 
+        # Single composite field (Phase 1 nested UI): label/placeholder/tooltip
+        assert dlg.lbl_folder_name_template.text() == STRINGS['fill_composite_template_label']
+        assert dlg.edit_folder_name_template.placeholderText() == STRINGS['fill_composite_template_placeholder']
+        assert dlg.edit_folder_name_template.toolTip() == STRINGS['fill_composite_template_tooltip']
+
         composite = '{{employee}}/{{project_name}}'
         dlg.edit_folder_name_template.setText(composite)
         assert dlg.edit_folder_name_template.text() == composite
-        assert dlg.edit_folder_name_template.placeholderText() == STRINGS['fill_folder_name_placeholder']
+
+        # Static validator: composite OK, incomplete templates rejected
+        assert FillForm.validate_composite_template(composite) == []
+        assert FillForm.validate_composite_template('{{ employee }} / {{ project_name }}') == []
+        assert len(FillForm.validate_composite_template('')) >= 1
+        assert len(FillForm.validate_composite_template('{{employee}}')) >= 1
+        assert len(FillForm.validate_composite_template('{{project_name}}')) >= 1
 
     def test_create_projects_empty_template_shows_warning(self, qtbot, sample_project, monkeypatch):
         """Empty folder template blocks creation with a warning, no folders made."""
@@ -789,7 +800,8 @@ class TestFillFormCreateProjectsPhase7:
         QTest.qWait(200)
 
         assert len(warnings) >= 1
-        assert STRINGS['msg_folder_template_required'] in warnings[0]
+        warning_text = '\n'.join(str(part) for part in warnings[0])
+        assert STRINGS['msg_composite_template_required'] in warning_text
         assert not os.path.exists(os.path.join(sample_project, 'Projects'))
 
     def test_folder_name_template_persists_on_save(self, qtbot, sample_project):
@@ -923,6 +935,101 @@ class TestCreateProjectsE2EPhase7:
             for out in outputs:
                 assert os.path.isfile(out)
                 assert out.endswith('.docx')
+
+    @staticmethod
+    def _make_nested_source_project(base_dir: str) -> str:
+        """Build source project with employee/project_name batch columns."""
+        from docx import Document
+        from openpyxl import Workbook
+
+        from docxforge.engine.schema import (
+            TemplateConfig, FieldMapping, BatchSourceConfig, RowIterationMode,
+        )
+
+        project_dir = os.path.join(base_dir, 'nested_source')
+        data_dir = os.path.join(project_dir, 'Данные')
+        tmpl_dir = os.path.join(project_dir, 'Шаблоны')
+        os.makedirs(data_dir, exist_ok=True)
+        os.makedirs(tmpl_dir, exist_ok=True)
+
+        doc = Document()
+        doc.add_paragraph('Договор № {{ doc_number }}')
+        doc.add_paragraph('Сотрудник: {{ employee }}')
+        doc.add_paragraph('Проект: {{ project_name }}')
+        doc.save(os.path.join(tmpl_dir, 'contract.docx'))
+
+        wb = Workbook()
+        ws = wb.active
+        ws.append(['employee', 'project_name'])
+        ws.append(['Ivanov_Ivan', 'Dogovor_001'])
+        ws.append(['Ivanov_Ivan', 'Dogovor_002'])
+        ws.append(['Petrov_Petr', 'Dogovor_003'])
+        ws.append(['Petrov_Petr', 'Dogovor_004'])
+        wb.save(os.path.join(data_dir, 'work.xlsx'))
+
+        prj = Project()
+        tc = TemplateConfig()
+        tc.fields['doc_number'] = FieldMapping(type=FieldType.COUNTER, start=1, format='0001')
+        tc.fields['employee'] = FieldMapping(
+            type=FieldType.TABLE, file='work.xlsx', column='employee')
+        tc.fields['project_name'] = FieldMapping(
+            type=FieldType.TABLE, file='work.xlsx', column='project_name')
+        tc.batch_sources = {
+            'work.xlsx': BatchSourceConfig(file='work.xlsx', mode=RowIterationMode.SEQUENTIAL)
+        }
+        tc.filename_template = '{{ project_name }}.docx'
+        prj.templates['contract.docx'] = tc
+        prj.to_file(os.path.join(project_dir, 'проект.docxforge'))
+        return project_dir
+
+    def test_nested_projects_e2e(self, tmp_path):
+        """Nested generation: employees, settings.json, data copy, docs render."""
+        import json
+
+        from docxforge.generate import create_nested_employee_projects, generate_project
+
+        source_dir = self._make_nested_source_project(str(tmp_path))
+        projects_dir, n_employees, n_projects = create_nested_employee_projects(
+            source_dir, 'contract.docx', '{{employee}}/{{project_name}}')
+
+        assert (n_employees, n_projects) == (2, 4)
+
+        employees = sorted(os.listdir(projects_dir))
+        assert len(employees) == 2
+        for emp in employees:
+            emp_dir = os.path.join(projects_dir, emp)
+            settings_path = os.path.join(emp_dir, 'docxforge_settings.json')
+            assert os.path.isfile(settings_path)
+            with open(settings_path, 'r', encoding='utf-8') as f:
+                settings = json.load(f)
+            assert settings['employee_folder'] == emp
+            assert len(settings['projects']) == 2
+
+            for entry in settings['projects']:
+                pdir = os.path.join(emp_dir, entry['folder'])
+                # Project structure per SPEC
+                assert os.path.isfile(os.path.join(pdir, 'проект.docxforge'))
+                assert os.path.isdir(os.path.join(pdir, 'Данные'))
+                assert os.path.isdir(os.path.join(pdir, 'Шаблоны'))
+                assert os.path.isdir(os.path.join(pdir, 'Результат'))
+                # Данные/ is a FULL copy of the source data
+                assert os.path.isfile(os.path.join(pdir, 'Данные', 'work.xlsx'))
+                assert os.path.isfile(os.path.join(pdir, 'Шаблоны', 'contract.docx'))
+
+                # Config transformation
+                cfg = Project.from_file(
+                    os.path.join(pdir, 'проект.docxforge')).templates['contract.docx']
+                assert cfg.fields['employee'].type == FieldType.CONSTANT
+                assert cfg.fields['project_name'].type == FieldType.CONSTANT
+                assert cfg.fields['doc_number'].type == FieldType.COUNTER
+                assert cfg.fields['doc_number'].start == 1
+
+                # Generated project renders documents normally
+                outputs = generate_project(pdir, num_docs=1)
+                assert len(outputs) >= 1
+                for out in outputs:
+                    assert os.path.isfile(out)
+                    assert out.endswith('.docx')
 
 
 if __name__ == '__main__':

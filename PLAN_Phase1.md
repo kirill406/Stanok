@@ -1,7 +1,7 @@
 # PLAN_Phase1 — Strings & Composite Template UI
 
 **Spec:** SPEC.md (UI Changes) | **Status:** In Progress
-**Branch:** `feat/phase1-strings-composite-ui`
+**Branch:** `feat/phase1-strings-composite-ui` | **Status:** Done
 
 ---
 
@@ -16,19 +16,19 @@ placeholders.
 
 ## Subtasks
 
-- [ ] 1. Strings: add 6 new constants to `docxforge/gui/strings.py`
+- [x] 1. Strings: add 6 new constants to `docxforge/gui/strings.py`
   - `fill_composite_template_label` — field label
   - `fill_composite_template_placeholder` — placeholder text
   - `fill_composite_template_tooltip` — tooltip text
   - `msg_composite_template_required` — empty template error
   - `msg_composite_employee_required` — missing `{{employee}}` error
   - `msg_composite_project_required` — missing `{{project_name}}` error
-- [ ] 2. UI: switch folder-name row in `form_dialog.py` to composite
+- [x] 2. UI: switch folder-name row in `form_dialog.py` to composite
   constants (label / placeholder / tooltip); add
   `validate_composite_template()` helper + placeholder constants
-- [ ] 3. Validation: require both `{{employee}}` and `{{project_name}}`
+- [x] 3. Validation: require both `{{employee}}` and `{{project_name}}`
   in `_validate()` and `_create()` (config_io.py) using new strings
-- [ ] 4. Verification: `pytest tests/ -q`, grep checks for constants,
+- [x] 4. Verification: `pytest tests/ -q`, grep checks for constants,
   no hardcoded Russian strings, no changes outside scope
 
 ---

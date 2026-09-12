@@ -19,3 +19,10 @@ def test_cli_version_flag_reports_product_version():
         capture_output=True, text=True, cwd=repo_root)
     assert proc.returncode == 0
     assert '0.1.0-alpha' in proc.stdout
+
+
+def test_app_icon_path_points_to_repo_icon():
+    from docxforge.gui.main_window import app_icon_path
+    path = app_icon_path()
+    assert os.path.basename(path) == 'icon.png'
+    assert os.path.exists(path)

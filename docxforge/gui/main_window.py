@@ -428,8 +428,19 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, 'Ошибка генерации', str(e))
 
 
+def app_icon_path():
+    """Absolute path to the application icon (repo root icon.png)."""
+    gui_dir = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(os.path.dirname(os.path.dirname(gui_dir)), 'icon.png')
+
+
 def run():
     app = QApplication(sys.argv)
+    icon_path = app_icon_path()
+    if os.path.exists(icon_path):
+        app.setWindowIcon(QIcon(icon_path))
+    else:
+        logger.warning('Application icon not found: %s', icon_path)
     app.setStyle('Fusion')
     app.setStyleSheet("""
         QMainWindow { background-color: #f5f5f5; }

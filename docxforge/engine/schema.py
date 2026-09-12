@@ -92,6 +92,8 @@ class TemplateConfig:
     total_docs: Optional[int] = None  # None = auto (min rows of SEQUENTIAL sources)
     filename_template: Optional[str] = None  # Template for output filenames
     directory_template: Optional[str] = None  # Template for output subdirectories
+    create_projects: bool = False  # Create project folders instead of documents
+    folder_name_template: Optional[str] = None  # Template for project folder names
     resume: ResumeState = field(default_factory=ResumeState)
     ui_state: Dict[str, Any] = field(default_factory=dict)  # UI-specific state
 

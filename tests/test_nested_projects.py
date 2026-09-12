@@ -184,3 +184,69 @@ def test_nested_composite_template_parsing_fallback_resolves_both_placeholders()
     row = {'employee': 'Иванов Иван', 'project_name': 'Договор_001'}
     resolved = _resolve_folder_name_template(COMPOSITE_TEMPLATE, row, tc, [])
     assert resolved == 'Иванов Иван/Договор_001'
+
+
+def test_nested_config_transformation_applies_constant_counter_batch():
+    """CONSTANT preserved, COUNTER reset, batch->CONSTANT (existing helper)."""
+    from docxforge.generate import _build_project_config
+    tc = TemplateConfig()
+    tc.fields['project_name'] = FieldMapping(
+        type=FieldType.TABLE, file='batch.xlsx', column='project_name')
+    tc.fields['doc_number'] = FieldMapping(
+        type=FieldType.COUNTER, start=5, step=2, format='0001')
+    tc.fields['org'] = FieldMapping(
+        type=FieldType.CONSTANT, value='ORG_VALUE')
+    tc.batch_sources = {
+        'batch.xlsx': BatchSourceConfig(
+            file='batch.xlsx', mode=RowIterationMode.SEQUENTIAL),
+    }
+    row = {'project_name': 'Договор_001'}
+    new_config = _build_project_config(tc, row, 'batch.xlsx')
+    const_fm = new_config.fields['org']
+    assert const_fm.type == FieldType.CONSTANT
+    assert const_fm.value == 'ORG_VALUE'
+    counter_fm = new_config.fields['doc_number']
+    assert counter_fm.type == FieldType.COUNTER
+    assert counter_fm.start == 5
+    assert counter_fm.step == 2
+    assert counter_fm.format == '0001'
+    assert new_config.batch_sources['batch.xlsx'].mode == RowIterationMode.CONSTANT
+
+
+@pytest.mark.xfail(
+    strict=False,
+    reason='TABLE->CONSTANT never fires: _build_project_config checks '
+           '"fm.file in row_data" but row_data is column-keyed '
+           '(Phase 4 fix pending, source must not change in Phase 6)',
+)
+def test_nested_config_transformation_applies_table_to_constant():
+    """TABLE field becomes CONSTANT with row value (SPEC, currently gaps)."""
+    from docxforge.generate import _build_project_config
+    tc = TemplateConfig()
+    tc.fields['project_name'] = FieldMapping(
+        type=FieldType.TABLE, file='batch.xlsx', column='project_name')
+    tc.batch_sources = {
+        'batch.xlsx': BatchSourceConfig(
+            file='batch.xlsx', mode=RowIterationMode.SEQUENTIAL),
+    }
+    row = {'project_name': 'Договор_001'}
+    new_config = _build_project_config(tc, row, 'batch.xlsx')
+    table_fm = new_config.fields['project_name']
+    assert table_fm.type == FieldType.CONSTANT
+    assert table_fm.value == 'Договор_001'
+
+
+def test_nested_flat_mode_backward_compatible_still_works():
+    """Flat template (no '/') still generates projects via existing entry point."""
+    with tempfile.TemporaryDirectory() as tmp:
+        source_dir = _make_flat_source_project(tmp)
+        projects_dir, created = gen_module.create_projects_from_template(
+            source_dir, 'contract.docx', FLAT_TEMPLATE)
+        assert created == 2
+        assert os.path.isdir(projects_dir)
+        generated = [d for d in os.listdir(projects_dir)
+                     if os.path.isdir(os.path.join(projects_dir, d))]
+        assert len(generated) == 2
+        for proj in generated:
+            assert os.path.exists(
+                os.path.join(projects_dir, proj, 'проект.docxforge'))

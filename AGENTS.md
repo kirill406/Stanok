@@ -1,7 +1,7 @@
 # AGENTS.md — FirstAgent (docxforge)
 
 ## Commands
-- Install: `pip install -r requirements.txt`
+- Install: `uv sync` (needs network once for `uv lock`)
 - Run GUI: `python run.py`
 - Run CLI: `python cli.py --help`
 - Test (fast): `python -m pytest tests/ -q`

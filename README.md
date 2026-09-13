@@ -15,8 +15,8 @@
 git clone <repo-url>
 cd FirstAgent
 
-# 2. Установи Python 3.8+ и зависимости
-pip install -r requirements.txt
+# 2. Установи Python 3.8+, uv и зависимости
+uv sync
 
 # 3. Запусти GUI
 python run.py
@@ -101,10 +101,10 @@ python tests/smoke_engine.py
 
 `powershell
 # Установить зависимости для тестирования
-pip install -r requirements.txt
+uv sync
 
 # Запустить все тесты
-python -m pytest tests/ -v
+uv run pytest tests/ -v
 
 # Тихий запуск (только результат)
 python -m pytest tests/ -q
@@ -179,7 +179,8 @@ FirstAgent/
 │       └── fill_form.py        # Форма заполнения полей
 ├── docs/ideas/                 # Спецификация, DSL, тесты с пользователями
 ├── run.py                      # Точка входа
-└── requirements.txt
+├── pyproject.toml              # Зависимости (uv)
+└── uv.lock                     # Пины версий (генерируется: uv lock)
 `
 
 ## Лицензия

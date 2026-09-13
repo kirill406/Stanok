@@ -7,7 +7,7 @@
 - Test (fast): `python -m pytest tests/ -q`
 - Test (verbose): `python -m pytest tests/ -v`
 - Coverage: `python -m pytest --cov=docxforge.engine --cov-report=term-missing tests/`
-- Smoke test: `python test_engine.py`
+- Smoke test: `python tests/smoke_engine.py`
 - Install git hooks: `scripts/install-hooks.bat`
 
 ## Stack
@@ -77,4 +77,3 @@
 
 ## Detailed Docs (read on demand)
 - Design docs: `docs/ideas/`
-- Prototype scripts: `prototype/`

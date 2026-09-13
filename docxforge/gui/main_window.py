@@ -429,9 +429,9 @@ class MainWindow(QMainWindow):
 
 
 def app_icon_path():
-    """Absolute path to the application icon (repo root icon.png)."""
+    """Absolute path to the application icon (docxforge/gui/icon.png)."""
     gui_dir = os.path.dirname(os.path.abspath(__file__))
-    return os.path.join(os.path.dirname(os.path.dirname(gui_dir)), 'icon.png')
+    return os.path.join(gui_dir, 'icon.png')
 
 
 def run():

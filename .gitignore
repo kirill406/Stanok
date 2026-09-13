@@ -23,19 +23,13 @@ node_modules/
 # === Logs ===
 *.log
 
-# === Prototype output/templates ===
-prototype/output/
-prototype/templates/
-
 # === Test/coverage artifacts ===
 .coverage
 htmlcov/
 .pytest_cache/
 
 # === Project data (user data, not tracked) ===
-test_project/
-test_project_cli/
-test_project_gui/
+tests/test_project/
 
 # === Build artifacts ===
 *.spec

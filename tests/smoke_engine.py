@@ -18,10 +18,10 @@ from lxml import etree
 W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
 
 def main():
-    create_project('test_project')
+    create_project('tests/test_project')
     print('1. Project created')
 
-    result = scan_template('test_project/Шаблоны/договор_поставки.docx')
+    result = scan_template('tests/test_project/Шаблоны/договор_поставки.docx')
     names = [p[0] for p in result['placeholders']]
     print(f'2. Template scan: {len(names)} placeholders')
 
@@ -40,11 +40,11 @@ def main():
     tc.aggregations['итого'] = AggregationMapping(function=AggregationFunction.SUM, table='спецификация.xlsx', column='цена')
     tc.aggregations['с_ндс'] = AggregationMapping(function=AggregationFunction.SUM_MULTIPLY, table='спецификация.xlsx', column='цена', multiplier=1.2)
     prj.templates['договор_поставки.docx'] = tc
-    prj.to_file('test_project/проект.docxforge')
+    prj.to_file('tests/test_project/проект.docxforge')
     print('3. Config saved')
 
     reader = DataReader()
-    renderer = Renderer('test_project', reader)
+    renderer = Renderer('tests/test_project', reader)
     renderer.load_project()
     outputs = renderer.render('договор_поставки.docx', {})
     print(f'4. Output: {len(outputs)} files')

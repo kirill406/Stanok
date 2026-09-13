@@ -90,10 +90,10 @@ pyinstaller --onefile --windowed --name Станок run.py
 ### Быстрая проверка движка
 
 `powershell
-python test_engine.py
+python tests/smoke_engine.py
 `
 
-Создаёт тестовый проект test_project/, генерирует договор, проверяет все поля.
+Создаёт тестовый проект tests/test_project/, генерирует договор, проверяет все поля.
 
 ### Автоматические тесты (pytest)
 
@@ -177,7 +177,6 @@ FirstAgent/
 │       ├── main_window.py      # Главное окно (создать/открыть проект)
 │       ├── project_window.py   # Окно проекта (дерево шаблонов и данных)
 │       └── fill_form.py        # Форма заполнения полей
-├── prototype/                  # Прототип склейки XML-ран
 ├── docs/ideas/                 # Спецификация, DSL, тесты с пользователями
 ├── run.py                      # Точка входа
 └── requirements.txt

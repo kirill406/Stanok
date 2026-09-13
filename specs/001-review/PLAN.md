@@ -55,5 +55,14 @@
 - Отчёт содержит все находки major+ с привязкой к коду
 
 ## Branching
-- Новая ветка `review/code-001-review` от `main` (не смешивать с `review/directory-structure`)
-- Trivial-фиксы — отдельные коммиты; отчёт — финальный коммит; push, без мержа до аппрува
+- Ревью выполнено в `review/code-001-review` (от `review/directory-structure`, т.к. ревьюится
+  код после src/uv-миграции; `REPORT.md` + ~40 trivial-фиксов, 261 passed)
+- Разбор находок: ветка `fix/001-review-findings`, задачи в `tasks.md`
+
+## Execution (разбор находок — ведётся здесь)
+- [x] Фаза 1-5: 4 субагента (engine-агент падал 2×, перезапущен)
+- [x] Фаза 6: trivial-фиксы применены и проверены (261 passed + smoke)
+- [x] Фаза 7: `REPORT.md` готов
+- [ ] Разбор blockers B1–B10 (статус — в `tasks.md`)
+- [ ] Разбор majors M1–M17 (статус — в `tasks.md`)
+- Правило: багфикс → регрессионный тест; коммит на задачу; отмечать `[x]` в `tasks.md`

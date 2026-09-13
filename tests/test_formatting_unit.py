@@ -2,11 +2,9 @@
 """Unit tests for formatting functions and template parser."""
 
 import os
-import sys
 import tempfile
 import zipfile
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import openpyxl
 from docx import Document

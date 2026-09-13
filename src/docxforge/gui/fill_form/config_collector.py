@@ -1,8 +1,6 @@
 # -*- coding: utf-8 -*-
 """Config collection: gathers widget state into TemplateConfig."""
 
-from PyQt5.QtWidgets import QGroupBox
-
 from docxforge.engine.schema import (
     TemplateConfig, FieldMapping, FieldType, CycleMapping, AggregationMapping,
     AggregationFunction, BatchSourceConfig, RowIterationMode, ResumeState,
@@ -40,13 +38,6 @@ class ConfigCollectorMixin:
                     fm.linked_to = seen_tables[fm.file]
                 else:
                     seen_tables[fm.file] = fn
-        # Cycles and aggregations removed from UI - skip collection
-        # if hasattr(self, 'cycles_layout'):
-        #     for i in range(self.cycles_layout.count()):
-        #         ...
-        # if hasattr(self, 'aggr_layout'):
-        #     for i in range(self.aggr_layout.count()):
-        #         ...
         resume_sources = {}
         for df, bw in self.batch_source_widgets.items():
             mode = RowIterationMode.CONSTANT

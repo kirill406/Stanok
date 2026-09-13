@@ -134,7 +134,6 @@ class TestTemplateDeletion:
         
         # Verify dialog was called twice
         assert len(dialog_calls) == 2
-        assert 'Отмена' not in str(dialog_calls[0])  # Just verify calls happened
 
     def test_delete_nonexistent_template(self, qtbot, sample_project, monkeypatch):
         """Test deleting a template that doesn't exist shows warning."""
@@ -145,13 +144,15 @@ class TestTemplateDeletion:
         qtbot.waitExposed(window)
 
         # Try to delete non-existent template directly
-        monkeypatch.setattr(QMessageBox, 'warning', lambda *a, **k: None)
-        
+        warning_calls = []
+        monkeypatch.setattr(QMessageBox, 'warning',
+                            lambda *a, **k: warning_calls.append((a, k)))
+
         window._delete_template('nonexistent.docx')
         QTest.qWait(100)
-        
-        # Should have shown warning (mocked, so just verify no crash)
-        # The method should return early without crash
+
+        # A warning must have been shown for the missing template
+        assert len(warning_calls) == 1
 
     def _find_template_with_buttons(self, window, item):
         """Find a template item that has buttons in column 1."""

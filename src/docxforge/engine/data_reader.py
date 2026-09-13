@@ -19,7 +19,7 @@ class DataReader:
         """Read an Excel file and return list of rows as dicts.
 
         First row is treated as headers.
-        Empty rows and rows with fewer than 2 non-empty cells are skipped.
+        Rows where all cells are empty are skipped.
         """
         try:
             wb = openpyxl.load_workbook(path, data_only=True)
@@ -31,7 +31,12 @@ class DataReader:
             return []
 
         if sheet_name:
-            ws = wb[sheet_name]
+            try:
+                ws = wb[sheet_name]
+            except KeyError as e:
+                logger.error(f"Sheet {sheet_name!r} not found in {path}: {e}")
+                wb.close()
+                return []
         else:
             ws = wb.active
 
@@ -86,7 +91,12 @@ class DataReader:
             return []
 
         if sheet_name:
-            ws = wb[sheet_name]
+            try:
+                ws = wb[sheet_name]
+            except KeyError as e:
+                logger.error(f"Sheet {sheet_name!r} not found in {path}: {e}")
+                wb.close()
+                return []
         else:
             ws = wb.active
 

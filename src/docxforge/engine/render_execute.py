@@ -6,7 +6,6 @@ import os
 from datetime import datetime
 from typing import Dict, List, Optional
 
-from .xml_utils import W_NS
 from .schema import (
     TemplateConfig, FieldType, BatchSourceConfig, RowIterationMode, ResumeState,
 )

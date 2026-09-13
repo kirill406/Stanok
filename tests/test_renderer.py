@@ -1,8 +1,7 @@
 ﻿# -*- coding: utf-8 -*-
 """Tests for renderer bugs — text order, formatting preservation."""
 
-import os, sys, tempfile, zipfile, re
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import os, tempfile, zipfile, re
 
 from lxml import etree
 import openpyxl

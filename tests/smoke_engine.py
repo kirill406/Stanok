@@ -87,6 +87,7 @@ def main():
             print('✅ ALL CHECKS PASSED — engine is working!')
         else:
             print('❌ SOME CHECKS FAILED')
+            sys.exit(1)
 
 if __name__ == '__main__':
     main()

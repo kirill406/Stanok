@@ -1,8 +1,7 @@
 # -*- coding: utf-8 -*-
 """Coverage-boosting tests: edge cases in renderer, data_reader, template_parser."""
 
-import os, sys, tempfile, zipfile
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import os, tempfile, zipfile
 
 import openpyxl
 from docx import Document
@@ -136,7 +135,7 @@ class TestRendererSubdirTemplate:
             assert len(outputs) == 1
             text = _read_output_text(outputs[0])
             # name stays unreplaced since no data
-            assert "{{ name }}" in text or "name" not in text
+            assert "{{ name }}" in text
 
 
 class TestRendererCycleExpansion:

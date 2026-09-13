@@ -3,6 +3,7 @@
 
 import os
 import re
+import logging
 from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
                               QLabel, QComboBox, QLineEdit, QScrollArea,
                               QWidget, QGroupBox, QCheckBox, QFrame,
@@ -31,7 +32,6 @@ from docxforge.engine.schema import (
 from docxforge.engine.data_reader import DataReader
 from docxforge.engine.renderer import Renderer
 
-from .constants import FIELD_TYPES, FIELD_TYPES_ENUM
 from .field_rows import FieldRowsMixin
 from .advanced_section import AdvancedSectionMixin
 from .batch_section import BatchSectionMixin
@@ -110,7 +110,6 @@ class FillForm(FieldRowsMixin, AdvancedSectionMixin, BatchSectionMixin, ConfigIO
                 try:
                     self.columns_cache[filename] = self.data_reader.get_columns(path)
                 except Exception as e:
-                    import logging
                     logging.getLogger(__name__).error(f"Error getting columns from {filename}: {e}")
                     self.columns_cache[filename] = []
             else:

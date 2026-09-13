@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Dict, List, Optional
 from lxml import etree
 
-from .xml_utils import W, W_NS
+from .xml_utils import W_NS
 from .merge import merge_and_replace_paragraph, expand_table_cycle
 from .formatting import compute_aggregation, format_counter, format_today
 from .image_utils import insert_image_in_paragraph, add_image_to_zdata, add_image_relationship
@@ -203,7 +203,6 @@ def process_xml(zdata: dict, config: TemplateConfig,
                 image_paths: Dict[str, str] = None,
                 project_dir: str = None) -> dict:
     """Process all XML parts: expand cycles, replace placeholders, insert images."""
-    from .xml_utils import W_NS
     if image_paths is None:
         image_paths = {}
 
@@ -247,7 +246,8 @@ def process_xml(zdata: dict, config: TemplateConfig,
         merge_and_replace_paragraph(p, effective)
 
     for part_name in list(zdata.keys()):
-        if 'header' in part_name or 'footer' in part_name:
+        if (part_name.startswith(('word/header', 'word/footer'))
+                and part_name.endswith('.xml')):
             part_xml = etree.fromstring(zdata[part_name])
             for p in part_xml.findall('.//' + W_NS + 'p'):
                 # Check for image placeholders in headers/footers too

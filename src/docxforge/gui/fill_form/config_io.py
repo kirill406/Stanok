@@ -1,8 +1,9 @@
 ﻿# -*- coding: utf-8 -*-
 """Config I/O mixin: load existing config, collect config, autosave, validate, create."""
 
+import logging
 import os
-from PyQt5.QtWidgets import (QGroupBox, QMessageBox, QProgressDialog, QInputDialog)
+from PyQt5.QtWidgets import (QMessageBox, QProgressDialog, QInputDialog)
 
 from docxforge.engine.schema import (
     TemplateConfig, FieldMapping, FieldType, CycleMapping, AggregationMapping,
@@ -83,7 +84,6 @@ class ConfigIOMixin:
                     bw['lookup_val_combo'].setCurrentIndex(idx)
                 else:
                     bw['lookup_val_combo'].setCurrentText(bsc.lookup_value or '')
-            # Per-table resume checkbox (removed - using counter settings instead)
             # Load counter settings for sequential/circular modes
             if bsc.mode in (RowIterationMode.SEQUENTIAL, RowIterationMode.CIRCULAR):
                 if bsc.counter_column:
@@ -158,19 +158,19 @@ class ConfigIOMixin:
         errors = []
         for fn, fm in config.fields.items():
             if fm.type == FieldType.TABLE and (not fm.file or not fm.column):
-                errors.append('\u041f\u043e\u043b\u0435 {{ %s }}: \u0443\u043a\u0430\u0436\u0438\u0442\u0435 \u0444\u0430\u0439\u043b \u0438 \u0441\u0442\u043e\u043b\u0431\u0435\u0446' % fn)
+                errors.append(STRINGS['msg_table_field_missing'].format(name=fn))
         # Validate composite path template when create_projects mode is active:
         # format {{employee_column}}/{{project_column}} (dynamic column names).
         if config.create_projects:
             from .form_dialog import FillForm
             errors.extend(FillForm.validate_composite_template(config.folder_name_template))
         if errors:
-            QMessageBox.warning(self, '\u041e\u0448\u0438\u0431\u043a\u0430', '\n'.join(errors))
+            QMessageBox.warning(self, STRINGS['msg_error'], '\n'.join(errors))
             return
         # Save config on validation
         self.renderer.project.templates[self.template_rel_path] = config
         self.renderer.save_project()
-        QMessageBox.information(self, '\u041f\u0440\u043e\u0432\u0435\u0440\u043a\u0430', '\u0412\u0441\u0451 \u043a\u043e\u0440\u0440\u0435\u043a\u0442\u043d\u043e. \u041a\u043e\u043d\u0444\u0438\u0433\u0443\u0440\u0430\u0446\u0438\u044f \u0441\u043e\u0445\u0440\u0430\u043d\u0435\u043d\u0430.')
+        QMessageBox.information(self, STRINGS['msg_check'], STRINGS['msg_validation_ok'])
 
     def _create(self):
         config = self._collect_config()
@@ -193,8 +193,8 @@ class ConfigIOMixin:
             self._create_projects_mode(config)
         else:
             # Normal document generation mode
-            progress = QProgressDialog('\u0413\u0435\u043d\u0435\u0440\u0430\u0446\u0438\u044f...', None, 0, total_docs, self)
-            progress.setWindowTitle('\u0421\u043e\u0437\u0434\u0430\u043d\u0438\u0435 \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u043e\u0432')
+            progress = QProgressDialog(STRINGS['msg_progress_generating'], None, 0, total_docs, self)
+            progress.setWindowTitle(STRINGS['msg_progress_creating_docs'])
             progress.setWindowModality(1)  # Qt.WindowModal
             outputs = self.renderer.render(
                 self.template_rel_path,
@@ -205,9 +205,10 @@ class ConfigIOMixin:
             progress.close()
             if outputs:
                 QMessageBox.information(
-                    self, '\u0413\u043e\u0442\u043e\u0432\u043e',
-                    '\u0421\u043e\u0437\u0434\u0430\u043d\u043e \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u043e\u0432: %d\n%s' % (
-                        len(outputs), '\n'.join(os.path.basename(o) for o in outputs)))
+                    self, STRINGS['msg_success'],
+                    STRINGS['msg_generation_done'].format(
+                        count=len(outputs),
+                        files='\n'.join(os.path.basename(o) for o in outputs)))
                 # Save template name and doc count to main window settings
                 main_window = self._get_main_window()
                 if main_window:
@@ -218,7 +219,7 @@ class ConfigIOMixin:
                     if hasattr(main_window, '_refresh_recent_list'):
                         main_window._refresh_recent_list()
             else:
-                QMessageBox.warning(self, '\u041e\u0448\u0438\u0431\u043a\u0430', '\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0441\u043e\u0437\u0434\u0430\u0442\u044c \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b')
+                QMessageBox.warning(self, STRINGS['msg_error'], STRINGS['msg_generation_failed'])
     
     def _create_projects_mode(self, config: 'TemplateConfig'):
         """Create-projects mode: row-count dialog, engine call, result dialog.
@@ -226,7 +227,6 @@ class ConfigIOMixin:
         Runs in the GUI thread with modal dialogs only (no threads/timers),
         so the Qt event loop handling stays unchanged.
         """
-        import logging
         logger = logging.getLogger(__name__)
 
         # Engine reads проект.docxforge from disk, so persist the config first.

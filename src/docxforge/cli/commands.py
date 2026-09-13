@@ -127,7 +127,7 @@ def cmd_configure(args):
         table = args.aggregation[2]
         column = args.aggregation[3]
 
-        if func == 'sum_multiply' or func == 'sum_multiply':
+        if func == 'sum_multiply':
             af = AggregationFunction.SUM_MULTIPLY
             mult = float(args.multiplier) if args.multiplier else 1.0
         else:

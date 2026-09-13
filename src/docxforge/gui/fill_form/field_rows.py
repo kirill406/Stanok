@@ -6,7 +6,7 @@ from PyQt5.QtWidgets import (QGroupBox, QHBoxLayout, QLabel, QComboBox,
 from PyQt5.QtGui import QFont
 
 from docxforge.gui.field_dialog import FieldTemplateDialog
-from .constants import FIELD_TYPES, FIELD_TYPES_ENUM
+from .constants import FIELD_TYPES
 from ..strings import STRINGS
 
 

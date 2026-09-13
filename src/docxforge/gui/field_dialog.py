@@ -3,7 +3,7 @@
 
 from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
                               QLabel, QComboBox, QLineEdit, QGroupBox,
-                              QDialogButtonBox, QWidget, QScrollArea,
+                              QFileDialog, QDialogButtonBox, QWidget, QScrollArea,
                               QFrame, QGridLayout)
 from PyQt5.QtCore import Qt, QEvent, QObject
 from PyQt5.QtGui import QFont
@@ -193,7 +193,6 @@ class FieldTemplateDialog(QDialog):
             self._detail_widgets[field_def['key']] = widget
 
     def _pick_file(self, line_edit):
-        from PyQt5.QtWidgets import QFileDialog
         file, _ = QFileDialog.getOpenFileName(
             self, 'Выберите изображение',
             '', 'Изображения (*.png *.jpg *.jpeg *.bmp)')

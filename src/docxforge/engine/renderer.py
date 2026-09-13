@@ -3,12 +3,11 @@
 
 import json
 import os
-import zipfile
-from datetime import datetime
+import logging
 from typing import Dict, List, Optional
-from lxml import etree
 
-from .xml_utils import W_NS
+logger = logging.getLogger(__name__)
+
 from .schema import (
     Project, TemplateConfig, FieldMapping, CycleMapping,
     AggregationMapping, FieldType, AggregationFunction,
@@ -47,8 +46,8 @@ class Renderer:
         if os.path.exists(project_file):
             try:
                 os.replace(project_file, bak_file)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f'Could not back up {project_file}: {e}')
         os.replace(tmp_file, project_file)
 
     def get_template_path(self, template_name: str) -> str:

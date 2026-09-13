@@ -3,6 +3,9 @@
 
 from datetime import datetime
 from typing import List, Dict
+import logging
+
+logger = logging.getLogger(__name__)
 
 from .schema import AggregationMapping, AggregationFunction
 
@@ -34,7 +37,8 @@ def compute_aggregation(agg: AggregationMapping,
         if result == int(result):
             return str(int(result))
         return '{:.2f}'.format(result).replace('.', ',')
-    except Exception:
+    except Exception as e:
+        logger.warning(f'Aggregation {agg.function} failed: {e}')
         return '0'
 
 

@@ -40,6 +40,8 @@ class AdvancedSectionMixin:
                 col_val.addItems(self._get_columns(table))
             cols_layout.addWidget(QLabel('\u0421\u0442\u043e\u043b\u0431\u0435\u0446:'), r, 2)
             cols_layout.addWidget(col_val, r, 3)
+            if cval:
+                col_val.setCurrentText(cval)
             return col_name, col_val
 
         if columns:

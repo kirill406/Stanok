@@ -3,8 +3,11 @@
 
 import re
 import zipfile
-from typing import Any, Dict, List, Set, Tuple
+import logging
+from typing import Any, Dict
 from lxml import etree
+
+logger = logging.getLogger(__name__)
 
 W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
 
@@ -31,19 +34,11 @@ def scan_template(docx_path: str) -> Dict[str, Any]:
     all_text_parts = []
     header_footer_placeholders = []
 
-    # Scan document.xml
+    # Scan document.xml (.//p already covers table paragraphs)
     for p in doc_xml.findall('.//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p'):
         merged = merge_runs_text(p)
         if merged:
             all_text_parts.append(merged)
-
-    for tbl in doc_xml.findall('.//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}tbl'):
-        for row in tbl.findall('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}tr'):
-            for cell in row.findall('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}tc'):
-                for p in cell.findall('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p'):
-                    merged = merge_runs_text(p)
-                    if merged:
-                        all_text_parts.append(merged)
 
     # Scan headers and footers
     with zipfile.ZipFile(docx_path, 'r') as zf:
@@ -60,8 +55,8 @@ def scan_template(docx_path: str) -> Dict[str, Any]:
                                     header_footer_placeholders.append(
                                         (ph.strip(), '{{ ' + ph + ' }}', name))
                                 all_text_parts.append(merged)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.warning(f'Skipping unparsable header/footer part {name}: {e}')
 
     full_text = '\n'.join(all_text_parts)
     raw_placeholders = re.findall(r'\{\{(.+?)\}\}', full_text)

@@ -42,9 +42,6 @@ STRINGS = {
     'fill_create_btn': 'Создать',
     'fill_cancel_btn': 'Отмена',
     'fill_create_projects': 'Создать проекты вместо документов',
-    'fill_folder_name_template': 'Шаблон имени папки проекта',
-    'fill_found_rows': 'Найдено строк: {count}. Сколько проектов создать?',
-    'fill_projects_created': 'Создано {count} проектов в {path}',
 
     # Field types
     'field_type_constant': 'константа',
@@ -103,6 +100,9 @@ STRINGS = {
 
     # Messages
     'msg_error': 'Ошибка',
+    'msg_check': 'Проверка',
+    'msg_progress_generating': 'Генерация...',
+    'msg_progress_creating_docs': 'Создание документов',
     'msg_warning': 'Предупреждение',
     'msg_info': 'Информация',
     'msg_success': 'Готово',
@@ -117,6 +117,7 @@ STRINGS = {
     'msg_no_templates': 'Нет настроенных шаблонов',
     'msg_file_permission_error': 'Нет доступа к файлу "{file}".\nВозможно, файл открыт в Excel или это временный файл (~$...).\nЗакройте файл в Excel и попробуйте снова.',
     'msg_delete_recent_confirm': 'Убрать "{name}" из недавних проектов?',
+    'msg_table_field_missing': 'Поле {{{{ {name} }}}}: укажите файл и столбец',
 
     # Field labels
     'field_label_file': 'Файл:',

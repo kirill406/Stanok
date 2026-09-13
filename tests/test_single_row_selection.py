@@ -1,8 +1,7 @@
 ﻿# -*- coding: utf-8 -*-
 """Tests for SINGLE row selection (by number and by lookup) and linked TABLE fields."""
 
-import os, sys, tempfile, zipfile
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import os, tempfile, zipfile
 
 import openpyxl
 from docx import Document

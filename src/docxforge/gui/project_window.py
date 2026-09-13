@@ -32,8 +32,10 @@ class ProjectWindow(QMainWindow):
 
     def _center(self):
         frame = self.frameGeometry()
-        screen = QApplication.instance().primaryScreen().availableGeometry().center()
-        frame.moveCenter(screen)
+        screen = QApplication.instance().primaryScreen()
+        if screen is None:
+            return
+        frame.moveCenter(screen.availableGeometry().center())
         self.move(frame.topLeft())
 
     def _build_ui(self):

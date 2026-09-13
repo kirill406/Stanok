@@ -44,10 +44,10 @@ def clone_element(original):
 
 
 def row_contains_placeholder(row, field_name: str) -> bool:
+    pattern = re.compile(r'\{\{\s*' + re.escape(field_name) + r'\s*\}\}')
     for p in row.findall('.//' + W_NS + 'p'):
         for r in p.findall(W_NS + 'r'):
-            text = run_text(r)
-            if ('{{ %s }}' % field_name) in text or ('{{%s}}' % field_name) in text:
+            if pattern.search(run_text(r)):
                 return True
     return False
 

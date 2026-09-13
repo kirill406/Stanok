@@ -1,8 +1,7 @@
 # -*- coding: utf-8 -*-
 """Tests for image insertion in the renderer."""
 
-import os, sys, tempfile, zipfile, struct
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import os, tempfile, zipfile, struct
 
 from docx import Document
 from lxml import etree

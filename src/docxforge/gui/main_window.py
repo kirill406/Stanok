@@ -10,11 +10,11 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                               QListWidgetItem, QFileDialog, QMessageBox,
                               QFrame, QSizePolicy, QSpinBox, QProgressDialog,
                               QToolButton)
-from PyQt5.QtCore import Qt, QSettings, QCoreApplication
+from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont, QIcon
 
 from docxforge.gui.project_window import ProjectWindow
-from docxforge.engine.schema import create_project
+from docxforge.engine.schema import create_project, Project
 from docxforge.generate import generate_project, GenerationError
 
 logger = logging.getLogger(__name__)
@@ -121,15 +121,16 @@ class MainWindow(QMainWindow):
         self.setWindowTitle('Станок')
         self.setMinimumSize(550, 500)
         self.resize(700, 600)
-        self.settings = QSettings('Станок', 'MainWindow')
         self.recent_projects = self._load_recent()
         self._build_ui()
         self._center()
 
     def _center(self):
         frame = self.frameGeometry()
-        screen = QApplication.primaryScreen().availableGeometry().center()
-        frame.moveCenter(screen)
+        screen = QApplication.primaryScreen()
+        if screen is None:
+            return
+        frame.moveCenter(screen.availableGeometry().center())
         self.move(frame.topLeft())
 
     def _build_ui(self):
@@ -290,8 +291,8 @@ class MainWindow(QMainWindow):
                 with open(SETTINGS_FILE, 'r', encoding='utf-8') as f:
                     data = json.load(f)
                     return data.get('doc_counts', {}).get(path, 1)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f'Could not read doc count from settings: {e}')
         return 1
 
     def _get_last_template(self, path: str) -> str:
@@ -300,8 +301,8 @@ class MainWindow(QMainWindow):
                 with open(SETTINGS_FILE, 'r', encoding='utf-8') as f:
                     data = json.load(f)
                     return data.get('last_templates', {}).get(path, '')
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f'Could not read last template from settings: {e}')
         return ''
 
     def _set_last_doc_count(self, path: str, count: int):
@@ -315,8 +316,8 @@ class MainWindow(QMainWindow):
             data['recent_projects'] = self.recent_projects
             with open(SETTINGS_FILE, 'w', encoding='utf-8') as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f'Could not write doc count to settings: {e}')
 
     def _set_last_template(self, path: str, template_name: str):
         try:
@@ -329,8 +330,8 @@ class MainWindow(QMainWindow):
             data['recent_projects'] = self.recent_projects
             with open(SETTINGS_FILE, 'w', encoding='utf-8') as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f'Could not write last template to settings: {e}')
 
     def _create_project(self):
         path = QFileDialog.getExistingDirectory(self, 'Выберите папку для проекта',
@@ -370,8 +371,8 @@ class MainWindow(QMainWindow):
                         # Old format compatibility
                         return data
                     return data.get('recent_projects', [])
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f'Could not read recent projects from settings: {e}')
         return []
 
     def _save_recent(self):
@@ -385,21 +386,20 @@ class MainWindow(QMainWindow):
                         data['last_templates'] = existing.get('last_templates', {})
             with open(SETTINGS_FILE, 'w', encoding='utf-8') as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f'Could not write recent projects to settings: {e}')
 
     def generate_for_project(self, project_path: str, num_docs: int):
         """Generate documents for a project using the first template found."""
         # Find the first configured template
-        from docxforge.engine.schema import Project
         project_file = os.path.join(project_path, 'проект.docxforge')
         template_name = ''
         try:
             project = Project.from_file(project_file)
             if project.templates:
                 template_name = next(iter(project.templates.keys()))
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f'Could not read project file {project_file}: {e}')
         
         progress = QProgressDialog('Генерация...', None, 0, num_docs, self)
         progress.setWindowTitle('Создание документов')
@@ -435,7 +435,7 @@ def app_icon_path():
 
 
 def run():
-    app = QApplication(sys.argv)
+    app = QApplication.instance() or QApplication(sys.argv)
     icon_path = app_icon_path()
     if os.path.exists(icon_path):
         app.setWindowIcon(QIcon(icon_path))

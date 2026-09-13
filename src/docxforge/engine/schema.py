@@ -3,7 +3,8 @@
 
 import json
 import os
-from dataclasses import dataclass, field, asdict
+import shutil
+from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Any
 from enum import Enum
 
@@ -115,8 +116,15 @@ class Project:
         for tpl_name, tpl_data in data.get('templates', {}).items():
             tc = TemplateConfig()
             for fname, fdata in tpl_data.get('fields', {}).items():
+                try:
+                    field_type = FieldType(fdata.get('type'))
+                except ValueError as e:
+                    raise ValueError(
+                        f"Unknown field type {fdata.get('type')!r} for field {fname!r} "
+                        f"in template {tpl_name!r}"
+                    ) from e
                 tc.fields[fname] = FieldMapping(
-                    type=FieldType(fdata['type']),
+                    type=field_type,
                     value=fdata.get('value'),
                     file=fdata.get('file'),
                     column=fdata.get('column'),
@@ -345,7 +353,6 @@ def create_projects(
         os.makedirs(os.path.join(project_dir, 'Результат'), exist_ok=True)
 
         # Copy template file
-        import shutil
         src_template = os.path.join(source_project_dir, 'Шаблоны', template_name)
         dst_template = os.path.join(project_dir, 'Шаблоны', template_name)
         if os.path.exists(src_template):

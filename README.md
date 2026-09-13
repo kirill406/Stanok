@@ -167,7 +167,7 @@ scripts\install-hooks.bat
 
 `
 FirstAgent/
-├── docxforge/
+├── src/docxforge/
 │   ├── engine/
 │   │   ├── schema.py           # Проект, конфиг, модель данных
 │   │   ├── template_parser.py  # Сканер {{ }} из .docx

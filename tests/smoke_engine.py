@@ -1,8 +1,9 @@
 ﻿# -*- coding: utf-8 -*-
 """Quick end-to-end test of the renderer engine without GUI."""
 
+import os, zipfile, re
 import sys
-sys.path.insert(0, '.')
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'src'))
 
 from docxforge.engine.schema import (
     create_project, Project, TemplateConfig, FieldMapping, FieldType,
@@ -12,7 +13,6 @@ from docxforge.engine.template_parser import scan_template
 from docxforge.engine.renderer import Renderer
 from docxforge.engine.data_reader import DataReader
 
-import os, zipfile, re
 from lxml import etree
 
 W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'

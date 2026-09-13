@@ -19,13 +19,11 @@
 - Pre-commit: pytest + trufflehog3 (auto on commit)
 
 ## Structure
-- `docxforge/engine/` — core business logic (pure Python, no Qt)
-- `docxforge/gui/` — PyQt5 desktop UI (depends on engine)
+- `src/docxforge/engine/` — core business logic (pure Python, no Qt)
+- `src/docxforge/gui/` — PyQt5 desktop UI (depends on engine)
 - `cli.py` — CLI adapter over engine
 - `tests/` — pytest suite mirroring engine modules
 - `scripts/` — automation (hook installer, pre-commit)
-- `.env.example` — empty template for required env vars
-- `.env` — local secrets (gitignored, never commit)
 
 ## Prohibitions (AI Must Never)
 - Never Commit `.env` or any file with real credentials — blocked by pre-commit hook

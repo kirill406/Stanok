@@ -15,6 +15,7 @@ from .image_utils import append_image_run, add_image_to_zdata, add_image_relatio
 from .schema import (
     TemplateConfig, FieldMapping, FieldType, AggregationFunction,
     BatchSourceConfig, RowIterationMode, ResumeState,
+    substitute_placeholders,
 )
 
 
@@ -186,14 +187,10 @@ def resolve_folder_name_template(
     if counter_matches and counter_value is not None:
         effective['counter'] = format_counter(counter_value, counter_format)
 
-    # Replace all placeholders in template
-    result = template
-    for key, value in effective.items():
-        result = result.replace('{{ %s }}' % key, str(value))
-        result = result.replace('{{%s}}' % key, str(value))
-
-    # Replace any remaining unresolved placeholders with empty string
-    result = re.sub(r'\{\{\s*.+?\s*\}\}', '', result)
+    # Replace all placeholders via the shared engine core (M1): same
+    # whitespace tolerance as generate/schema; missing fields become ''.
+    result, _unresolved = substitute_placeholders(
+        template, effective, on_missing='empty')
 
     return result
 

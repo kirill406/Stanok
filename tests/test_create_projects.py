@@ -278,7 +278,7 @@ class TestMaxProjectsLimit:
             assert len(created) == 1
 
     def test_max_projects_zero(self):
-        """max_projects=0 returns empty list."""
+        """M8: max_projects=0 means all rows (unified with generate)."""
         with tempfile.TemporaryDirectory() as tmp:
             source_dir = _make_source_project(tmp)
             output_base = os.path.join(tmp, 'output_projects')
@@ -291,7 +291,23 @@ class TestMaxProjectsLimit:
                 max_projects=0,
             )
 
-            assert len(created) == 0
+            assert len(created) == 3
+
+    def test_max_projects_negative_means_all(self):
+        """M8: negative max_projects also means all rows."""
+        with tempfile.TemporaryDirectory() as tmp:
+            source_dir = _make_source_project(tmp)
+            output_base = os.path.join(tmp, 'output_projects')
+
+            created = create_projects(
+                source_project_dir=source_dir,
+                output_base_dir=output_base,
+                template_name='contract.docx',
+                batch_source_name='clients.xlsx',
+                max_projects=-5,
+            )
+
+            assert len(created) == 3
 
     def test_max_projects_none_creates_all(self):
         """max_projects=None creates projects for all rows."""

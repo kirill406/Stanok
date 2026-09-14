@@ -15,7 +15,6 @@ from docxforge.engine.schema import (
 )
 from docxforge.engine.data_reader import DataReader
 from docxforge.engine.renderer import Renderer
-from docxforge.engine.template_parser import scan_template
 
 
 logger = logging.getLogger(__name__)
@@ -229,61 +228,87 @@ def create_projects_from_template(
     except PermissionError as e:
         raise GenerationError(f'Permission denied creating Projects directory: {e}') from e
 
-    raw_placeholders = []
-    try:
-        scan_result = scan_template(template_full)
-        raw_placeholders = scan_result.get('all', [])
-    except Exception as e:
-        logger.warning(f'Could not scan template for placeholders: {e}')
-
     created_count = 0
     used_folder_names = set()
+    created_paths: List[str] = []
+    src_data_dir = _resolve_source_data_dir(project_path)
 
-    for row_idx in range(num_rows):
-        row_data = primary_rows[row_idx]
+    try:
+        for row_idx in range(num_rows):
+            row_data = primary_rows[row_idx]
 
-        folder_name = _resolve_folder_name_template(
-            folder_name_template, row_data, template_config, raw_placeholders
-        )
+            folder_name = _resolve_folder_name_template(
+                folder_name_template, row_data, template_config
+            )
 
-        if not folder_name or folder_name.strip() == '':
-            folder_name = f'project_{row_idx + 1}'
+            if not folder_name or folder_name.strip() == '':
+                folder_name = f'project_{row_idx + 1}'
+            if _GENERIC_PLACEHOLDER_RE.search(folder_name):
+                # Never create literal "{{ ... }}" folders: fall back to
+                # a numbered name (field mapping incomplete).
+                logger.warning(
+                    'Folder template %r did not resolve for row %s; '
+                    'using numbered fallback', folder_name_template, row_idx)
+                folder_name = f'project_{row_idx + 1}'
+            folder_base = _sanitize_folder_name(folder_name)
+            if not folder_base:
+                folder_base = f'project_{row_idx + 1}'
+            folder_name = _unique_folder_name(
+                folder_base, used_folder_names, projects_dir)
 
-        original_folder_name = folder_name
-        counter = 1
-        while folder_name in used_folder_names:
-            folder_name = f'{original_folder_name}_{counter}'
-            counter += 1
-        used_folder_names.add(folder_name)
+            project_subdir = os.path.join(projects_dir, folder_name)
+            try:
+                os.makedirs(project_subdir, exist_ok=False)
+                created_paths.append(project_subdir)
+                templates_subdir = os.path.join(project_subdir, 'Шаблоны')
+                os.makedirs(templates_subdir, exist_ok=False)
+            except PermissionError as e:
+                raise GenerationError(
+                    f'Permission denied creating project directory: {e}') from e
+            except FileExistsError as e:
+                raise GenerationError(
+                    f'Project directory already exists: {project_subdir}') from e
 
-        project_subdir = os.path.join(projects_dir, folder_name)
-        try:
-            os.makedirs(project_subdir, exist_ok=False)
-            templates_subdir = os.path.join(project_subdir, 'Шаблоны')
-            os.makedirs(templates_subdir, exist_ok=False)
-        except PermissionError as e:
-            raise GenerationError(f'Permission denied creating project directory: {e}') from e
-        except FileExistsError as e:
-            raise GenerationError(f'Project directory already exists: {project_subdir}') from e
+            new_config = _build_project_config(
+                template_config, row_data, primary_source_config.file)
 
-        new_config = _build_project_config(template_config, row_data, primary_source_config.file)
+            new_project_file = os.path.join(project_subdir, 'проект.docxforge')
+            new_project = Project(version=2)
+            new_project.templates[template_name] = new_config
+            try:
+                new_project.to_file(new_project_file)
+            except Exception as e:
+                raise GenerationError(
+                    f'Failed to write project config: {e}') from e
 
-        new_project_file = os.path.join(project_subdir, 'проект.docxforge')
-        new_project = Project(version=2)
-        new_project.templates[template_name] = new_config
-        try:
-            new_project.to_file(new_project_file)
-        except Exception as e:
-            shutil.rmtree(project_subdir, ignore_errors=True)
-            raise GenerationError(f'Failed to write project config: {e}') from e
+            try:
+                _copy_template_files(template_full, templates_subdir)
+            except Exception as e:
+                raise GenerationError(
+                    f'Failed to copy template files: {e}') from e
 
-        try:
-            _copy_template_files(template_full, templates_subdir)
-        except Exception as e:
-            shutil.rmtree(project_subdir, ignore_errors=True)
-            raise GenerationError(f'Failed to copy template files: {e}') from e
+            try:
+                data_subdir = os.path.join(project_subdir, 'Данные')
+                if src_data_dir is not None:
+                    shutil.copytree(src_data_dir, data_subdir)
+                else:
+                    os.makedirs(data_subdir, exist_ok=True)
+                os.makedirs(os.path.join(project_subdir, 'Результат'),
+                            exist_ok=True)
+            except PermissionError as e:
+                raise GenerationError(
+                    f'Permission denied copying data folder: {e}') from e
+            except OSError as e:
+                raise GenerationError(
+                    f'Failed to copy data folder: {e}') from e
 
-        created_count += 1
+            created_count += 1
+    except GenerationError:
+        _rollback_created(created_paths)
+        raise
+    except Exception as e:
+        _rollback_created(created_paths)
+        raise GenerationError(f'Failed to create projects: {e}') from e
 
     return projects_dir, created_count
 
@@ -292,7 +317,6 @@ def _resolve_folder_name_template(
     template: str,
     row_data: Dict[str, str],
     config: TemplateConfig,
-    raw_placeholders: List[str],
 ) -> str:
     effective = {}
 
@@ -744,13 +768,6 @@ def create_nested_employee_projects(
         key = str(row.get(employee_column, '') or '').strip()
         groups.setdefault(key, []).append((row_idx, row))
 
-    raw_placeholders: List[str] = []
-    try:
-        scan_result = scan_template(template_full)
-        raw_placeholders = scan_result.get('all', [])
-    except Exception as e:
-        logger.warning(f'Could not scan template for placeholders: {e}')
-
     parsed = parse_composite_template(folder_name_template or '')
     if parsed['is_composite']:
         employee_part: Optional[str] = parsed['employee_part']
@@ -776,7 +793,7 @@ def create_nested_employee_projects(
             employee_counter += 1
             if employee_part:
                 resolved_employee = _resolve_folder_name_template(
-                    employee_part, items[0][1], template_config, raw_placeholders)
+                    employee_part, items[0][1], template_config)
             else:
                 resolved_employee = raw_employee
             if _GENERIC_PLACEHOLDER_RE.search(resolved_employee):
@@ -805,7 +822,7 @@ def create_nested_employee_projects(
                 project_counter += 1
                 resolved_project = _resolve_folder_name_template(
                     project_part or '{{%s}}' % project_column,
-                    row, template_config, raw_placeholders)
+                    row, template_config)
                 if _GENERIC_PLACEHOLDER_RE.search(resolved_project):
                     # Never create literal "{{ ... }}" folders: fall back to
                     # the batch value (field mapping incomplete).

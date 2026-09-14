@@ -2,11 +2,16 @@
 """.docxforge project file schema — defines the JSON structure and defaults."""
 
 import json
+import logging
 import os
+import re
 import shutil
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Any
 from enum import Enum
+
+
+logger = logging.getLogger(__name__)
 
 
 class FieldType(str, Enum):
@@ -270,6 +275,66 @@ class Project:
         return result
 
 
+# Minimal folder-name helpers copied from docxforge.generate (kept local:
+# engine must not import the upper generate layer). Used by create_projects
+# to resolve directory_template the same way: resolve → sanitize → unique.
+_INVALID_FOLDER_CHARS = '<>:"/\\|?*'
+
+_GENERIC_PLACEHOLDER_RE = re.compile(r'\{\{\s*([^}/]+?)\s*\}\}')
+
+
+def _resolve_directory_template(template: str, row_data: Dict[str, Any]) -> str:
+    """Resolve {{placeholders}} (any whitespace) from row values."""
+    result = template
+    for key, value in row_data.items():
+        result = re.sub(
+            r'\{\{\s*' + re.escape(str(key)) + r'\s*\}\}',
+            str(value), result)
+    unresolved = _GENERIC_PLACEHOLDER_RE.findall(result)
+    if unresolved:
+        logger.warning(
+            'Unresolved placeholders %s in directory template %r',
+            unresolved, template)
+    return result.strip()
+
+
+def _sanitize_folder_name(name: Optional[str]) -> str:
+    """Make a filesystem-safe folder name (single path segment)."""
+    if name is None:
+        return ''
+    text = ''.join('_' if (ch in _INVALID_FOLDER_CHARS or ord(ch) < 32) else ch
+                   for ch in str(name).strip())
+    text = text.strip().rstrip('.')
+    if len(text) > 100:
+        text = text[:100].rstrip('.').strip()
+    return text
+
+
+def _sanitize_relpath(relpath: str) -> str:
+    """Sanitize each '/'-separated segment, preserving nesting."""
+    parts = []
+    for part in str(relpath).replace('\\', '/').split('/'):
+        safe = _sanitize_folder_name(part)
+        if safe:
+            parts.append(safe)
+    return '/'.join(parts)
+
+
+def _unique_folder_name(base: str, used: set, parent_dir: str) -> str:
+    """Return a unique folder name, appending _1, _2... on collision.
+
+    Checks both the in-run ``used`` set and pre-existing directories on disk.
+    Registers the chosen name in ``used``.
+    """
+    candidate = base
+    suffix = 0
+    while candidate in used or os.path.exists(os.path.join(parent_dir, candidate)):
+        suffix += 1
+        candidate = f'{base}_{suffix}'
+    used.add(candidate)
+    return candidate
+
+
 def create_project(project_dir: str) -> str:
     os.makedirs(os.path.join(project_dir, 'Данные'), exist_ok=True)
     os.makedirs(os.path.join(project_dir, 'Шаблоны'), exist_ok=True)
@@ -334,18 +399,34 @@ def create_projects(
         all_rows = all_rows[:max_projects]
 
     created_projects = []
+    used_folder_names = set()
+    os.makedirs(output_base_dir, exist_ok=True)
 
     for row_idx, row_data in enumerate(all_rows):
-        # Resolve folder name from directory_template
-        folder_name = f'project_{row_idx + 1}'
+        # Resolve folder name from directory_template (resolve→sanitize→unique)
+        fallback = f'project_{row_idx + 1}'
+        folder_name = fallback
         if template_config.directory_template:
-            dir_template = template_config.directory_template
-            for key, value in row_data.items():
-                placeholder = f'{{{{ {key} }}}}'
-                dir_template = dir_template.replace(placeholder, str(value))
-                placeholder2 = f'{{{{{key}}}}}'
-                dir_template = dir_template.replace(placeholder2, str(value))
-            folder_name = dir_template.strip()
+            resolved = _resolve_directory_template(
+                template_config.directory_template, row_data)
+            if _GENERIC_PLACEHOLDER_RE.search(resolved):
+                logger.warning(
+                    'directory_template %r did not fully resolve for row %d; '
+                    'using fallback %r',
+                    template_config.directory_template, row_idx, fallback)
+            else:
+                sanitized = _sanitize_relpath(resolved)
+                if sanitized:
+                    folder_name = sanitized
+                else:
+                    logger.warning(
+                        'directory_template %r resolved to an unusable name '
+                        'for row %d; using fallback %r',
+                        template_config.directory_template, row_idx, fallback)
+        else:
+            folder_name = _sanitize_relpath(folder_name) or fallback
+        folder_name = _unique_folder_name(
+            folder_name, used_folder_names, output_base_dir)
 
         project_dir = os.path.join(output_base_dir, folder_name)
         os.makedirs(os.path.join(project_dir, 'Данные'), exist_ok=True)

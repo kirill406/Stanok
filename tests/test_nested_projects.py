@@ -303,7 +303,7 @@ def test_nested_composite_template_parsing_fallback_resolves_both_placeholders()
     tc.fields['project_name'] = FieldMapping(
         type=FieldType.TABLE, file='batch.xlsx', column='project_name')
     row = {'employee': 'Иванов Иван', 'project_name': 'Договор_001'}
-    resolved = _resolve_folder_name_template(COMPOSITE_TEMPLATE, row, tc, [])
+    resolved = _resolve_folder_name_template(COMPOSITE_TEMPLATE, row, tc)
     assert resolved == 'Иванов Иван/Договор_001'
 
 
@@ -317,7 +317,7 @@ def test_nested_folder_resolve_tolerates_placeholder_spacing():
     for template in ('{{фио_сотрудника}}', '{{ фио_сотрудника }}',
                      '{{  фио_сотрудника  }}', '{{фио_сотрудника }}',
                      '{{ фио_сотрудника}}'):
-        assert _resolve_folder_name_template(template, row, tc, []) == 'Иванов Иван'
+        assert _resolve_folder_name_template(template, row, tc) == 'Иванов Иван'
 
 
 def test_nested_generation_never_creates_literal_placeholder_folders():

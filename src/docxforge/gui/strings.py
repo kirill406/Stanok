@@ -122,6 +122,10 @@ STRINGS = {
     'msg_no_templates': 'Нет настроенных шаблонов',
     'msg_file_permission_error': 'Нет доступа к файлу "{file}".\nВозможно, файл открыт в Excel или это временный файл (~$...).\nЗакройте файл в Excel и попробуйте снова.',
     'msg_delete_recent_confirm': 'Убрать "{name}" из недавних проектов?',
+    'dlg_select_dirs': 'Выберите папки проектов',
+    'main_add_many_btn': 'Добавить несколько проектов',
+    'main_added_many': 'Добавлено проектов: {count}',
+    'main_added_many_skipped': 'Добавлено проектов: {count}\nПропущено без проект.docxforge: {skipped}',
     'msg_table_field_missing': 'Поле {{{{ {name} }}}}: укажите файл и столбец',
 
     # Field labels

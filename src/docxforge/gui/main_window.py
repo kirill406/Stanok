@@ -14,6 +14,7 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont, QIcon
 
 from docxforge.gui.project_window import ProjectWindow
+from docxforge.gui.strings import STRINGS
 from docxforge.engine.schema import create_project, Project
 from docxforge.generate import generate_project, GenerationError
 from docxforge.gui.worker import GenerateWorker, project_job
@@ -207,6 +208,11 @@ class MainWindow(QMainWindow):
         btn_open.setFont(QFont('Segoe UI', 11))
         btn_open.clicked.connect(self._open_project)
         layout.addWidget(btn_open)
+        btn_add_many = QPushButton(STRINGS['main_add_many_btn'])
+        btn_add_many.setMinimumHeight(40)
+        btn_add_many.setFont(QFont('Segoe UI', 10))
+        btn_add_many.clicked.connect(self._add_many_projects)
+        layout.addWidget(btn_add_many)
 
         # Generate All button
         btn_generate_all = QPushButton('⚡  Сгенерировать все недавние проекты')
@@ -392,6 +398,31 @@ class MainWindow(QMainWindow):
         project_file = create_project(path)
         self._add_recent(path)
         self._open_project_at(path)
+
+    def _add_many_projects(self):
+        """Add several project folders to recent via multi-select dialog."""
+        from docxforge.gui.dialogs import get_existing_directory_list
+        dirs = get_existing_directory_list(
+            self, STRINGS['dlg_select_dirs'], os.path.expanduser('~'))
+        if not dirs:
+            return
+        added, skipped = 0, []
+        for path in dirs:
+            project_file = os.path.join(path, 'проект.docxforge')
+            if os.path.isfile(project_file):
+                self._add_recent(path)
+                added += 1
+            else:
+                skipped.append(os.path.basename(path) or path)
+        if skipped:
+            QMessageBox.information(
+                self, STRINGS['msg_info'],
+                STRINGS['main_added_many_skipped'].format(
+                    count=added, skipped=', '.join(skipped)))
+        else:
+            QMessageBox.information(
+                self, STRINGS['msg_info'],
+                STRINGS['main_added_many'].format(count=added))
 
     def _open_project(self):
         path = QFileDialog.getExistingDirectory(self, 'Откройте папку проекта',

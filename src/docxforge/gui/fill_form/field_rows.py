@@ -208,7 +208,11 @@ class FieldRowsMixin:
                     if idx < 0:
                         idx = w['today_format'].findText(result['format'])
                     if idx >= 0:
-                        w['counter_format' if 'counter' in result.get('type', '') else 'today_format'].setCurrentIndex(idx)
+                        # result['type'] holds the Russian combo text
+                        # (e.g. 'счётчик'), so compare against STRINGS.
+                        is_counter = (result.get('type', '') ==
+                                      STRINGS['field_type_counter'])
+                        w['counter_format' if is_counter else 'today_format'].setCurrentIndex(idx)
                 if result.get('file'):
                     idx = w['table_file'].findText(result['file'])
                     if idx >= 0:

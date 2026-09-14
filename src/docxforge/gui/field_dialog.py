@@ -2,9 +2,9 @@
 """Dialog for adding a new field with template picker showing previews."""
 
 from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
-                              QLabel, QComboBox, QLineEdit, QGroupBox,
-                              QFileDialog, QDialogButtonBox, QWidget, QScrollArea,
-                              QFrame, QGridLayout)
+                               QLabel, QComboBox, QLineEdit, QGroupBox,
+                               QFileDialog, QDialogButtonBox, QWidget, QScrollArea,
+                               QFrame, QGridLayout, QMessageBox)
 from PyQt5.QtCore import Qt, QEvent, QObject
 from PyQt5.QtGui import QFont
 
@@ -194,7 +194,7 @@ class FieldTemplateDialog(QDialog):
 
     def _pick_file(self, line_edit):
         file, _ = QFileDialog.getOpenFileName(
-            self, 'Выберите изображение',
+            self, STRINGS['field_pick_image_title'],
             '', 'Изображения (*.png *.jpg *.jpeg *.bmp)')
         if file:
             line_edit.setText(file)
@@ -215,13 +215,19 @@ class FieldTemplateDialog(QDialog):
                     result[key] = child.text()
                     break
 
-        # Validate
+        # Validate (warnings instead of silent ignores, so the user
+        # understands why nothing happened).
         if not result.get('field_name', '').strip():
-            return  # silently ignore — user needs to enter a name
+            QMessageBox.warning(self, STRINGS['msg_warning'],
+                                STRINGS['field_name_required'])
+            return
 
         # Check for duplicate field names
         if hasattr(self, 'existing_fields') and result.get('field_name', '').strip() in self.existing_fields:
-            return  # silently ignore — duplicate field name
+            QMessageBox.warning(self, STRINGS['msg_warning'],
+                                STRINGS['msg_field_exists'].format(
+                                    name=result['field_name'].strip()))
+            return
 
         self.result_data = result
         self.accept()

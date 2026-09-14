@@ -57,6 +57,9 @@ STRINGS = {
     'field_dialog_params': 'Параметры поля',
     'field_dialog_add_btn': 'Добавить поле',
     'field_dialog_cancel_btn': 'Отмена',
+    'field_pick_image_title': 'Выберите изображение',
+    'field_name_required': 'Укажите имя поля',
+    'fill_fields_section': 'Поля шаблона',
 
     # Batch section
     'batch_generation_group': 'Генерация',

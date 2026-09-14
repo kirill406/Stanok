@@ -1,6 +1,7 @@
 ﻿# -*- coding: utf-8 -*-
 """Tests for SINGLE row selection (by number and by lookup) and linked TABLE fields."""
 
+import logging
 import os, tempfile, zipfile
 
 import openpyxl
@@ -196,9 +197,17 @@ class TestResolveSingleRow:
             # The current design finds row in cities.xlsx where primary_col matches primary_val.
             # Since primary_col is "client_name" and primary_val is "Beta",
             # it won't find "Beta" in cities.xlsx's "city" column.
-            # This is a known limitation — cross-table linking requires matching column names.
-            # For this test, we use same column name in both tables.
-            pass
+            # M16: cross-table linking requires matching column names
+            # (known limitation). TODO(M7-merge): after merging
+            # origin/fix/001-m6-data-reader, a lookup miss renders ''
+            # with a warning instead of borrowing rows[0].
+            reader = DataReader()
+            renderer = Renderer(tmp, reader)
+            renderer.load_project()
+            outputs = renderer.render("t.docx", {})
+            assert len(outputs) == 1
+            text = _read_output_text(outputs[0])
+            assert "Alpha" in text
 
     def test_single_row_index_zero_is_first_row(self):
         """row_index=0 selects first row."""

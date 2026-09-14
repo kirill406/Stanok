@@ -25,6 +25,7 @@ class Renderer:
         self.project_dir = project_dir
         self.data_reader = data_reader
         self.project: Optional[Project] = None
+        self._template_path_cache = {}
 
     def load_project(self):
         project_file = os.path.join(self.project_dir, 'проект.docxforge')
@@ -51,13 +52,22 @@ class Renderer:
         os.replace(tmp_file, project_file)
 
     def get_template_path(self, template_name: str) -> str:
+        # M17: cache the directory walk (per Renderer instance, so tests
+        # with fresh instances never see stale entries).
+        cached = self._template_path_cache.get(template_name)
+        if cached is not None:
+            return cached
         base = os.path.join(self.project_dir, 'Шаблоны')
         direct = os.path.join(base, template_name)
         if os.path.exists(direct):
+            self._template_path_cache[template_name] = direct
             return direct
         for root, dirs, files in os.walk(base):
             if os.path.basename(template_name) in files:
-                return os.path.join(root, os.path.basename(template_name))
+                found = os.path.join(root, os.path.basename(template_name))
+                self._template_path_cache[template_name] = found
+                return found
+        self._template_path_cache[template_name] = direct
         return direct
 
     def _read_table_data(self, table_file: str) -> List[Dict[str, str]]:

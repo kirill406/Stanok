@@ -197,7 +197,7 @@ class FillForm(FieldRowsMixin, AdvancedSectionMixin, BatchSectionMixin, ConfigIO
         scroll_layout.setSpacing(15)
 
         # --- Fields section ---
-        fields_group = QGroupBox('\u041f\u043e\u043b\u044f \u0448\u0430\u0431\u043b\u043e\u043d\u0430')
+        fields_group = QGroupBox(STRINGS['fill_fields_section'])
         fields_layout = QVBoxLayout(fields_group)
         fields_layout.setContentsMargins(10, 10, 10, 10)
         fields_layout.setSpacing(6)

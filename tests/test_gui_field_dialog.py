@@ -10,6 +10,8 @@ from docxforge.gui.field_dialog import FieldTemplateDialog
 from docxforge.gui.field_templates import FIELD_TEMPLATES
 
 
+pytestmark = pytest.mark.gui
+
 class TestFieldTemplateDialog:
     """Tests for the add field template dialog."""
 
@@ -270,12 +272,17 @@ class TestFieldTemplateDialog:
         qtbot.waitUntil(lambda: dlg.result() == dlg.Rejected, timeout=2000)
         assert dlg.result() == dlg.Rejected
 
-    def test_empty_field_name_rejected(self, qtbot):
+    def test_empty_field_name_rejected(self, qtbot, monkeypatch):
         """Test that empty field name is rejected."""
         dlg = FieldTemplateDialog(data_files=[], existing_fields=[])
         qtbot.addWidget(dlg)
         dlg.show()
         QTest.qWait(100)
+
+        # M17: _on_add warns instead of silently ignoring (mock the modal).
+        warnings = []
+        monkeypatch.setattr(QMessageBox, 'warning',
+                            lambda *a, **k: warnings.append(a))
 
         const_card = None
         for card in dlg.template_buttons:
@@ -294,8 +301,9 @@ class TestFieldTemplateDialog:
         qtbot.mouseClick(dlg.add_btn, Qt.LeftButton)
         QTest.qWait(500)
         
-        # Should not accept (still open)
+        # Should not accept (still open) and must warn (M17, not silent).
         assert dlg.result() != dlg.Accepted
+        assert len(warnings) == 1
 
     def test_duplicate_field_name_warning(self, qtbot, monkeypatch):
         """Test warning when field name already exists."""
@@ -304,7 +312,9 @@ class TestFieldTemplateDialog:
         dlg.show()
         QTest.qWait(100)
 
-        monkeypatch.setattr(QMessageBox, 'warning', lambda *a, **k: None)
+        dup_warnings = []
+        monkeypatch.setattr(QMessageBox, 'warning',
+                            lambda *a, **k: dup_warnings.append(a))
 
         const_card = None
         for card in dlg.template_buttons:
@@ -323,6 +333,7 @@ class TestFieldTemplateDialog:
         
         # Should not accept due to duplicate
         assert dlg.result() != dlg.Accepted
+        assert len(dup_warnings) == 1
 
 def test_wheel_event_filter_on_combos(qtbot):
         """Test that wheel event filter is installed on comboboxes."""

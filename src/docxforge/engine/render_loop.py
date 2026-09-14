@@ -3,6 +3,7 @@
 
 import re
 import os
+import logging
 import zipfile
 from datetime import datetime
 from typing import Dict, List, Optional
@@ -17,6 +18,9 @@ from .schema import (
     BatchSourceConfig, RowIterationMode, ResumeState,
     substitute_placeholders,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 def scan_raw_placeholders(zdata: dict) -> List[str]:
@@ -82,8 +86,20 @@ def resolve_field_values(
                 effective[fn] = str(source_row[fm.column])
             else:
                 rows = all_table_data.get(fm.file, [])
-                if rows and fm.column in rows[0]:
+                if not rows:
+                    # No data at all: leave the placeholder untouched.
+                    continue
+                managed = (fm.file in per_source_rows
+                           or fm.file in (config.batch_sources or {}))
+                if not managed and fm.column in rows[0]:
+                    # Legacy default for unmanaged files (first row).
                     effective[fn] = str(rows[0][fm.column])
+                else:
+                    # M7: missing data must not be masked with rows[0].
+                    effective[fn] = ''
+                    logger.warning(
+                        "No data for field '%s' (table '%s', column '%s'); "
+                        "using empty string", fn, fm.file, fm.column)
 
     # 6. TABLE \u2014 linked (same table \u2192 same row; different table \u2192 find by value)
     for fn, fm in config.fields.items():
@@ -97,21 +113,40 @@ def resolve_field_values(
                     effective[fn] = str(source_row[fm.column])
                 else:
                     rows = all_table_data.get(fm.file, [])
-                    if rows and fm.column in rows[0]:
+                    if not rows:
+                        # No data at all: leave the placeholder untouched.
+                        continue
+                    managed = (fm.file in per_source_rows
+                               or fm.file in (config.batch_sources or {}))
+                    if not managed and fm.column in rows[0]:
+                        # Legacy default for unmanaged files (first row).
                         effective[fn] = str(rows[0][fm.column])
+                    else:
+                        # M7: missing data must not be masked with rows[0].
+                        effective[fn] = ''
+                        logger.warning(
+                            "No data for field '%s' (table '%s', column '%s'); "
+                            "using empty string", fn, fm.file, fm.column)
             else:
                 primary_val = effective.get(fm.linked_to)
                 if primary_val:
                     rows = all_table_data.get(fm.file, [])
                     primary_col = primary_fm.column
-                    found = False
+                    matched = False
                     for row in rows:
                         if str(row.get(primary_col, '')) == primary_val:
                             effective[fn] = str(row.get(fm.column, ''))
-                            found = True
+                            matched = True
                             break
-                    if not found and rows:
-                        effective[fn] = str(rows[0].get(fm.column, ''))
+                    if not matched:
+                        if not rows:
+                            # No data at all: leave placeholder.
+                            continue
+                        # M7: lookup miss is missing data, not rows[0].
+                        effective[fn] = ''
+                        logger.warning(
+                            "Lookup miss for field '%s' (table '%s'); "
+                            "using empty string", fn, fm.file)
 
     # 7. Aggregations
     for aname, agg in config.aggregations.items():

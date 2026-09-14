@@ -10,6 +10,10 @@ class AdvancedSectionMixin:
     """Methods for managing cycle and aggregation rows in FillForm."""
 
     def _add_cycle_row(self, table='', columns=None):
+        # No-op when the advanced section UI is not built (no container):
+        # keeps _load_existing_config safe on projects with cycles.
+        if getattr(self, 'cycles_layout', None) is None:
+            return
         group = QGroupBox('\u0426\u0438\u043a\u043b')
         row = QVBoxLayout(group)
         row.setContentsMargins(8, 4, 8, 4)
@@ -58,6 +62,10 @@ class AdvancedSectionMixin:
 
     def _add_aggr_row(self, aname='', func='sum', table='',
                       column='', multiplier=None):
+        # No-op when the advanced section UI is not built (no container):
+        # keeps _load_existing_config safe on projects with aggregations.
+        if getattr(self, 'aggr_layout', None) is None:
+            return
         group = QGroupBox('\u0410\u0433\u0440\u0435\u0433\u0430\u0446\u0438\u044f')
         row = QVBoxLayout(group)
         row.setContentsMargins(8, 4, 8, 4)

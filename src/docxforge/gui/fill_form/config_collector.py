@@ -76,4 +76,11 @@ class ConfigCollectorMixin:
             sources=resume_sources,
             continue_from_last=True,  # Legacy field, kept for compatibility
         )
+        # Preserve cycles/aggregations when the advanced section UI is not
+        # built (no containers): nothing on screen edits them, so round-trip
+        # the loaded values instead of silently dropping them on save.
+        if getattr(self, 'cycles_layout', None) is None:
+            config.cycles = list(getattr(getattr(self, 'config', None), 'cycles', []) or [])
+        if getattr(self, 'aggr_layout', None) is None:
+            config.aggregations = dict(getattr(getattr(self, 'config', None), 'aggregations', {}) or {})
         return config

@@ -353,18 +353,49 @@ class FillForm(FieldRowsMixin, AdvancedSectionMixin, BatchSectionMixin, ConfigIO
         ``/`` names the project column, e.g. ``{{фио_сотрудника}}/{{проект}}``.
         Names are dynamic (any column names accepted); spaced variants such
         as ``{{ фио }}`` are also accepted.
+
+        Exactly one ``/`` separator is required; traversal (``..``),
+        backslashes and Windows-forbidden name chars (``: * ? " < > |``)
+        are rejected, as are empty sides after stripping.
         """
         import re
         errors = []
         if not (template or '').strip():
             errors.append(STRINGS['msg_composite_template_required'])
             return errors
-        if '/' not in (template or ''):
+        text = template.strip()
+        if '/' not in text:
             errors.append(STRINGS['msg_composite_template_required'])
             return errors
-        employee_part, project_part = (template or '').split('/', 1)
-        if not re.search(r'\{\{\s*[^}/]+\s*\}\}', employee_part):
+        if text.count('/') != 1:
+            errors.append(STRINGS['msg_composite_single_separator'])
+            return errors
+        employee_part, project_part = text.split('/', 1)
+        if not employee_part.strip():
             errors.append(STRINGS['msg_composite_employee_required'])
-        if not re.search(r'\{\{\s*[^}/]+\s*\}\}', project_part):
+        if not project_part.strip():
             errors.append(STRINGS['msg_composite_project_required'])
+        # Path traversal / separator abuse (checked on the whole template
+        # so both literals and placeholder names are covered).
+        if '..' in text or '\\' in text:
+            errors.append(STRINGS['msg_composite_invalid_path'])
+        # Forbidden Windows file-name chars in placeholder names or in the
+        # literal text around them (the single '/' separator is excluded).
+        names = [n.strip() for n in re.findall(r'\{\{\s*([^}]*?)\s*\}\}', text)]
+        if any(any(c in ':*?"<>|' for c in name) for name in names if name):
+            errors.append(STRINGS['msg_composite_invalid_path'])
+        literals = re.sub(r'\{\{\s*[^}]*?\}\}', '', text).replace('/', '')
+        if any(c in ':*?"<>|' for c in literals):
+            if STRINGS['msg_composite_invalid_path'] not in errors:
+                errors.append(STRINGS['msg_composite_invalid_path'])
+        # Each side needs a non-empty {{placeholder}} (empty {{ }} rejected).
+        placeholder_re = re.compile(r'\{\{\s*([^}]*?)\s*\}\}')
+        emp_names = [n.strip() for n in placeholder_re.findall(employee_part)]
+        proj_names = [n.strip() for n in placeholder_re.findall(project_part)]
+        if not any(emp_names):
+            if STRINGS['msg_composite_employee_required'] not in errors:
+                errors.append(STRINGS['msg_composite_employee_required'])
+        if not any(proj_names):
+            if STRINGS['msg_composite_project_required'] not in errors:
+                errors.append(STRINGS['msg_composite_project_required'])
         return errors

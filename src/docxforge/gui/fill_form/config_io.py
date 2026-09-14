@@ -61,10 +61,26 @@ class ConfigIOMixin:
                     w['today_format'].setCurrentIndex(idx)
             elif fm.type == FieldType.IMAGE:
                 w['image_file'].setText(fm.value or fm.file or '')
-        for cycle in self.config.cycles:
-            self._add_cycle_row(cycle.table, cycle.columns)
-        for aname, agg in self.config.aggregations.items():
-            self._add_aggr_row(aname, agg.function.value, agg.table, agg.column, agg.multiplier)
+        # Cycles/aggregations: the advanced section UI is currently not built
+        # (no cycles_layout/aggr_layout on the dialog), so only restore rows
+        # when the containers exist. Calling the row builders unconditionally
+        # raised AttributeError on projects with cycles/aggregations.
+        # Values are preserved untouched otherwise; round-trip on save is
+        # handled in ConfigCollectorMixin._collect_config.
+        if getattr(self, 'cycles_layout', None) is not None and hasattr(self, '_add_cycle_row'):
+            for cycle in self.config.cycles:
+                self._add_cycle_row(cycle.table, cycle.columns)
+        elif getattr(self.config, 'cycles', None):
+            logging.getLogger(__name__).debug(
+                'Skipping %d cycle row(s): advanced section UI not built',
+                len(self.config.cycles))
+        if getattr(self, 'aggr_layout', None) is not None and hasattr(self, '_add_aggr_row'):
+            for aname, agg in self.config.aggregations.items():
+                self._add_aggr_row(aname, agg.function.value, agg.table, agg.column, agg.multiplier)
+        elif getattr(self.config, 'aggregations', None):
+            logging.getLogger(__name__).debug(
+                'Skipping %d aggregation row(s): advanced section UI not built',
+                len(self.config.aggregations))
         for df, bsc in self.config.batch_sources.items():
             bw = self.batch_source_widgets.get(df)
             if not bw:

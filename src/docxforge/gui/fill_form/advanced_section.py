@@ -119,9 +119,5 @@ class AdvancedSectionMixin:
         self._update_auto_info()
 
     def _get_row_count(self, filename):
-        """Get number of data rows in an Excel file."""
-        import os
-        path = os.path.join(self.project_dir, '\u0414\u0430\u043d\u043d\u044b\u0435', filename)
-        if os.path.exists(path):
-            return len(self.data_reader.read_excel(path))
-        return 0
+        """Get number of data rows in an Excel file (M3: engine counter)."""
+        return self.renderer.count_source_rows(filename)

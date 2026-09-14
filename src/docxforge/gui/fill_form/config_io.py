@@ -245,11 +245,9 @@ class ConfigIOMixin:
         """
         logger = logging.getLogger(__name__)
 
-        # Engine reads проект.docxforge from disk, so persist the config first.
-        self.renderer.project.templates[self.template_rel_path] = config
-        self.renderer.save_project()
-
         # Total rows of the primary batch source = total projects to create.
+        # Counting uses the in-memory config: nothing is persisted yet, so
+        # cancelling the dialog below leaves no trace (M12).
         try:
             total_rows = self._count_primary_rows(config)
         except Exception as e:
@@ -260,7 +258,7 @@ class ConfigIOMixin:
             QMessageBox.warning(self, STRINGS['msg_error'], STRINGS['msg_no_batch_rows'])
             return
 
-        # Row-count dialog (cancel aborts before anything is created).
+        # Row-count dialog (cancel aborts before anything is created/saved).
         chosen = total_rows
         if total_rows > 1:
             chosen, ok = QInputDialog.getInt(
@@ -270,6 +268,17 @@ class ConfigIOMixin:
                 total_rows, 1, total_rows, 1)
             if not ok:
                 return
+
+        # Engine reads проект.docxforge from disk, so persist the config now
+        # (after confirmation). Snapshot first: on engine failure the previous
+        # config is restored instead of leaving a half-applied one (M12).
+        project_file = os.path.join(self.project_dir, 'проект.docxforge')
+        snapshot = None
+        if os.path.exists(project_file):
+            with open(project_file, 'rb') as f:
+                snapshot = f.read()
+        self.renderer.project.templates[self.template_rel_path] = config
+        self.renderer.save_project()
 
         # Single engine entry point: create_projects_from_template() routes
         # composite (employee/project) templates to nested generation
@@ -281,6 +290,14 @@ class ConfigIOMixin:
                 config.folder_name_template, max_projects=chosen)
         except Exception as e:
             logger.error('Create projects failed: %s', e)
+            if snapshot is not None:
+                try:
+                    with open(project_file, 'wb') as f:
+                        f.write(snapshot)
+                    self.renderer.load_project()
+                except Exception as restore_error:
+                    logger.error('Failed to restore config snapshot: %s',
+                                 restore_error)
             QMessageBox.warning(self, STRINGS['msg_error'], str(e))
             return
 
@@ -308,7 +325,11 @@ class ConfigIOMixin:
                 main_window._refresh_recent_list()
 
     def _count_primary_rows(self, config: 'TemplateConfig') -> int:
-        """Return total row count of the first SEQUENTIAL batch source."""
+        """Return total row count of the first SEQUENTIAL batch source.
+
+        Delegates to the single engine counter
+        (Renderer.count_source_rows, M3).
+        """
         primary_file = None
         for _source_name, bsc in config.batch_sources.items():
             if bsc.mode == RowIterationMode.SEQUENTIAL:
@@ -316,7 +337,5 @@ class ConfigIOMixin:
                 break
         if primary_file is None:
             raise ValueError(STRINGS['msg_no_batch_rows'])
-        all_data = self.data_reader.read_all_batch_sources(
-            self.project_dir, config.batch_sources)
-        return len(all_data.get(primary_file, []))
+        return self.renderer.count_source_rows(primary_file)
 

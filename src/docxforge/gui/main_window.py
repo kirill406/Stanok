@@ -16,11 +16,12 @@ from PyQt5.QtGui import QFont, QIcon
 from docxforge.gui.project_window import ProjectWindow
 from docxforge.engine.schema import create_project, Project
 from docxforge.generate import generate_project, GenerationError
+from docxforge.gui.worker import GenerateWorker, project_job
 
 logger = logging.getLogger(__name__)
 
-def get_settings_path():
-    """Get settings file path next to executable."""
+def _legacy_settings_path():
+    """Pre-M11 location: next to the module (inside the package tree)."""
     if getattr(sys, 'frozen', False):
         # Running as compiled executable
         base_dir = os.path.dirname(sys.executable)
@@ -28,6 +29,44 @@ def get_settings_path():
         # Running as script
         base_dir = os.path.dirname(os.path.abspath(__file__))
     return os.path.join(base_dir, 'docxforge_settings.json')
+
+
+def _migrate_settings(legacy_path: str, new_path: str) -> bool:
+    """Move settings from the legacy package-tree location (M11).
+
+    Returns True when a migration happened (or nothing needed doing).
+    Never raises: settings are a convenience cache, the app must start
+    even if the home directory is not writable (then legacy is reused).
+    """
+    if os.path.exists(new_path):
+        return True
+    if not os.path.exists(legacy_path):
+        return True
+    try:
+        os.makedirs(os.path.dirname(new_path), exist_ok=True)
+        with open(legacy_path, 'rb') as f:
+            data = f.read()
+        json.loads(data.decode('utf-8'))  # validate before moving
+        with open(new_path, 'wb') as f:
+            f.write(data)
+        os.remove(legacy_path)
+        logger.info('Migrated settings %s -> %s', legacy_path, new_path)
+        return True
+    except Exception as e:
+        logger.debug(f'Could not migrate settings: {e}')
+        return False
+
+
+def get_settings_path():
+    """Get user-scope settings file path (M11: home dir, not package tree)."""
+    new_path = os.path.join(
+        os.path.expanduser('~'), '.docxforge', 'docxforge_settings.json')
+    try:
+        if _migrate_settings(_legacy_settings_path(), new_path):
+            return new_path
+    except Exception as e:
+        logger.debug(f'Settings path resolution failed: {e}')
+    return _legacy_settings_path()
 
 SETTINGS_FILE = get_settings_path()
 
@@ -122,6 +161,8 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(550, 500)
         self.resize(700, 600)
         self.recent_projects = self._load_recent()
+        self._batch_worker = None
+        self._batch_progress = None
         self._build_ui()
         self._center()
 
@@ -217,7 +258,12 @@ class MainWindow(QMainWindow):
                 self.recent_list.setItemWidget(item, widget)
 
     def _generate_all_recent(self):
-        """Generate documents for all recent projects using their saved doc counts."""
+        """Generate documents for all recent projects (M10: worker thread).
+
+        The per-project engine calls run in a GenerateWorker; the progress
+        dialog stays responsive and Cancel honestly stops the queue between
+        projects (never mid-call — the engine has no checkpoints).
+        """
         if not self.recent_projects:
             QMessageBox.information(self, 'Нет проектов', 'Список недавних проектов пуст.')
             return
@@ -231,39 +277,44 @@ class MainWindow(QMainWindow):
         progress = QProgressDialog('Генерация всех проектов...', 'Отмена', 0, total, self)
         progress.setWindowTitle('Пакетная генерация')
         progress.setWindowModality(Qt.WindowModal)
-        progress.setAutoClose(True)
-        progress.setAutoReset(True)
+        progress.setAutoClose(False)
+        progress.setAutoReset(False)
+        progress.show()
 
-        results = []
-        for i, project_path in enumerate(valid_projects):
-            if progress.wasCanceled():
-                break
-            progress.setValue(i)
-            progress.setLabelText(f'Генерация: {os.path.basename(project_path)}')
-            QApplication.processEvents()
+        jobs = [(os.path.basename(p),
+                 project_job(p, self._get_last_doc_count(p)))
+                for p in valid_projects]
+        self._batch_worker = GenerateWorker(jobs, self)
+        self._batch_progress = progress
+        self._batch_worker.progressed.connect(self._on_batch_progress)
+        progress.canceled.connect(self._batch_worker.request_cancel)
+        self._batch_worker.done.connect(self._on_batch_done)
+        self._batch_worker.start()
 
-            try:
-                num_docs = self._get_last_doc_count(project_path)
-                outputs = generate_project(project_path, num_docs=num_docs)
-                results.append((project_path, len(outputs), None))
-            except GenerationError as e:
-                results.append((project_path, 0, str(e)))
-            except Exception as e:
-                results.append((project_path, 0, str(e)))
+    def _on_batch_progress(self, index: int, label: str):
+        progress = getattr(self, '_batch_progress', None)
+        if progress is not None:
+            progress.setValue(index)
+            progress.setLabelText(f'Генерация: {label}')
 
-        progress.setValue(total)
-        progress.close()
+    def _on_batch_done(self, results):
+        progress = getattr(self, '_batch_progress', None)
+        if progress is not None:
+            progress.setValue(progress.maximum())
+            progress.close()
+            self._batch_progress = None
+        self._batch_worker = None
 
         # Show summary
-        success_count = sum(1 for _, cnt, err in results if err is None and cnt > 0)
+        success_count = sum(1 for _, out, err in results
+                            if err is None and out)
         msg_lines = [f'Обработано проектов: {len(results)}', f'Успешно: {success_count}', '']
-        for project_path, count, error in results:
-            name = os.path.basename(project_path)
+        for label, outputs, error in results:
             if error:
-                msg_lines.append(f'❌ {name}: {error}')
+                msg_lines.append(f'❌ {label}: {error}')
             else:
-                msg_lines.append(f'✅ {name}: {count} док.')
-        
+                msg_lines.append(f'✅ {label}: {len(outputs)} док.')
+
         QMessageBox.information(self, 'Генерация завершена', '\n'.join(msg_lines))
 
     def remove_recent_project(self, path: str):

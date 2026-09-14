@@ -16,6 +16,8 @@ from docxforge.gui.main_window import MainWindow, get_settings_path
 from docxforge.engine.schema import create_project
 
 
+pytestmark = pytest.mark.gui
+
 def find_button(window, text_contains):
     """Find a QPushButton by partial text match."""
     for btn in window.findChildren(QPushButton):

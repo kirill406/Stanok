@@ -151,7 +151,7 @@ class TestResolveSingleRow:
             text = _read_output_text(outputs[0])
             assert "First" in text
 
-    def test_linked_field_different_table_uses_primary_value(self):
+    def test_linked_field_different_table_uses_primary_value(self, caplog):
         """Linked field from a different table is found by primary value."""
         with tempfile.TemporaryDirectory() as tmp:
             _make_dirs(tmp)
@@ -198,16 +198,21 @@ class TestResolveSingleRow:
             # Since primary_col is "client_name" and primary_val is "Beta",
             # it won't find "Beta" in cities.xlsx's "city" column.
             # M16: cross-table linking requires matching column names
-            # (known limitation). TODO(M7-merge): after merging
-            # origin/fix/001-m6-data-reader, a lookup miss renders ''
-            # with a warning instead of borrowing rows[0].
+            # (known limitation). With mismatched names the lookup misses,
+            # and per M7 (merged from fix/001-m6-data-reader) the field
+            # renders as '' with a warning instead of borrowing rows[0].
             reader = DataReader()
             renderer = Renderer(tmp, reader)
             renderer.load_project()
-            outputs = renderer.render("t.docx", {})
+            with caplog.at_level(logging.WARNING,
+                                 logger='docxforge.engine.render_loop'):
+                outputs = renderer.render("t.docx", {})
             assert len(outputs) == 1
             text = _read_output_text(outputs[0])
             assert "Alpha" in text
+            assert "12000000" not in text
+            assert any('Lookup miss' in (r.getMessage() or '')
+                       for r in caplog.records)
 
     def test_single_row_index_zero_is_first_row(self):
         """row_index=0 selects first row."""

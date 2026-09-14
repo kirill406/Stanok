@@ -11,7 +11,7 @@ from lxml import etree
 from .xml_utils import W_NS
 from .merge import merge_and_replace_paragraph, expand_table_cycle
 from .formatting import compute_aggregation, format_counter, format_today
-from .image_utils import insert_image_in_paragraph, add_image_to_zdata, add_image_relationship
+from .image_utils import append_image_run, add_image_to_zdata, add_image_relationship
 from .schema import (
     TemplateConfig, FieldMapping, FieldType, AggregationFunction,
     BatchSourceConfig, RowIterationMode, ResumeState,
@@ -215,7 +215,13 @@ def process_xml(zdata: dict, config: TemplateConfig,
             expand_table_cycle(tbl, cycle, data, effective)
 
     # Insert images before text replacement
+    # Start past any media the template already ships (word/media/imageN.*),
+    # otherwise new images would overwrite the template's own files.
     image_index = 1
+    for _name in zdata:
+        _m = re.match(r'word/media/image(\d+)', _name)
+        if _m:
+            image_index = max(image_index, int(_m.group(1)) + 1)
     for p in body.findall('.//' + W_NS + 'p'):
         runs = p.findall(W_NS + 'r')
         if not runs:
@@ -225,6 +231,7 @@ def process_xml(zdata: dict, config: TemplateConfig,
             for t in r.findall(W_NS + 't'):
                 if t.text:
                     merged_text += t.text
+        pending = []
         for m in re.finditer(r'\{\{\s*image:(.+?)\s*\}\}', merged_text):
             img_name = m.group(1).strip()
             if img_name in image_paths:
@@ -232,15 +239,17 @@ def process_xml(zdata: dict, config: TemplateConfig,
                 if project_dir:
                     img_path = os.path.join(project_dir, img_path) if not os.path.isabs(img_path) else img_path
                 if os.path.exists(img_path):
-                    r_id = 'rIdImg{:d}'.format(image_index)
-                    add_image_to_zdata(zdata, img_path, image_index)
-                    add_image_relationship(zdata, r_id,
-                                          'word/media/image{:d}{}'.format(
-                                              image_index,
-                                              os.path.splitext(img_path)[1] or '.png'))
-                    insert_image_in_paragraph(p, r_id, name=img_name)
-                    image_index += 1
-                    break
+                    pending.append((img_name, img_path))
+        if not pending:
+            continue
+        for run in p.findall(W_NS + 'r'):
+            p.remove(run)
+        for img_name, img_path in pending:
+            media_path, _ct = add_image_to_zdata(zdata, img_path, image_index)
+            r_id = 'rIdImg{:d}'.format(image_index)
+            add_image_relationship(zdata, r_id, media_path)
+            append_image_run(p, r_id, name=img_name)
+            image_index += 1
 
     for p in body.findall('.//' + W_NS + 'p'):
         merge_and_replace_paragraph(p, effective)
@@ -258,6 +267,7 @@ def process_xml(zdata: dict, config: TemplateConfig,
                         for t in r.findall(W_NS + 't'):
                             if t.text:
                                 merged_text += t.text
+                    pending_hf = []
                     for m in re.finditer(r'\{\{\s*image:(.+?)\s*\}\}', merged_text):
                         img_name = m.group(1).strip()
                         if img_name in image_paths:
@@ -265,15 +275,16 @@ def process_xml(zdata: dict, config: TemplateConfig,
                             if project_dir:
                                 img_path = os.path.join(project_dir, img_path) if not os.path.isabs(img_path) else img_path
                             if os.path.exists(img_path):
-                                r_id = 'rIdImgHF{:d}'.format(image_index)
-                                add_image_to_zdata(zdata, img_path, image_index)
-                                add_image_relationship(zdata, r_id,
-                                                      'word/media/image{:d}{}'.format(
-                                                          image_index,
-                                                          os.path.splitext(img_path)[1] or '.png'))
-                                insert_image_in_paragraph(p, r_id, name=img_name)
-                                image_index += 1
-                                break
+                                pending_hf.append((img_name, img_path))
+                    if pending_hf:
+                        for run in p.findall(W_NS + 'r'):
+                            p.remove(run)
+                        for img_name, img_path in pending_hf:
+                            media_path, _ct = add_image_to_zdata(zdata, img_path, image_index)
+                            r_id = 'rIdImgHF{:d}'.format(image_index)
+                            add_image_relationship(zdata, r_id, media_path)
+                            append_image_run(p, r_id, name=img_name)
+                            image_index += 1
                 merge_and_replace_paragraph(p, effective)
             zdata[part_name] = etree.tostring(part_xml, xml_declaration=True,
                                                encoding='UTF-8', standalone=True)

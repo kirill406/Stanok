@@ -76,6 +76,9 @@ def add_image_to_zdata(zdata: dict, image_path: str,
                        image_index: int) -> Tuple[str, str]:
     """Add an image file to the zdata dict.
 
+    Also registers the image content type in [Content_Types].xml
+    (Override for the new part), unless a matching Default exists.
+
     Returns:
         (media_path, content_type) - the zip path and MIME type.
     """
@@ -83,7 +86,31 @@ def add_image_to_zdata(zdata: dict, image_path: str,
     ext = os.path.splitext(image_path)[1] or ".png"
     media_path = "word/media/image{:d}{}".format(image_index, ext)
     zdata[media_path] = data
+    _ensure_image_content_type(zdata, media_path, ext, ct)
     return media_path, ct
+
+
+def _ensure_image_content_type(zdata: dict, media_path: str,
+                               ext: str, content_type: str) -> None:
+    """Add an Override for the image part to [Content_Types].xml if needed."""
+    ct_path = "[Content_Types].xml"
+    if ct_path not in zdata:
+        return
+    CT_NS = "http://schemas.openxmlformats.org/package/2006/content-types"
+    root = etree.fromstring(zdata[ct_path])
+    ext_no_dot = ext.lstrip(".").lower()
+    for el in root:
+        if el.tag == "{%s}Default" % CT_NS:
+            if (el.get("Extension") or "").lower() == ext_no_dot:
+                return
+        elif el.tag == "{%s}Override" % CT_NS:
+            if el.get("PartName") == "/" + media_path:
+                return
+    override = etree.SubElement(root, "{%s}Override" % CT_NS)
+    override.set("PartName", "/" + media_path)
+    override.set("ContentType", content_type)
+    zdata[ct_path] = etree.tostring(root, xml_declaration=True,
+                                    encoding="UTF-8", standalone=True)
 
 
 def add_image_relationship(zdata: dict, r_id: str,
@@ -125,7 +152,18 @@ def insert_image_in_paragraph(paragraph, r_id: str,
     for run in paragraph.findall(W_NS + "r"):
         paragraph.remove(run)
 
+    append_image_run(paragraph, r_id, width_emu, height_emu, name)
+
+
+def append_image_run(paragraph, r_id: str,
+                     width_emu: int = DEFAULT_WIDTH_EMU,
+                     height_emu: int = DEFAULT_HEIGHT_EMU,
+                     name: str = "Image"):
+    """Append a run with an inline image drawing without touching other runs."""
+    W_NS = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+
     new_run = etree.SubElement(paragraph, W_NS + "r")
     drawing_xml = build_drawing_xml(r_id, width_emu, height_emu, name)
     drawing_el = etree.fromstring(drawing_xml)
     new_run.append(drawing_el)
+    return new_run

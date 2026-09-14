@@ -43,20 +43,23 @@ def clone_element(original):
     return etree.fromstring(etree.tostring(original))
 
 
+def _row_text(row) -> str:
+    """Merged text of a table row (all runs of all paragraphs).
+
+    Row-scoped single pass: placeholders split across runs become visible.
+    """
+    parts = []
+    for p in row.findall('.//' + W_NS + 'p'):
+        parts.append(''.join(run_text(r) for r in p.findall(W_NS + 'r')))
+    return '\n'.join(parts)
+
+
 def row_contains_placeholder(row, field_name: str) -> bool:
     pattern = re.compile(r'\{\{\s*' + re.escape(field_name) + r'\s*\}\}')
-    for p in row.findall('.//' + W_NS + 'p'):
-        for r in p.findall(W_NS + 'r'):
-            if pattern.search(run_text(r)):
-                return True
-    return False
+    return bool(pattern.search(_row_text(row)))
 
 
 def row_has_placeholders(row) -> bool:
-    for p in row.findall('.//' + W_NS + 'p'):
-        for r in p.findall(W_NS + 'r'):
-            if re.search(r'\{\{.+?\}\}', run_text(r)):
-                return True
-    return False
+    return bool(re.search(r'\{\{.+?\}\}', _row_text(row)))
 
 

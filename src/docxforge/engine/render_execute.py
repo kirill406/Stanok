@@ -2,9 +2,13 @@
 """Execute render loop: the main document generation orchestration."""
 
 import zipfile
+import logging
 import os
 from datetime import datetime
 from typing import Dict, List, Optional
+
+
+logger = logging.getLogger(__name__)
 
 from .schema import (
     TemplateConfig, FieldType, BatchSourceConfig, RowIterationMode, ResumeState,
@@ -149,7 +153,16 @@ def execute_render(renderer, template_rel_path: str,
                                 'Таблица «%s» исчерпана (строк: %d, начало: %d).' %
                                 (source_file, len(rows), start_offset))
 
-        if stopped and doc_index > 0:
+        if stopped:
+            # Never render a garbage document: a SEQUENTIAL source with no
+            # data for doc_index means there is nothing to render (on the
+            # first document the whole run is empty).
+            for message in warnings:
+                logger.warning(message)
+            if doc_index == 0:
+                logger.error(
+                    'No documents rendered: SEQUENTIAL batch source has '
+                    'no data rows for the first document.')
             break
 
         effective, image_paths = resolve_field_values(

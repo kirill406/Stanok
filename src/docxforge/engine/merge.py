@@ -116,50 +116,38 @@ def merge_and_replace_paragraph(paragraph, field_values: Dict[str, str]):
 
     merged_segments.append((cur_type, cur_start, cur_end, cur_repl, cur_template_run_idx))
 
-    new_runs = []
+    new_runs_by_idx = {}
     for seg_type, start, end, repl, template_run_idx in merged_segments:
         template_run = runs[template_run_idx]
         if seg_type == 'replace' and repl is not None:
             text = repl
         else:
             text = merged[start:end]
-        if text:
-            new_runs.append(clone_run_with_text(template_run, text))
+        if not text:
+            continue
+        new_run = clone_run_with_text(template_run, text)
+        # Non-text payload (w:br, w:drawing, ...) stays in its original run
+        # at its original position (handled below) - strip it from the clone
+        # so it is neither lost nor duplicated.
+        for child in list(new_run):
+            if child.tag != W_NS + 't' and child.tag != W_NS + 'rPr':
+                new_run.remove(child)
+        new_runs_by_idx.setdefault(template_run_idx, []).append(new_run)
 
-    if new_runs:
-        last_old = runs[-1]
-        prev = last_old
-        for nr in new_runs:
-            prev.addnext(nr)
-            prev = nr
-        last_new = prev
-    else:
-        last_new = runs[-1] if runs else None
-
-    # Identify runs to preserve: those with non-text content (w:br, w:drawing, etc.)
-    # but no text content - these should not be removed
-    runs_to_preserve = []
-    for run in runs:
-        has_text = run_text(run) != ''
+    for idx, run in enumerate(runs):
+        for new_run in new_runs_by_idx.get(idx, []):
+            run.addprevious(new_run)
         has_non_text = any(
             child.tag != W_NS + 't' and child.tag != W_NS + 'rPr'
             for child in run
         )
-        if not has_text and has_non_text:
-            runs_to_preserve.append(run)
-
-    for run in runs:
-        if run not in runs_to_preserve:
+        if has_non_text:
+            # Mixed run (text + w:br/w:drawing): its text was already re-emitted
+            # above, keep the run in place with only its non-text content.
+            for t_el in run.findall(W_NS + 't'):
+                run.remove(t_el)
+        else:
             paragraph.remove(run)
-
-    # Move preserved runs to the end (after all new content)
-    if runs_to_preserve and last_new is not None:
-        prev = last_new
-        for run in runs_to_preserve:
-            # Move the run to after last_new
-            run.getparent().remove(run)
-            prev.addnext(run)
-            prev = run
 
 
 def expand_table_cycle(table_element, cycle: CycleMapping,
@@ -184,6 +172,9 @@ def expand_table_cycle(table_element, cycle: CycleMapping,
                 template_row = row
                 break
     if template_row is None:
+        return
+
+    if not table_data:
         return
 
     for row_data in table_data:

@@ -8,10 +8,12 @@ from docxforge.engine.schema import Project, TemplateConfig
 
 
 def _load_project(project_dir: str) -> Project:
-    pf = os.path.join(project_dir, '\u043f\u0440\u043e\u0435\u043a\u0442.docxforge')
+    pf = os.path.join(project_dir, 'проект.docxforge')
     if not os.path.exists(pf):
-        print('\u041e\u0448\u0438\u0431\u043a\u0430: \u043f\u0440\u043e\u0435\u043a\u0442 \u043d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d \u0432 %s' % project_dir)
-        print('\u0421\u043e\u0437\u0434\u0430\u0439\u0442\u0435 \u043f\u0440\u043e\u0435\u043a\u0442: python cli.py create %s' % project_dir)
+        # Runtime error (exit 1): errors go to stderr, results stay on stdout.
+        print('Ошибка: проект не найден в %s' % project_dir, file=sys.stderr)
+        print('Создайте проект: python cli.py create %s' % project_dir,
+              file=sys.stderr)
         sys.exit(1)
     return Project.from_file(pf)
 

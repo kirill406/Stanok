@@ -34,7 +34,8 @@ def cmd_scan(args):
         if os.path.exists(args.template):
             tmpl_path = args.template
         else:
-            print('\u041e\u0448\u0438\u0431\u043a\u0430: \u0448\u0430\u0431\u043b\u043e\u043d \u043d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d: %s' % args.template)
+            print('Ошибка: шаблон не найден: %s' % args.template,
+                  file=sys.stderr)
             sys.exit(1)
 
     result = scan_template(tmpl_path)
@@ -79,6 +80,17 @@ def cmd_configure(args):
     project = _load_project(project_dir)
     tc = _get_or_create_template(project, args.template)
 
+    # Exit codes: 0 ok, 2 usage error, 1 runtime error.
+    # Errors go to stderr (like click.echo(err=True)); results stay on stdout.
+    if args.field and not args.field_type:
+        print('Ошибка: --field требует --field-type. '
+              'Укажите тип поля: constant, table, counter, today, image',
+              file=sys.stderr)
+        sys.exit(2)
+    if args.field_type and not args.field:
+        print('Предупреждение: --field-type указан без --field '
+              'и будет проигнорирован', file=sys.stderr)
+
     if args.field:
         ftype = args.field_type.lower()
         fm = FieldMapping()
@@ -94,7 +106,12 @@ def cmd_configure(args):
                 fm.linked_to = args.linked_to
         elif ftype == 'counter' or ftype == '\u0441\u0447\u0451\u0442\u0447\u0438\u043a':
             fm.type = FieldType.COUNTER
-            fm.start = int(args.start) if args.start else 1
+            try:
+                fm.start = int(args.start) if args.start else 1
+            except (TypeError, ValueError):
+                print('Ошибка: --start должен быть целым числом, '
+                      'получено: %r' % (args.start,), file=sys.stderr)
+                sys.exit(2)
             fm.format = args.format if args.format else '0001'
         elif ftype == 'today' or ftype == '\u0441\u0435\u0433\u043e\u0434\u043d\u044f':
             fm.type = FieldType.TODAY
@@ -103,8 +120,8 @@ def cmd_configure(args):
             fm.type = FieldType.IMAGE
             fm.value = args.value
         else:
-            print('\u041e\u0448\u0438\u0431\u043a\u0430: \u043d\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043d\u044b\u0439 \u0442\u0438\u043f \u043f\u043e\u043b\u044f: %s' % ftype)
-            print('\u0414\u043e\u043f\u0443\u0441\u0442\u0438\u043c\u044b\u0435: constant, table, counter, today, image')
+            print('\u041e\u0448\u0438\u0431\u043a\u0430: \u043d\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043d\u044b\u0439 \u0442\u0438\u043f \u043f\u043e\u043b\u044f: %s' % ftype, file=sys.stderr)
+            print('\u0414\u043e\u043f\u0443\u0441\u0442\u0438\u043c\u044b\u0435: constant, table, counter, today, image', file=sys.stderr)
             sys.exit(1)
 
         tc.fields[args.field] = fm
@@ -129,7 +146,12 @@ def cmd_configure(args):
 
         if func == 'sum_multiply':
             af = AggregationFunction.SUM_MULTIPLY
-            mult = float(args.multiplier) if args.multiplier else 1.0
+            try:
+                mult = float(args.multiplier) if args.multiplier else 1.0
+            except (TypeError, ValueError):
+                print('Ошибка: --multiplier должен быть числом, '
+                      'получено: %r' % (args.multiplier,), file=sys.stderr)
+                sys.exit(2)
         else:
             af_map = {'sum': AggregationFunction.SUM,
                        'count': AggregationFunction.COUNT,

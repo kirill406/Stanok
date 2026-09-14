@@ -178,6 +178,16 @@ def create_projects_from_template(
     folder_name_template: str,
     max_projects: Optional[int] = None,
 ) -> Tuple[str, int]:
+    """Create per-row projects for a flat template (full pipeline).
+
+    TABLE fields are frozen to row values as CONSTANT; the whole Данные/
+    folder is copied per project. Composite templates are routed to
+    ``create_nested_employee_projects``.
+
+    See also (M2): ``schema.create_projects`` — the engine-level entry
+    point (keeps TABLE mappings). Both share the folder-name contract
+    (resolve→sanitize→unique); see ``tests/test_m2_contract.py``.
+    """
     # Phase 2: detect composite (employee/project) vs flat mode up front.
     # Composite templates are delegated to create_nested_employee_projects()
     # (Phase 3); flat templates continue on the unchanged path below.

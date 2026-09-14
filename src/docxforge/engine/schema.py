@@ -445,6 +445,11 @@ def create_projects(
 
     Returns:
         List of created project directory paths.
+
+    See also (M2): ``generate.create_projects_from_template`` — the full
+    pipeline entry point (freezes TABLE→CONSTANT, routes composite
+    templates to nested generation). Both share the folder-name contract
+    (resolve→sanitize→unique); see ``tests/test_m2_contract.py``.
     """
     from docxforge.engine.data_reader import DataReader
 

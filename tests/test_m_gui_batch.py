@@ -258,3 +258,73 @@ class TestM12SaveAfterDialog:
         config = dlg._collect_config()
         assert dlg._count_primary_rows(config) == \
             dlg.renderer.count_source_rows('clients.xlsx') > 1
+
+
+def _make_int_column_project(tmp_path):
+    """Project whose batch column holds native ints (M6 types)."""
+    from docx import Document
+    from openpyxl import Workbook
+
+    from docxforge.engine.schema import (
+        BatchSourceConfig, FieldMapping, FieldType, Project,
+        RowIterationMode, TemplateConfig,
+    )
+    project_dir = str(tmp_path / 'intproj')
+    data_dir = os.path.join(project_dir, 'Данные')
+    tmpl_dir = os.path.join(project_dir, 'Шаблоны')
+    os.makedirs(data_dir, exist_ok=True)
+    os.makedirs(tmpl_dir, exist_ok=True)
+    doc = Document()
+    doc.add_paragraph('Name: {{ name }}, Qty: {{ qty }}')
+    doc.save(os.path.join(tmpl_dir, 't.docx'))
+    wb = Workbook()
+    ws = wb.active
+    ws.append(['name', 'qty'])
+    ws.append(['A', 5])
+    ws.append(['B', 10])
+    wb.save(os.path.join(data_dir, 'data.xlsx'))
+    prj = Project()
+    tc = TemplateConfig()
+    tc.fields['name'] = FieldMapping(
+        type=FieldType.TABLE, file='data.xlsx', column='name')
+    tc.fields['qty'] = FieldMapping(
+        type=FieldType.TABLE, file='data.xlsx', column='qty')
+    tc.batch_sources = {'data.xlsx': BatchSourceConfig(
+        file='data.xlsx', mode=RowIterationMode.CONSTANT)}
+    prj.templates['t.docx'] = tc
+    prj.to_file(os.path.join(project_dir, 'проект.docxforge'))
+    return project_dir
+
+
+class TestM6GuiDropdownTypes:
+    """M6 follow-up: native cell types must not crash Qt combos.
+
+    Regression for: TypeError "index 0 has type 'int' but 'str' is
+    expected" in on_lcc when a batch column holds ints.
+    """
+
+    def test_m6_int_lookup_column_fills_str_values(
+            self, qtbot, tmp_path):
+        project_dir = _make_int_column_project(tmp_path)
+        dlg = FillForm(project_dir, 't.docx')
+        qtbot.addWidget(dlg)
+        bw = dlg.batch_source_widgets['data.xlsx']
+        # Would raise TypeError inside the slot before the fix.
+        bw['lookup_col_combo'].setCurrentText('qty')
+        QTest.qWait(100)
+        lvc = bw['lookup_val_combo']
+        assert lvc.count() == 2
+        assert [lvc.itemText(i) for i in range(lvc.count())] == ['5', '10']
+
+    def test_m6_int_counter_column_fills_str_values(
+            self, qtbot, tmp_path):
+        project_dir = _make_int_column_project(tmp_path)
+        dlg = FillForm(project_dir, 't.docx')
+        qtbot.addWidget(dlg)
+        bw = dlg.batch_source_widgets['data.xlsx']
+        bw['counter_col_combo'].setCurrentText('qty')
+        QTest.qWait(100)
+        ccv = bw['counter_val_combo']
+        assert ccv.count() == 2
+        assert [ccv.itemText(i) for i in range(ccv.count())] == ['5', '10']
+        assert bw['counter_row_spin'].maximum() == 2

@@ -121,7 +121,9 @@ class BatchSourceRow(QObject):
             if col:
                 path = os.path.join(self.project_dir, 'Данные', self.df)
                 if os.path.exists(path):
-                    self.lvc.addItems(self.data_reader.get_distinct_values(path, col))
+                    # M6: engine returns native cell types; Qt combos need str.
+                    values = self.data_reader.get_distinct_values(path, col)
+                    self.lvc.addItems([str(v) for v in values])
                     if not had_value and self.lvc.count() > 0:
                         self.lvc.setCurrentIndex(0)
         self.lcc.currentTextChanged.connect(on_lcc)
@@ -155,8 +157,9 @@ class BatchSourceRow(QObject):
             return
         path = os.path.join(self.project_dir, 'Данные', self.df)
         if os.path.exists(path):
+            # M6: engine returns native cell types; Qt combos need str.
             values = self.data_reader.get_distinct_values(path, col)
-            self.ccv.addItems(values)
+            self.ccv.addItems([str(v) for v in values])
             # Update spin max based on row count
             all_data = self.data_reader.read_excel(path)
             if all_data:

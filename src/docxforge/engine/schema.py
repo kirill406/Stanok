@@ -283,18 +283,64 @@ _INVALID_FOLDER_CHARS = '<>:"/\\|?*'
 _GENERIC_PLACEHOLDER_RE = re.compile(r'\{\{\s*([^}/]+?)\s*\}\}')
 
 
-def _resolve_directory_template(template: str, row_data: Dict[str, Any]) -> str:
-    """Resolve {{placeholders}} (any whitespace) from row values."""
-    result = template
-    for key, value in row_data.items():
+def substitute_placeholders(template: str, values: Optional[Dict[str, Any]],
+                            on_missing: str = 'keep'):
+    """Canonical whitespace-tolerant ``{{key}}`` substitution (M1, single core).
+
+    All folder-name resolvers (``generate`` flat/nested, ``render_loop``,
+    ``_resolve_directory_template``) build their own value dict and share
+    this core, so whitespace tolerance and missing-key behaviour are uniform.
+
+    Args:
+        template: string with ``{{ name }}`` placeholders (any whitespace).
+        values: mapping of placeholder name to replacement value.
+        on_missing: ``'keep'`` leaves unresolved ``{{name}}`` intact (callers
+            fall back to numbered names); ``'empty'`` replaces them with ``''``.
+
+    Returns:
+        Tuple ``(result, unresolved)`` where ``unresolved`` is the list of
+        placeholder names left unsubstituted.
+    """
+    result = str(template)
+    for key, value in (values or {}).items():
         result = re.sub(
             r'\{\{\s*' + re.escape(str(key)) + r'\s*\}\}',
             str(value), result)
     unresolved = _GENERIC_PLACEHOLDER_RE.findall(result)
     if unresolved:
         logger.warning(
-            'Unresolved placeholders %s in directory template %r',
+            'Unresolved placeholders %s in template %r',
             unresolved, template)
+        if on_missing == 'empty':
+            result = _GENERIC_PLACEHOLDER_RE.sub('', result)
+    return result, unresolved
+
+
+def limit_rows(rows, max_projects: Optional[int]):
+    """Unified row-cap semantics (M8): ``None`` or ``<= 0`` means all rows.
+
+    Previously ``generate`` treated ``<= 0`` as "no cap" while
+    ``schema.create_projects`` returned ``[]``; every entry point now shares
+    this helper. Returns a list.
+    """
+    items = list(rows)
+    if max_projects is None:
+        return items
+    try:
+        cap = int(max_projects)
+    except (TypeError, ValueError):
+        logger.warning(
+            'Invalid max_projects=%r; using all %d rows',
+            max_projects, len(items))
+        return items
+    if cap <= 0:
+        return items
+    return items[:cap]
+
+
+def _resolve_directory_template(template: str, row_data: Dict[str, Any]) -> str:
+    """Resolve {{placeholders}} (any whitespace) from row values."""
+    result, _unresolved = substitute_placeholders(template, row_data or {})
     return result.strip()
 
 
@@ -362,7 +408,7 @@ def create_projects(
         output_base_dir: Base directory where new projects will be created
         template_name: Name of template in source project to use
         batch_source_name: Name of batch source in template config to iterate
-        max_projects: Maximum number of projects to create (None = all rows)
+        max_projects: Cap on created projects (None or <= 0 = all rows)
 
     Returns:
         List of created project directory paths.
@@ -393,10 +439,7 @@ def create_projects(
     if not all_rows:
         return []
 
-    if max_projects is not None:
-        if max_projects <= 0:
-            return []
-        all_rows = all_rows[:max_projects]
+    all_rows = limit_rows(all_rows, max_projects)
 
     created_projects = []
     used_folder_names = set()

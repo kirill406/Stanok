@@ -11,7 +11,7 @@ from typing import List, Optional, Tuple, Dict, Any
 
 from docxforge.engine.schema import (
     Project, ResumeState, TemplateConfig, FieldMapping, FieldType,
-    BatchSourceConfig, RowIterationMode
+    BatchSourceConfig, RowIterationMode, limit_rows, substitute_placeholders,
 )
 from docxforge.engine.data_reader import DataReader
 from docxforge.engine.renderer import Renderer
@@ -218,9 +218,8 @@ def create_projects_from_template(
     if not primary_rows:
         raise GenerationError(f'Primary batch source "{primary_source_config.file}" has no data rows')
 
+    primary_rows = limit_rows(primary_rows, max_projects)
     num_rows = len(primary_rows)
-    if max_projects is not None and max_projects > 0:
-        num_rows = min(num_rows, max_projects)
 
     projects_dir = os.path.join(project_path, 'Projects')
     try:
@@ -336,15 +335,7 @@ def _resolve_folder_name_template(
         if key not in effective:
             effective[key] = value
 
-    result = template
-    for key, value in effective.items():
-        # Tolerate any whitespace inside braces: {{key}}, {{ key }},
-        # {{  key  }}, {{key }}, etc. (exact-match replace missed these
-        # and produced literal "{{ ... }}" folder names).
-        result = re.sub(
-            r'\{\{\s*' + re.escape(key) + r'\s*\}\}', str(value), result)
-
-    unresolved = _GENERIC_PLACEHOLDER_RE.findall(result)
+    result, unresolved = substitute_placeholders(template, effective)
     if unresolved:
         logger.warning(
             'Unresolved placeholders %s in folder template %r '
@@ -681,7 +672,7 @@ def create_nested_employee_projects(
         project_path: Source project directory (with проект.docxforge).
         template_name: Template filename (relative to Шаблоны/).
         folder_name_template: Composite template, e.g. "{{employee}}/{{project_name}}".
-        max_projects: Cap on the TOTAL number of projects (only when > 0).
+        max_projects: Cap on the TOTAL number of projects (None or <= 0 = all).
         employee_column: Batch column used for grouping.
         project_column: Batch column used for project folders/names.
 
@@ -759,13 +750,17 @@ def create_nested_employee_projects(
             f'Column "{project_column}" not found in batch source '
             f'"{primary_source_config.file}" (required for project folders)')
 
-    indexed_rows = list(enumerate(primary_rows))
-    if max_projects is not None and max_projects > 0:
-        indexed_rows = indexed_rows[:max_projects]
+    indexed_rows = list(enumerate(limit_rows(primary_rows, max_projects)))
 
     groups: Dict[str, list] = {}
     for row_idx, row in indexed_rows:
         key = str(row.get(employee_column, '') or '').strip()
+        if not key:
+            # M9: never merge unrelated rows into a shared '' group.
+            key = f'unassigned_{row_idx}'
+            logger.warning(
+                'Empty employee value at row %d; using fallback group %r',
+                row_idx, key)
         groups.setdefault(key, []).append((row_idx, row))
 
     parsed = parse_composite_template(folder_name_template or '')

@@ -14,15 +14,20 @@ from docxforge.engine.schema import (
     BatchSourceConfig, RowIterationMode
 )
 from docxforge.engine.data_reader import DataReader
+from docxforge.engine.errors import (
+    EMPTY_SEQUENTIAL,
+    NO_DOCUMENTS_GENERATED,
+    EngineError,
+    message_for_code,
+)
 from docxforge.engine.renderer import Renderer
 
 
 logger = logging.getLogger(__name__)
 
 
-class GenerationError(Exception):
-    """Raised when document generation fails."""
-    pass
+class GenerationError(EngineError):
+    """Raised when document generation fails (carries ``code``)."""
 
 
 # Placeholder patterns for composite (employee/project) folder templates.
@@ -151,11 +156,17 @@ def generate_project(
             max_docs=num_docs,
             resume=resume,
         )
+    except GenerationError:
+        raise
+    except EngineError as e:
+        raise GenerationError(str(e), code=getattr(e, 'code', None)) from e
     except Exception as e:
         raise GenerationError(f'Generation failed: {e}') from e
 
     if not outputs:
-        raise GenerationError('No documents generated (check data sources and batch config)')
+        raise GenerationError(
+            message_for_code(NO_DOCUMENTS_GENERATED),
+            code=EMPTY_SEQUENTIAL)
 
     renderer.save_project()
     return outputs

@@ -14,6 +14,41 @@ from enum import Enum
 logger = logging.getLogger(__name__)
 
 
+def atomic_write_json(path: str, data: dict, backup_ext: Optional[str] = None) -> str:
+    """Write JSON atomically: tmp-write + flush + fsync + os.replace.
+
+    The payload is written to ``path + '.tmp'`` in the same directory
+    (same filesystem, so ``os.replace`` is atomic), flushed and fsynced,
+    then moved over ``path`` with ``os.replace``. The destination is
+    never left half-written: a crash between tmp-write and replace
+    leaves the old file intact. Optionally keeps a backup copy when
+    ``backup_ext`` is given (e.g. ``'.bak'``).
+
+    Returns ``path``.
+    """
+    tmp_file = path + '.tmp'
+    with open(tmp_file, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+        f.flush()
+        os.fsync(f.fileno())
+    if backup_ext and os.path.exists(path):
+        try:
+            os.replace(path, path + backup_ext)
+        except Exception as e:
+            logger.warning('Could not back up %s: %s', path, e)
+    os.replace(tmp_file, path)
+    try:
+        dir_name = os.path.dirname(os.path.abspath(path)) or '.'
+        fd = os.open(dir_name, os.O_RDONLY)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+    except Exception as e:
+        logger.debug('Could not fsync directory for %s: %s', path, e)
+    return path
+
+
 class FieldType(str, Enum):
     CONSTANT = 'constant'
     TABLE = 'table'
@@ -190,9 +225,7 @@ class Project:
         return project
 
     def to_file(self, path: str):
-        data = self._to_dict()
-        with open(path, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        atomic_write_json(path, self._to_dict())
 
     def _to_dict(self) -> dict:
         result = {'version': self.version, 'templates': {}}

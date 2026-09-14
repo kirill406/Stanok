@@ -13,6 +13,11 @@ logger = logging.getLogger(__name__)
 from .schema import (
     TemplateConfig, FieldType, BatchSourceConfig, RowIterationMode, ResumeState,
 )
+from .errors import (
+    EMPTY_SEQUENTIAL,
+    TABLE_EXHAUSTED,
+    message_for_code,
+)
 from .render_loop import (
     scan_raw_placeholders, resolve_field_values, process_xml,
     write_output_doc, update_resume_state,
@@ -134,7 +139,7 @@ def execute_render(renderer, template_rel_path: str,
             if row is None and bsc.mode == RowIterationMode.SEQUENTIAL:
                 if doc_index == 0:
                     warnings.append(
-                        'Таблица «%s» не имеет данных для генерации.' % source_file)
+                        message_for_code(EMPTY_SEQUENTIAL, source=source_file))
                 stopped = True
                 break
             per_source_rows[source_file] = row
@@ -150,8 +155,9 @@ def execute_render(renderer, template_rel_path: str,
                         stopped = True
                         if doc_index == 0:
                             warnings.append(
-                                'Таблица «%s» исчерпана (строк: %d, начало: %d).' %
-                                (source_file, len(rows), start_offset))
+                                message_for_code(
+                                    TABLE_EXHAUSTED, source=source_file,
+                                    rows=len(rows), start=start_offset))
 
         if stopped:
             # Never render a garbage document: a SEQUENTIAL source with no

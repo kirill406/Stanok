@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 """Core rendering engine: project I/O, row resolution, and render orchestration."""
 
-import json
 import os
 import logging
 from typing import Dict, List, Optional
@@ -34,21 +33,11 @@ class Renderer:
         self._atomic_write_project()
 
     def _atomic_write_project(self):
-        """Atomically write project file: write .tmp, backup .bak, rename."""
+        """Atomically write project file via the shared schema helper."""
+        from .schema import atomic_write_json
         project_file = os.path.join(self.project_dir, 'проект.docxforge')
-        tmp_file = project_file + '.tmp'
-        bak_file = project_file + '.bak'
         data = self.project._to_dict()
-        with open(tmp_file, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-            f.flush()
-            os.fsync(f.fileno())
-        if os.path.exists(project_file):
-            try:
-                os.replace(project_file, bak_file)
-            except Exception as e:
-                logger.warning(f'Could not back up {project_file}: {e}')
-        os.replace(tmp_file, project_file)
+        atomic_write_json(project_file, data, backup_ext='.bak')
 
     def get_template_path(self, template_name: str) -> str:
         base = os.path.join(self.project_dir, 'Шаблоны')

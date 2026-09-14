@@ -480,7 +480,14 @@ class MainWindow(QMainWindow):
 
 
 def app_icon_path():
-    """Absolute path to the application icon (docxforge/gui/icon.png)."""
+    """Absolute path to the application icon (docxforge/gui/icon.png).
+
+    In a PyInstaller build the icon is bundled via spec ``datas`` and
+    unpacked under ``sys._MEIPASS``.
+    """
+    if getattr(sys, 'frozen', False):
+        base = getattr(sys, '_MEIPASS', os.path.dirname(sys.executable))
+        return os.path.join(base, 'docxforge', 'gui', 'icon.png')
     gui_dir = os.path.dirname(os.path.abspath(__file__))
     return os.path.join(gui_dir, 'icon.png')
 

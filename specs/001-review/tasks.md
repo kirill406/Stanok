@@ -78,7 +78,7 @@
 - [x] M17 Minors из REPORT.md §MINOR (CLI stdout/stderr, RU мимо STRINGS, `showMaximized`,
   `get_template_path` walk, `read_all` ключи, `create_fixtures` global, переименования)
   → done в `fix/001-m16-tests` (`7d177a5`: stderr, STRINGS-синглы, warnings,
-  `show()`, кэш пути, фикстуры; RU-балк main/project/advanced ~70 литералов,
+  кэш пути, фикстуры; `showMaximized` возвращён по требованию пользователя; RU-балк main/project/advanced ~70 литералов,
   `read_all` ключи, массовые переименования — follow-up)
 
 ## Done

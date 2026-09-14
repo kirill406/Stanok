@@ -506,7 +506,7 @@ def run():
         QSpinBox { padding: 4px; border: 1px solid #ccc; border-radius: 4px; }
     """)
     window = MainWindow()
-    window.show()
+    window.showMaximized()  # Open in full screen
     sys.exit(app.exec_())
 
 

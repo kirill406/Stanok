@@ -93,7 +93,11 @@ class Renderer:
             for row in all_rows:
                 if str(row.get(bsc.lookup_column, '')).strip() == bsc.lookup_value.strip():
                     return row
-            return all_rows[0]
+            # M7: lookup miss is missing data, not rows[0].
+            logger.warning(
+                "Lookup '%s=%s' missed in '%s'; no row selected",
+                bsc.lookup_column, bsc.lookup_value, table_file)
+            return None
         return all_rows[0]
 
     def _resolve_row_for_source(self, source_file: str, doc_index: int,
@@ -128,7 +132,10 @@ class Renderer:
         if bsc.mode == RowIterationMode.CIRCULAR:
             return all_rows[effective_i % len(all_rows)]
 
-        return all_rows[0]
+        # M7: unknown iteration mode selects no row (was rows[0]).
+        logger.warning("Unknown batch mode %r for '%s'; no row selected",
+                       bsc.mode, source_file)
+        return None
 
     def _compute_total_docs(self, config: TemplateConfig,
                             batch_configs: Dict[str, BatchSourceConfig],

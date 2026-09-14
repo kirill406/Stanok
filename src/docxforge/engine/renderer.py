@@ -120,6 +120,15 @@ class Renderer:
 
         return all_rows[0]
 
+    def count_source_rows(self, source_file: str) -> int:
+        """Return the number of data rows in a batch source file (M3).
+
+        Single engine row-count reused by the GUI (fill-form primary-row
+        count, auto-info) and by :meth:`_compute_total_docs`, so the three
+        previously duplicated counters cannot drift apart.
+        """
+        return len(self._read_table_data(source_file))
+
     def _compute_total_docs(self, config: TemplateConfig,
                             batch_configs: Dict[str, BatchSourceConfig],
                             resume: Optional[ResumeState] = None) -> Optional[int]:
@@ -136,11 +145,10 @@ class Renderer:
 
         min_remaining = None
         for name, bsc in sequential_sources:
-            all_rows = self._read_table_data(name)
             start_offset = 0
             if resume and resume.continue_from_last:
                 start_offset = resume.sources.get(name, 0)
-            remaining = max(0, len(all_rows) - start_offset)
+            remaining = max(0, self.count_source_rows(name) - start_offset)
             if min_remaining is None or remaining < min_remaining:
                 min_remaining = remaining
 

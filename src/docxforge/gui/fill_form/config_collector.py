@@ -50,6 +50,9 @@ class ConfigCollectorMixin:
             elif bw['radio_circular'].isChecked():
                 mode = RowIterationMode.CIRCULAR
             bsc = BatchSourceConfig(file=df, mode=mode)
+            # B4: per-table «skip copying» flag from the batch row checkbox.
+            _skip_box = bw.get('chk_skip_copy')
+            bsc.skip_copy = bool(_skip_box is not None and _skip_box.isChecked())
             if mode == RowIterationMode.CONSTANT:
                 bsc.lookup_column = bw['lookup_col_combo'].currentText() or None
                 bsc.lookup_value = bw['lookup_val_combo'].currentText() or None

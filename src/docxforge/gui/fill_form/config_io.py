@@ -108,6 +108,10 @@ class ConfigIOMixin:
                         bw['counter_col_combo'].setCurrentIndex(idx)
                 if bsc.counter_current_row > 1:
                     bw['counter_row_spin'].setValue(bsc.counter_current_row)
+            # B4: restore the «skip copying» checkbox.
+            _skip_box = bw.get('chk_skip_copy')
+            if _skip_box is not None:
+                _skip_box.setChecked(bool(getattr(bsc, 'skip_copy', False)))
         # B1: sync the «Поля шаблона для генерируемых проектов» section
         # (fields exist by now) and restore the stored subset selection.
         if hasattr(self, '_sync_generated_field_checks'):
@@ -215,16 +219,27 @@ class ConfigIOMixin:
             # Create projects mode (flat or nested employee/project structure)
             self._create_projects_mode(config)
         else:
-            # Normal document generation mode
+            # Normal document generation mode.
+            # B3: the template may disappear (or become unreadable) after the
+            # dialog was opened, so engine errors are reported via a warning
+            # dialog instead of escaping the Qt slot (FileNotFoundError crash).
             progress = QProgressDialog(STRINGS['msg_progress_generating'], None, 0, total_docs, self)
             progress.setWindowTitle(STRINGS['msg_progress_creating_docs'])
             progress.setWindowModality(1)  # Qt.WindowModal
-            outputs = self.renderer.render(
-                self.template_rel_path,
-                {},
-                output_dir=os.path.join(self.project_dir, 'Результат'),
-                max_docs=total_docs,
-            )
+            try:
+                outputs = self.renderer.render(
+                    self.template_rel_path,
+                    {},
+                    output_dir=os.path.join(self.project_dir, 'Результат'),
+                    max_docs=total_docs,
+                )
+            except Exception as e:
+                logging.getLogger(__name__).error('Render failed: %s', e)
+                progress.close()
+                QMessageBox.warning(
+                    self, STRINGS['msg_error'],
+                    STRINGS['msg_render_error'].format(error=e))
+                return
             progress.close()
             if outputs:
                 QMessageBox.information(

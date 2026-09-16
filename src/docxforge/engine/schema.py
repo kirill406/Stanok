@@ -114,6 +114,8 @@ class BatchSourceConfig:
     # Per-source counter settings (for sequential and circular modes)
     counter_column: Optional[str] = None  # column to use as counter
     counter_current_row: int = 1          # current row number (1-based)
+    # B4: skip copying this table's file into generated projects
+    skip_copy: bool = False
 
 
 @dataclass
@@ -228,6 +230,7 @@ class Project:
                     continue_from_last=bdata.get('continue_from_last', True),
                     counter_column=bdata.get('counter_column'),
                     counter_current_row=bdata.get('counter_current_row', 1),
+                    skip_copy=bdata.get('skip_copy', False),
                 )
             tc.total_docs = tpl_data.get('batch', {}).get('total_docs')
             tc.filename_template = tpl_data.get('batch', {}).get('filename_template')
@@ -301,6 +304,8 @@ class Project:
                         bd['counter_column'] = bsc.counter_column
                     if bsc.counter_current_row != 1:
                         bd['counter_current_row'] = bsc.counter_current_row
+                    if bsc.skip_copy:
+                        bd['skip_copy'] = True
                     batch['sources'][bname] = bd
             if tc.total_docs is not None:
                 batch['total_docs'] = tc.total_docs

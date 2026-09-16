@@ -1040,5 +1040,141 @@ class TestCreateProjectsE2EPhase7:
                     assert out.endswith('.docx')
 
 
+class TestFillFormCrashGuardsPhase5:
+    """Phase 5 (B3): crashes from the fill menu become error dialogs."""
+
+    def test_create_missing_template_shows_warning(self, qtbot, sample_project, monkeypatch):
+        """Test _create with template deleted after open warns instead of raising."""
+        dlg = FillForm(sample_project, 'all_fields.docx')
+        qtbot.addWidget(dlg)
+        dlg.show()
+
+        # Template disappears after the dialog was opened (RECON B3 scenario 1).
+        os.remove(os.path.join(sample_project, 'Шаблоны', 'all_fields.docx'))
+
+        warnings = []
+        infos = []
+        monkeypatch.setattr(QMessageBox, 'warning', lambda *a, **k: warnings.append(a))
+        monkeypatch.setattr(QMessageBox, 'information', lambda *a, **k: infos.append(a))
+
+        dlg._create()  # Must not raise FileNotFoundError.
+
+        assert len(warnings) == 1
+        assert warnings[0][1] == STRINGS['msg_error']
+        assert STRINGS['msg_generation_failed'] in warnings[0][2]
+        assert infos == []
+
+
+    def test_corrupt_project_file_guarded(self, qtbot, sample_project, monkeypatch):
+        """Test corrupt проект.docxforge raises guarded error with dialog, not raw traceback."""
+        from docxforge.gui.fill_form import FillFormOpenError
+
+        criticals = []
+        monkeypatch.setattr(QMessageBox, 'critical', lambda *a, **k: criticals.append(a))
+
+        # Corrupt the project config (RECON B3 scenario 2).
+        with open(os.path.join(sample_project, 'проект.docxforge'), 'w', encoding='utf-8') as f:
+            f.write('{broken json,,,}')
+
+        with pytest.raises(FillFormOpenError):
+            FillForm(sample_project, 'all_fields.docx')
+
+        assert len(criticals) == 1
+        assert criticals[0][1] == STRINGS['msg_error']
+        assert STRINGS['msg_project_load_error'].split(':')[0] in criticals[0][2]
+
+    def test_corrupt_template_guarded(self, qtbot, sample_project, monkeypatch):
+        """Test broken template raises guarded error with dialog, not raw BadZipFile."""
+        from docxforge.gui.fill_form import FillFormOpenError
+
+        criticals = []
+        monkeypatch.setattr(QMessageBox, 'critical', lambda *a, **k: criticals.append(a))
+
+        # Corrupt the template (RECON B3 scenario 3).
+        with open(os.path.join(sample_project, 'Шаблоны', 'all_fields.docx'), 'wb') as f:
+            f.write(b'not a zip file')
+
+        with pytest.raises(FillFormOpenError):
+            FillForm(sample_project, 'all_fields.docx')
+
+        assert len(criticals) == 1
+        assert criticals[0][1] == STRINGS['msg_error']
+        assert STRINGS['msg_template_load_error'].split(':')[0] in criticals[0][2]
+
+
+    def test_open_fill_form_corrupt_template_warns(self, qtbot, sample_project, monkeypatch):
+        """Test _open_fill_form with broken template warns, never opens dialog."""
+        from docxforge.gui.project_window import ProjectWindow
+
+        window = ProjectWindow(sample_project, _MockMainWindow())
+        qtbot.addWidget(window)
+
+        with open(os.path.join(sample_project, 'Шаблоны', 'all_fields.docx'), 'wb') as f:
+            f.write(b'not a zip file')
+
+        warnings = []
+        criticals = []
+        monkeypatch.setattr(QMessageBox, 'warning', lambda *a, **k: warnings.append(a))
+        monkeypatch.setattr(QMessageBox, 'critical', lambda *a, **k: criticals.append(a))
+
+        window._open_fill_form('all_fields.docx')  # Must not raise BadZipFile.
+
+        assert len(warnings) == 1
+        assert warnings[0][1] == STRINGS['msg_error']
+        assert STRINGS['msg_template_load_error'].split(':')[0] in warnings[0][2]
+        assert criticals == []
+
+    def test_open_fill_form_corrupt_project_aborts(self, qtbot, sample_project, monkeypatch):
+        """Test _open_fill_form with corrupt config aborts with single dialog."""
+        from docxforge.gui.project_window import ProjectWindow
+
+        window = ProjectWindow(sample_project, _MockMainWindow())
+        qtbot.addWidget(window)
+
+        with open(os.path.join(sample_project, 'проект.docxforge'), 'w', encoding='utf-8') as f:
+            f.write('{broken json,,,}')
+
+        warnings = []
+        criticals = []
+        monkeypatch.setattr(QMessageBox, 'warning', lambda *a, **k: warnings.append(a))
+        monkeypatch.setattr(QMessageBox, 'critical', lambda *a, **k: criticals.append(a))
+
+        window._open_fill_form('all_fields.docx')  # Must not raise JSONDecodeError.
+
+        # FillForm guard already showed the error; _open_fill_form must not double it.
+        assert len(criticals) == 1
+        assert warnings == []
+
+    def test_open_fill_form_missing_template_warns(self, qtbot, sample_project, monkeypatch):
+        """Test _open_fill_form with absent template warns instead of crashing."""
+        from docxforge.gui.project_window import ProjectWindow
+
+        window = ProjectWindow(sample_project, _MockMainWindow())
+        qtbot.addWidget(window)
+
+        warnings = []
+        monkeypatch.setattr(QMessageBox, 'warning', lambda *a, **k: warnings.append(a))
+
+        window._open_fill_form('no_such_template.docx')  # Must not raise.
+
+        assert len(warnings) == 1
+
+
+class _MockMainWindow:
+    """Minimal MainWindow stand-in for ProjectWindow tests."""
+
+    def show(self):
+        pass
+
+    def _add_recent(self, path):
+        pass
+
+    def _refresh_recent_list(self):
+        pass
+
+    def remove_recent_project(self, path):
+        pass
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])

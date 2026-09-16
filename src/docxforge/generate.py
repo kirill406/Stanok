@@ -309,7 +309,12 @@ def create_projects_from_template(
             try:
                 data_subdir = os.path.join(project_subdir, 'Данные')
                 if src_data_dir is not None:
-                    shutil.copytree(src_data_dir, data_subdir)
+                    # B4: excluded tables are not copied into new projects.
+                    _skip = get_skip_copy_tables(template_config.batch_sources)
+                    if _skip:
+                        copy_data_tree(src_data_dir, data_subdir, _skip)
+                    else:
+                        shutil.copytree(src_data_dir, data_subdir)
                 else:
                     os.makedirs(data_subdir, exist_ok=True)
                 os.makedirs(os.path.join(project_subdir, 'Результат'),
@@ -964,7 +969,12 @@ def create_nested_employee_projects(
 
                 data_dir = os.path.join(project_dir, 'Данные')
                 if os.path.isdir(source_data_dir):
-                    shutil.copytree(source_data_dir, data_dir)
+                    # B4: excluded tables are not copied into new projects.
+                    _skip = get_skip_copy_tables(template_config.batch_sources)
+                    if _skip:
+                        copy_data_tree(source_data_dir, data_dir, _skip)
+                    else:
+                        shutil.copytree(source_data_dir, data_dir)
                 else:
                     os.makedirs(data_dir, exist_ok=True)
 

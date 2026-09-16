@@ -4,6 +4,7 @@
 import os
 import shutil
 import logging
+import zipfile
 from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                               QPushButton, QLabel, QTreeWidget, QTreeWidgetItem,
                               QListWidget, QListWidgetItem, QFileDialog,
@@ -11,7 +12,7 @@ from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont
 
-from docxforge.gui.fill_form import FillForm
+from docxforge.gui.fill_form import FillForm, FillFormOpenError
 from docxforge.engine.data_reader import DataReader
 from .strings import STRINGS
 
@@ -188,7 +189,26 @@ class ProjectWindow(QMainWindow):
             QMessageBox.warning(self, 'Ошибка', 'Шаблон не найден: %s' % full_path)
             return
 
-        dlg = FillForm(self.project_dir, rel_path, self)
+        # B3: the file may exist but be unreadable (broken zip). Validate
+        # readability, not just existence, before opening the fill form.
+        if not zipfile.is_zipfile(full_path):
+            logger.error('Template is not a valid .docx: %s', full_path)
+            QMessageBox.warning(self, STRINGS['msg_error'],
+                                STRINGS['msg_template_load_error'].format(error=full_path))
+            return
+
+        try:
+            dlg = FillForm(self.project_dir, rel_path, self)
+        except FillFormOpenError:
+            # FillForm already showed an error dialog (corrupt
+            # проект.docxforge or template unreadable past the zip check).
+            logger.error('FillForm failed to open for %s', rel_path)
+            return
+        except Exception as e:
+            logger.error('FillForm failed to open for %s: %s', rel_path, e)
+            QMessageBox.warning(self, STRINGS['msg_error'],
+                                STRINGS['msg_template_load_error'].format(error=e))
+            return
         dlg.exec_()
         self._scan_project()
 

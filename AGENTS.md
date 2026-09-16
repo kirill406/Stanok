@@ -65,7 +65,7 @@
 - Pre-commit hook runs automatically: `pytest tests/ -q` + `trufflehog3`
 - If hook false-positive: ask user
 - Push: `git push -u origin <branch-name>` after successful commit
-- Build exe ONLY via `pyinstaller Станок.spec` (has src pathex, icon, datas); never bare `pyinstaller run.py` — it overwrites the spec and yields a broken exe
+- Build exe with flags (Станок.spec is gitignored, not in repo): `pyinstaller --onefile --windowed --name Станок --paths src --add-data "src/docxforge/gui/icon.png;docxforge/gui" --icon src/docxforge/gui/icon.ico run.py`; never omit --paths/--add-data/--icon (broken exe)
 - Open PR: one logical change per PR, link to PLAN.md item
 - Squash merge to main after review
 - Separate refactoring from features into different commits/branches

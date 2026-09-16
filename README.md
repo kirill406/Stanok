@@ -24,16 +24,19 @@ python run.py
 
 ### Сборка .exe
 
+`Станок.spec` в `.gitignore` (в репозитории её нет), поэтому сборка — одной
+командой с флагами:
+
 `powershell
 pip install pyinstaller
-pyinstaller Станок.spec
+pyinstaller --onefile --windowed --name Станок --paths src --add-data "src/docxforge/gui/icon.png;docxforge/gui" --icon src/docxforge/gui/icon.ico run.py
 `
 
 Результат: dist/Станок.exe — один файл, работает без Python.
 
-> ⚠️ Собирай только через `Станок.spec` — в нём прописаны `src/` (`pathex`),
-> иконки и данные. Голый `pyinstaller run.py` даст нерабочий .exe
-> (`ModuleNotFoundError: No module named 'docxforge'`) и затрёт спеку.
+> ⚠️ Флаги обязательны: `--paths src` (пакет `docxforge` в src-layout),
+> `--add-data` (иконка, которую ждёт приложение), `--icon` (иконка exe).
+> Без них получится нерабочий .exe (`ModuleNotFoundError: No module named 'docxforge'`).
 
 ## Быстрый старт
 

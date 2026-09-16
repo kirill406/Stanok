@@ -7,17 +7,17 @@ Scope (Non-overlap contract): `batch_section.py`, `field_rows.py`,
 
 ## Subitems
 
-- [ ] P1 — STRINGS: ключ `batch_skip_copy` («Исключить копирование»),
+- [x] P1 — STRINGS: ключ `batch_skip_copy` («Исключить копирование»),
   без хардкода русских строк (`src/docxforge/gui/strings.py`, аддитивно).
-- [ ] P2 — UI: чекбокс «Исключить копирование» у каждой таблицы
+- [x] P2 — UI: чекбокс «Исключить копирование» у каждой таблицы
   (`BatchSourceRow` в `batch_section.py` + ключ `chk_skip_copy`
   в `get_widgets_dict()`); всегда видим, т.к. переключение видимости
   по режиму потребовало бы `form_dialog.py` (запрещён).
-- [ ] P3 — Engine: флаги копирования в `generate.py` — ТОЛЬКО новые функции:
+- [x] P3 — Engine: флаги копирования в `generate.py` — ТОЛЬКО новые функции:
   `get_skip_copy_tables()` (чтение флага через `getattr`, без изменения
   схемы) + `copy_data_tree()` (копирование `Данные/` с исключениями);
   существующие функции создания проектов НЕ трогать (зона B1).
-- [ ] P4 — Тест: регрессионный `tests/test_generate_skip_copy.py`
+- [x] P4 — Тест: регрессионный `tests/test_generate_skip_copy.py`
   (исключённые таблицы не копируются, остальные — как раньше) + зелёный
   `pytest tests/ -q`.
 

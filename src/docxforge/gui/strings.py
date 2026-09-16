@@ -75,6 +75,7 @@ STRINGS = {
     'batch_counter_current_row': 'Текущая строка:',
     'batch_counter_value': 'Значение строки:',
     'batch_counter_summary': 'Счётчики источников: {counters}',
+    'batch_skip_copy': 'Исключить копирование',
     'fill_directory_template': 'Шаблон папки:',
     'fill_directory_placeholder': '{{ region }}/{{ city }} (пусто = без подпапок)',
     'fill_directory_tooltip': 'Используйте {{ field_name }} для подстановки. Папки будут созданы внутри выходной директории. Пусто = файлы напрямую в папку результатов.',

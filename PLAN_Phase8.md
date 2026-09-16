@@ -4,8 +4,11 @@ Branch: `fix/002-generation-counter` (от `spec-002`). Spec: `specs/002-stabili
 Зона: только engine counter path (`src/docxforge/engine/schema.py` — хелпер, `src/docxforge/generate.py` — минимальные вызовы хелпера в путях создания, `tests/test_b6_generation_counter.py` — регрессионный тест). Чужие зоны (GUI, логи, renderer merge, B5-переименование) не трогать.
 
 ## Подпункты
-- [ ] P1. Разведка: найти путь «создание из генерации», зафиксировать незачёт счётчика (этот файл).
+- [x] P1. Разведка: найти путь «создание из генерации», зафиксировать незачёт счётчика (этот файл).
 - [x] P2. Repro: скрипт воспроизведения, зафиксировать было/стало значением счётчика.
+- [x] P3. Engine-хелпер счётчика в `engine/schema.py` (математика как обычная генерация).
+- [x] P4. Вызовы хелпера в трёх путях создания (`schema.create_projects`, `generate.create_projects_from_template`, `generate.create_nested_employee_projects`) + persist источника.
+- [x] P5. Регрессионный тест `tests/test_b6_generation_counter.py` (было/стало), прогон затронутых тестов.
 - [ ] P3. Engine-хелпер счётчика в `engine/schema.py` (математика как обычная генерация).
 - [ ] P4. Вызовы хелпера в трёх путях создания (`schema.create_projects`, `generate.create_projects_from_template`, `generate.create_nested_employee_projects`) + persist источника.
 - [ ] P5. Регрессионный тест `tests/test_b6_generation_counter.py` (было/стало), прогон затронутых тестов.
@@ -20,3 +23,7 @@ Branch: `fix/002-generation-counter` (от `spec-002`). Spec: `specs/002-stabili
 - Скрипт: `C:/Users/kirill/AppData/Local/Temp/opencode/b6_repro.py` (источник: COUNTER start=1 + SEQUENTIAL `clients.xlsx` на 3 строки, `resume.last_counter_value=2` как след двух прошлых генераций).
 - Было: `create_projects_from_template(..., max_projects=2)` → `before=2 created=2 after=2`, ожидалось `after=4`. Незачёт в `generate.create_projects_from_template` (плоский путь; композит и `schema.create_projects` кода счётчика не содержат вовсе — та же дыра).
 - Контроль: `generate_project(..., num_docs=1)` → `before=2 docs=1 after=3`. Обычная генерация счётчик двигает (`render_execute` → `update_resume_state` → `save_project`).
+- После фикса (P4): repro flat → `before=2 created=2 after=4 expected=4`. Стало = ожиданию.
+
+## P5. Регрессионный тест
+- `tests/test_b6_generation_counter.py`, 6 тестов: математика хелпера (continue / no-continue / zero-noop) + было/стало для плоского (2→4), вложенного (1→7) и engine-уровня (0→3) путей.

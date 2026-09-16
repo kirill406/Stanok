@@ -39,7 +39,7 @@ Non-overlap: B3 имеет ПРИОРИТЕТ на guard-ханках `config_io
       сигналы autosave — внутри своего билдера (не трогаю `_connect_autosave`),
       фильтр в `_build_project_config(include_fields=...)`, проброс из flat + nested.
       GUI-тест секции + unit-тест фильтра в `tests/test_002_projects.py`. Коммит + push.
-- [ ] P5. Финал: `checkout spec-002`, `pull --ff-only`, `merge --no-ff feat/002-projects`,
+- [x] P5. Финал: `checkout spec-002`, `pull --ff-only`, `merge --no-ff feat/002-projects`,
       `push origin spec-002`. Конфликт/push-reject → НЕ форсить: `merge --abort`,
       ветку оставить запушенной, сообщить в отчёте. Прогон затронутых тестов.
 

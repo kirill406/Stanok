@@ -5,15 +5,12 @@ Run with: python -m pytest tests/test_cli.py -v
 """
 
 import os
-import sys
 import json
 import tempfile
 import zipfile
 import shutil
 from pathlib import Path
 
-# Add project root to path
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from docxforge.engine.schema import (
     Project, TemplateConfig, FieldMapping, FieldType,

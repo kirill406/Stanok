@@ -16,6 +16,8 @@ from docxforge.gui.strings import STRINGS
 from docxforge.engine.schema import Project, FieldType, create_project
 
 
+pytestmark = pytest.mark.gui
+
 class TestFillForm:
     """Tests for the fill form dialog."""
 
@@ -545,15 +547,19 @@ class TestFillFormIntegrationPhase7:
         dlg.show()
 
         # Mock message boxes to avoid modal dialogs
-        monkeypatch.setattr(QMessageBox, 'warning', lambda *a, **k: None)
-        monkeypatch.setattr(QMessageBox, 'information', lambda *a, **k: None)
+        warned = []
+        info_called = []
+        monkeypatch.setattr(QMessageBox, 'warning', lambda *a, **k: warned.append(a))
+        monkeypatch.setattr(QMessageBox, 'information', lambda *a, **k: info_called.append(a))
 
         # Call validate method directly (avoid button click which may block)
         dlg._validate()
         QTest.qWait(500)
 
-        # Test passes if no exception
-        assert True
+        # M16: real assertion instead of `assert True` — the fixture config
+        # is valid, so validation must report success and no warning.
+        assert warned == []
+        assert len(info_called) == 1
 
     def test_validation_ok_shows_info(self, qtbot, sample_project, monkeypatch):
         """Test validation shows success info when config is valid."""

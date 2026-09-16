@@ -1,13 +1,13 @@
 # AGENTS.md — FirstAgent (docxforge)
 
 ## Commands
-- Install: `pip install -r requirements.txt`
+- Install: `uv sync` (needs network once for `uv lock`)
 - Run GUI: `python run.py`
 - Run CLI: `python cli.py --help`
 - Test (fast): `python -m pytest tests/ -q`
 - Test (verbose): `python -m pytest tests/ -v`
 - Coverage: `python -m pytest --cov=docxforge.engine --cov-report=term-missing tests/`
-- Smoke test: `python test_engine.py`
+- Smoke test: `python tests/smoke_engine.py`
 - Install git hooks: `scripts/install-hooks.bat`
 
 ## Stack
@@ -19,13 +19,11 @@
 - Pre-commit: pytest + trufflehog3 (auto on commit)
 
 ## Structure
-- `docxforge/engine/` — core business logic (pure Python, no Qt)
-- `docxforge/gui/` — PyQt5 desktop UI (depends on engine)
+- `src/docxforge/engine/` — core business logic (pure Python, no Qt)
+- `src/docxforge/gui/` — PyQt5 desktop UI (depends on engine)
 - `cli.py` — CLI adapter over engine
 - `tests/` — pytest suite mirroring engine modules
 - `scripts/` — automation (hook installer, pre-commit)
-- `.env.example` — empty template for required env vars
-- `.env` — local secrets (gitignored, never commit)
 
 ## Prohibitions (AI Must Never)
 - Never Commit `.env` or any file with real credentials — blocked by pre-commit hook
@@ -77,4 +75,3 @@
 
 ## Detailed Docs (read on demand)
 - Design docs: `docs/ideas/`
-- Prototype scripts: `prototype/`

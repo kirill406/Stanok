@@ -9,9 +9,12 @@ from openpyxl import Workbook
 FIXTURES_DIR = os.path.join(os.path.dirname(__file__), 'documents')
 
 
-def create_simple_template():
+def create_simple_template(base_dir=None):
+    """Build fixture (M17: base_dir explicit, no global leak)."""
+    root = base_dir if base_dir is not None else FIXTURES_DIR
+
     """Simple template with just text placeholders."""
-    project_dir = os.path.join(FIXTURES_DIR, 'simple')
+    project_dir = os.path.join(root, 'simple')
     os.makedirs(os.path.join(project_dir, 'Шаблоны'), exist_ok=True)
     os.makedirs(os.path.join(project_dir, 'Данные'), exist_ok=True)
 
@@ -56,9 +59,12 @@ def create_simple_template():
         json.dump(config, f, ensure_ascii=False, indent=2)
 
 
-def create_cycle_template():
+def create_cycle_template(base_dir=None):
+    """Build fixture (M17: base_dir explicit, no global leak)."""
+    root = base_dir if base_dir is not None else FIXTURES_DIR
+
     """Template with table cycle (repeating rows)."""
-    project_dir = os.path.join(FIXTURES_DIR, 'with_cycle')
+    project_dir = os.path.join(root, 'with_cycle')
     os.makedirs(os.path.join(project_dir, 'Шаблоны'), exist_ok=True)
     os.makedirs(os.path.join(project_dir, 'Данные'), exist_ok=True)
 
@@ -138,9 +144,12 @@ def create_cycle_template():
         json.dump(config, f, ensure_ascii=False, indent=2)
 
 
-def create_aggregation_template():
+def create_aggregation_template(base_dir=None):
+    """Build fixture (M17: base_dir explicit, no global leak)."""
+    root = base_dir if base_dir is not None else FIXTURES_DIR
+
     """Template with aggregation (sum)."""
-    project_dir = os.path.join(FIXTURES_DIR, 'with_aggregation')
+    project_dir = os.path.join(root, 'with_aggregation')
     os.makedirs(os.path.join(project_dir, 'Шаблоны'), exist_ok=True)
     os.makedirs(os.path.join(project_dir, 'Данные'), exist_ok=True)
 
@@ -189,9 +198,12 @@ def create_aggregation_template():
         json.dump(config, f, ensure_ascii=False, indent=2)
 
 
-def create_batch_modes_template():
+def create_batch_modes_template(base_dir=None):
+    """Build fixture (M17: base_dir explicit, no global leak)."""
+    root = base_dir if base_dir is not None else FIXTURES_DIR
+
     """Template to test different batch modes."""
-    project_dir = os.path.join(FIXTURES_DIR, 'batch_modes')
+    project_dir = os.path.join(root, 'batch_modes')
     os.makedirs(os.path.join(project_dir, 'Шаблоны'), exist_ok=True)
     os.makedirs(os.path.join(project_dir, 'Данные'), exist_ok=True)
 
@@ -231,9 +243,12 @@ def create_batch_modes_template():
         json.dump(config, f, ensure_ascii=False, indent=2)
 
 
-def create_counter_template():
+def create_counter_template(base_dir=None):
+    """Build fixture (M17: base_dir explicit, no global leak)."""
+    root = base_dir if base_dir is not None else FIXTURES_DIR
+
     """Template with counter field."""
-    project_dir = os.path.join(FIXTURES_DIR, 'with_counter')
+    project_dir = os.path.join(root, 'with_counter')
     os.makedirs(os.path.join(project_dir, 'Шаблоны'), exist_ok=True)
     os.makedirs(os.path.join(project_dir, 'Данные'), exist_ok=True)
 
@@ -270,9 +285,12 @@ def create_counter_template():
         json.dump(config, f, ensure_ascii=False, indent=2)
 
 
-def create_today_template():
+def create_today_template(base_dir=None):
+    """Build fixture (M17: base_dir explicit, no global leak)."""
+    root = base_dir if base_dir is not None else FIXTURES_DIR
+
     """Template with today field."""
-    project_dir = os.path.join(FIXTURES_DIR, 'with_today')
+    project_dir = os.path.join(root, 'with_today')
     os.makedirs(os.path.join(project_dir, 'Шаблоны'), exist_ok=True)
     os.makedirs(os.path.join(project_dir, 'Данные'), exist_ok=True)
 
@@ -309,9 +327,12 @@ def create_today_template():
         json.dump(config, f, ensure_ascii=False, indent=2)
 
 
-def create_all_basic_fields_template():
+def create_all_basic_fields_template(base_dir=None):
+    """Build fixture (M17: base_dir explicit, no global leak)."""
+    root = base_dir if base_dir is not None else FIXTURES_DIR
+
     """Template with all basic field types: constant, table, counter, today."""
-    project_dir = os.path.join(FIXTURES_DIR, 'all_basic_fields')
+    project_dir = os.path.join(root, 'all_basic_fields')
     os.makedirs(os.path.join(project_dir, 'Шаблоны'), exist_ok=True)
     os.makedirs(os.path.join(project_dir, 'Данные'), exist_ok=True)
 
@@ -367,18 +388,19 @@ def create_all_basic_fields_template():
         json.dump(config, f, ensure_ascii=False, indent=2)
 
 
-def create_all_fixtures(base_dir):
-    """Create all test fixtures in the given directory."""
-    global FIXTURES_DIR
-    FIXTURES_DIR = base_dir
-    
-    create_simple_template()
-    create_cycle_template()
-    create_aggregation_template()
-    create_batch_modes_template()
-    create_counter_template()
-    create_today_template()
-    create_all_basic_fields_template()
+def create_all_fixtures(base_dir=None):
+    """Create all test fixtures in the given directory.
+
+    M17: base_dir is threaded explicitly instead of mutating the
+    module-global FIXTURES_DIR (which leaked tmp paths across tests).
+    """
+    create_simple_template(base_dir)
+    create_cycle_template(base_dir)
+    create_aggregation_template(base_dir)
+    create_batch_modes_template(base_dir)
+    create_counter_template(base_dir)
+    create_today_template(base_dir)
+    create_all_basic_fields_template(base_dir)
 
 
 if __name__ == '__main__':

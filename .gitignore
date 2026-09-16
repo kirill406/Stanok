@@ -7,11 +7,9 @@
 __pycache__/
 *.py[cod]
 *.egg-info/
+.venv/
 dist/
 build/
-
-# === Node ===
-node_modules/
 
 # === IDE/OS ===
 .vscode/
@@ -23,9 +21,9 @@ node_modules/
 # === Logs ===
 *.log
 
-# === Prototype output/templates ===
-prototype/output/
-prototype/templates/
+# === Runtime leftovers ===
+*.bak
+*.tmp
 
 # === Test/coverage artifacts ===
 .coverage
@@ -33,9 +31,7 @@ htmlcov/
 .pytest_cache/
 
 # === Project data (user data, not tracked) ===
-test_project/
-test_project_cli/
-test_project_gui/
+tests/test_project/
 
 # === Build artifacts ===
 *.spec

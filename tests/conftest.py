@@ -2,22 +2,11 @@
 """pytest-qt configuration and shared fixtures for GUI tests."""
 
 import os
-import sys
 import tempfile
 import shutil
 from pathlib import Path
 
 import pytest
-from PyQt5.QtWidgets import QApplication
-
-
-@pytest.fixture(scope="session")
-def qapp():
-    """Create QApplication instance for the test session."""
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication(sys.argv)
-    yield app
 
 
 @pytest.fixture

@@ -15,8 +15,8 @@
 git clone <repo-url>
 cd FirstAgent
 
-# 2. Установи Python 3.8+ и зависимости
-pip install -r requirements.txt
+# 2. Установи Python 3.8+, uv и зависимости
+uv sync
 
 # 3. Запусти GUI
 python run.py
@@ -90,10 +90,10 @@ pyinstaller --onefile --windowed --name Станок run.py
 ### Быстрая проверка движка
 
 `powershell
-python test_engine.py
+python tests/smoke_engine.py
 `
 
-Создаёт тестовый проект test_project/, генерирует договор, проверяет все поля.
+Создаёт тестовый проект tests/test_project/, генерирует договор, проверяет все поля.
 
 ### Автоматические тесты (pytest)
 
@@ -101,10 +101,10 @@ python test_engine.py
 
 `powershell
 # Установить зависимости для тестирования
-pip install -r requirements.txt
+uv sync
 
 # Запустить все тесты
-python -m pytest tests/ -v
+uv run pytest tests/ -v
 
 # Тихий запуск (только результат)
 python -m pytest tests/ -q
@@ -167,7 +167,7 @@ scripts\install-hooks.bat
 
 `
 FirstAgent/
-├── docxforge/
+├── src/docxforge/
 │   ├── engine/
 │   │   ├── schema.py           # Проект, конфиг, модель данных
 │   │   ├── template_parser.py  # Сканер {{ }} из .docx
@@ -177,10 +177,10 @@ FirstAgent/
 │       ├── main_window.py      # Главное окно (создать/открыть проект)
 │       ├── project_window.py   # Окно проекта (дерево шаблонов и данных)
 │       └── fill_form.py        # Форма заполнения полей
-├── prototype/                  # Прототип склейки XML-ран
 ├── docs/ideas/                 # Спецификация, DSL, тесты с пользователями
 ├── run.py                      # Точка входа
-└── requirements.txt
+├── pyproject.toml              # Зависимости (uv)
+└── uv.lock                     # Пины версий (генерируется: uv lock)
 `
 
 ## Лицензия

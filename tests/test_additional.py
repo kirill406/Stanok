@@ -2,11 +2,9 @@
 """Renderer edge cases, field dialog data, and fill form type visibility tests."""
 
 import os
-import sys
 import tempfile
 import zipfile
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import openpyxl
 from docx import Document

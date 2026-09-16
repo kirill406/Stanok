@@ -19,8 +19,9 @@ logging.basicConfig(
     ]
 )
 
-# Ensure project root is on path
+# Ensure project root and src layout are on path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src'))
 
 from docxforge.gui.main_window import run
 

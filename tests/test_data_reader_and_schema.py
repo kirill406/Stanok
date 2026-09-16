@@ -2,11 +2,9 @@
 """Tests for DataReader and Schema (serialization round-trip)."""
 
 import os
-import sys
 import tempfile
 import zipfile
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import openpyxl
 from docx import Document
@@ -125,7 +123,8 @@ class TestDataReader:
             vals = reader.get_distinct_values(path, 'город')
             assert vals == ['Москва', 'Питер']
 
-    def test_read_excel_numeric_values_become_strings(self):
+    def test_read_excel_numeric_values_keep_types(self):
+        """M6: native cell types are preserved (int stays int)."""
         with tempfile.TemporaryDirectory() as tmp:
             wb = openpyxl.Workbook()
             ws = wb.active
@@ -137,8 +136,10 @@ class TestDataReader:
 
             reader = DataReader()
             rows = reader.read_excel(path)
-            assert rows[0]['число'] == '42'
-            assert rows[1]['число'] == '3.14'
+            assert rows[0]['число'] == 42
+            assert isinstance(rows[0]['число'], int)
+            assert rows[1]['число'] == 3.14
+            assert isinstance(rows[1]['число'], float)
 
 
 # ============================================================

@@ -15,6 +15,8 @@ from docxforge.gui.project_window import ProjectWindow
 from docxforge.engine.schema import create_project
 
 
+pytestmark = pytest.mark.gui
+
 class MockMainWindow:
     """Mock main window for testing."""
 

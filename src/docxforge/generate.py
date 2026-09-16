@@ -12,6 +12,7 @@ from typing import List, Optional, Tuple, Dict, Any
 from docxforge.engine.schema import (
     Project, ResumeState, TemplateConfig, FieldMapping, FieldType,
     BatchSourceConfig, RowIterationMode, limit_rows, substitute_placeholders,
+    advance_counter_after_creation,
 )
 from docxforge.engine.data_reader import DataReader
 from docxforge.engine.errors import (
@@ -329,6 +330,12 @@ def create_projects_from_template(
     except Exception as e:
         _rollback_created(created_paths)
         raise GenerationError(f'Failed to create projects: {e}') from e
+
+    if created_count > 0:
+        # B6: creation-from-generation advances the source counter just like
+        # normal generation; persist the source project.
+        advance_counter_after_creation(template_config.resume, created_count)
+        project.to_file(project_file)
 
     return projects_dir, created_count
 
@@ -903,6 +910,11 @@ def create_nested_employee_projects(
 
     logger.info(
         f'Created {employee_counter} employee(s), {project_count} project(s) in {projects_dir}')
+    if project_count > 0:
+        # B6: creation-from-generation advances the source counter just like
+        # normal generation; persist the source project.
+        advance_counter_after_creation(template_config.resume, project_count)
+        project.to_file(project_file)
     return projects_dir, employee_counter, project_count
 
 

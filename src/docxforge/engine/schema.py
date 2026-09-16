@@ -617,4 +617,11 @@ def create_projects(
 
         created_projects.append(project_dir)
 
+    if created_projects:
+        # B6: creation-from-generation advances the source counter just like
+        # normal generation; persist the source project.
+        advance_counter_after_creation(template_config.resume, len(created_projects))
+        source_project.to_file(
+            os.path.join(source_project_dir, 'проект.docxforge'))
+
     return created_projects

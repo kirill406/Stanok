@@ -16,12 +16,12 @@
 | 3 | `FillForm.__init__` → `BadZipFile` на битом шаблоне; `_open_fill_form` проверяет только `exists` | guard в `__init__` + `_open_fill_form`: `zipfile.is_zipfile`-проверка и `try/except` вокруг `FillForm(...)` с `QMessageBox.warning`, без `exec_` |
 
 ## Подпункты (каждый = коммит + push)
-- [ ] 0. Этот план (`PLAN_Phase5.md`): коммит + `push -u origin fix/002-fill-menu-crash`
-- [ ] 1. Сценарий 1: `try/except` в `ConfigIOMixin._create` + новые ключи `STRINGS`
+- [x] 0. Этот план (`PLAN_Phase5.md`): коммит + `push -u origin fix/002-fill-menu-crash`
+- [x] 1. Сценарий 1: `try/except` в `ConfigIOMixin._create` + новые ключи `STRINGS`
       (`msg_render_error`, `msg_project_load_error`, `msg_template_load_error`) + регрессионный тест
-- [ ] 2. Сценарии 2–3: guards в `FillForm.__init__` (`FillFormOpenError`, реэкспорт) + 2 регрессионных теста
-- [ ] 3. `_open_fill_form`: `is_zipfile`-валидация + `try/except` + регрессионные тесты (битый шаблон, битый проект, отсутствующий шаблон)
-- [ ] 4. Полный `pytest tests/ -q` (offscreen) зелёный → `checkout spec-002`, `pull --ff-only`,
+- [x] 2. Сценарии 2–3: guards в `FillForm.__init__` (`FillFormOpenError`, реэкспорт) + 2 регрессионных теста
+- [x] 3. `_open_fill_form`: `is_zipfile`-валидация + `try/except` + регрессионные тесты (битый шаблон, битый проект, отсутствующий шаблон)
+- [x] 4. Полный `pytest tests/ -q` (offscreen) зелёный → `checkout spec-002`, `pull --ff-only`,
       `merge --no-ff fix/002-fill-menu-crash`, `push origin spec-002`; при конфликте — `merge --abort`, отчёт
 
 ## Тесты

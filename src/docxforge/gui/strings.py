@@ -104,6 +104,13 @@ STRINGS = {
     'msg_composite_single_separator': 'Шаблон пути: нужен ровно один разделитель «/» вида {{столбец_сотрудника}}/{{столбец_проекта}}',
     'msg_composite_invalid_path': 'Шаблон пути: запрещены «..», «\\», «:», «*», «?», «"», «<», «>», «|»',
 
+    # Generated-project template fields (B1 «Генерируемые проекты»).
+    # The checked fields define the per-project файл `проект.docxforge`
+    # template used when creating projects from this template.
+    'fill_generated_fields_section': 'Поля шаблона для генерируемых проектов',
+    'fill_generated_fields_hint': 'Отмеченные поля войдут в файл проект.docxforge генерируемых проектов. Отмечены все (или полей нет) — войдут все поля.',
+    'fill_generated_fields_empty': 'Нет полей в шаблоне',
+
     # Messages
     'msg_error': 'Ошибка',
     'msg_check': 'Проверка',

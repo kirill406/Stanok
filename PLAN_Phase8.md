@@ -9,10 +9,7 @@ Branch: `fix/002-generation-counter` (от `spec-002`). Spec: `specs/002-stabili
 - [x] P3. Engine-хелпер счётчика в `engine/schema.py` (математика как обычная генерация).
 - [x] P4. Вызовы хелпера в трёх путях создания (`schema.create_projects`, `generate.create_projects_from_template`, `generate.create_nested_employee_projects`) + persist источника.
 - [x] P5. Регрессионный тест `tests/test_b6_generation_counter.py` (было/стало), прогон затронутых тестов.
-- [ ] P3. Engine-хелпер счётчика в `engine/schema.py` (математика как обычная генерация).
-- [ ] P4. Вызовы хелпера в трёх путях создания (`schema.create_projects`, `generate.create_projects_from_template`, `generate.create_nested_employee_projects`) + persist источника.
-- [ ] P5. Регрессионный тест `tests/test_b6_generation_counter.py` (было/стало), прогон затронутых тестов.
-- [ ] P6. Финал: полный `pytest`, checkout spec-002, pull --ff-only, merge --no-ff, push.
+- [x] P6. Финал: полный `pytest`, checkout spec-002, pull --ff-only, merge --no-ff, push.
 
 ## P1. Разведка (факты)
 - Обычная генерация: `generate.generate_project()` → `renderer.render()` → `execute_render()` → `update_resume_state()` (`engine/render_loop.py:389`) → `resume.last_counter_value = offset + doc_index`; `generate_project()` делает `renderer.save_project()` — счётчик персистится в `проект.docxforge`.

@@ -327,6 +327,25 @@ def process_xml(zdata: dict, config: TemplateConfig,
     return zdata
 
 
+def resolve_unique_output_path(path: str) -> str:
+    """Return a non-existing sibling path, renaming as ``name (1).ext``.
+
+    B5 (002-stabilization): generation must never overwrite an existing
+    file — the file being created is renamed (``файл (1)``, ``файл (2)``,
+    …) while the existing one is left untouched.
+    """
+    if not os.path.exists(path):
+        return path
+    root, ext = os.path.splitext(path)
+    index = 1
+    while True:
+        candidate = '%s (%d)%s' % (root, index, ext)
+        if not os.path.exists(candidate):
+            logger.info('Output %r exists; using %r instead', path, candidate)
+            return candidate
+        index += 1
+
+
 def write_output_doc(zdata: dict, output_dir: str,
                      template_rel_path: str,
                      doc_index: int, total_docs: int,
@@ -378,7 +397,7 @@ def write_output_doc(zdata: dict, output_dir: str,
             out_dir = os.path.join(output_dir, dir_path)
             os.makedirs(out_dir, exist_ok=True)
 
-    out_path = os.path.join(out_dir, out_name)
+    out_path = resolve_unique_output_path(os.path.join(out_dir, out_name))
 
     with zipfile.ZipFile(out_path, 'w', zipfile.ZIP_DEFLATED) as zout:
         for name, data in zdata.items():

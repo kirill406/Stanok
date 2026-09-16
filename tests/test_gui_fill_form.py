@@ -1040,5 +1040,30 @@ class TestCreateProjectsE2EPhase7:
                     assert out.endswith('.docx')
 
 
+class TestFillFormCrashGuardsPhase5:
+    """Phase 5 (B3): crashes from the fill menu become error dialogs."""
+
+    def test_create_missing_template_shows_warning(self, qtbot, sample_project, monkeypatch):
+        """Test _create with template deleted after open warns instead of raising."""
+        dlg = FillForm(sample_project, 'all_fields.docx')
+        qtbot.addWidget(dlg)
+        dlg.show()
+
+        # Template disappears after the dialog was opened (RECON B3 scenario 1).
+        os.remove(os.path.join(sample_project, 'Шаблоны', 'all_fields.docx'))
+
+        warnings = []
+        infos = []
+        monkeypatch.setattr(QMessageBox, 'warning', lambda *a, **k: warnings.append(a))
+        monkeypatch.setattr(QMessageBox, 'information', lambda *a, **k: infos.append(a))
+
+        dlg._create()  # Must not raise FileNotFoundError.
+
+        assert len(warnings) == 1
+        assert warnings[0][1] == STRINGS['msg_error']
+        assert STRINGS['msg_generation_failed'] in warnings[0][2]
+        assert infos == []
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])

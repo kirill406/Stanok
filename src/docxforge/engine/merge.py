@@ -2,11 +2,65 @@
 """Paragraph merge and table cycle expansion for .docx templates."""
 
 import re
+from copy import deepcopy
 from typing import Dict, List
 from lxml import etree
 
 from .xml_utils import W_NS, run_text, clone_run_with_text, clone_element, row_contains_placeholder, row_has_placeholders
 from .schema import CycleMapping
+
+
+def _split_mixed_runs(paragraph, runs):
+    """Split runs mixing <w:t> with non-text content (w:br, w:drawing, ...).
+
+    Word stores Shift+Enter inside a text run as
+    <w:r><w:t>a</w:t><w:br/><w:t>b</w:t></w:r>. Merging such a run by
+    concatenating its <w:t> texts moves the break past the field value.
+    Splitting into order-preserving pure runs (text-only / non-text-only,
+    formatting via copied rPr) keeps every break at its document position.
+    Only runs containing '{{' are touched; others are left as is.
+    """
+    changed = False
+    for run in list(runs):
+        if '{{' not in run_text(run):
+            continue
+        children = list(run)
+        has_text = any(c.tag == W_NS + 't' for c in children)
+        has_non_text = any(c.tag != W_NS + 't' and c.tag != W_NS + 'rPr'
+                           for c in children)
+        if not (has_text and has_non_text):
+            continue
+        rpr = run.find(W_NS + 'rPr')
+        groups = []
+        buf = []
+        for child in children:
+            if child.tag == W_NS + 'rPr':
+                continue
+            if child.tag == W_NS + 't':
+                buf.append(child.text or '')
+            else:
+                if buf:
+                    groups.append(('text', ''.join(buf)))
+                    buf = []
+                groups.append(('node', child))
+        if buf:
+            groups.append(('text', ''.join(buf)))
+        for kind, payload in groups:
+            new_run = etree.Element(W_NS + 'r')
+            if rpr is not None:
+                new_run.append(deepcopy(rpr))
+            if kind == 'text':
+                t_el = etree.SubElement(new_run, W_NS + 't')
+                t_el.text = payload
+                t_el.set('{%s}space' % 'http://www.w3.org/XML/1998/namespace', 'preserve')
+            else:
+                new_run.append(deepcopy(payload))
+            run.addprevious(new_run)
+        paragraph.remove(run)
+        changed = True
+    if changed:
+        return paragraph.findall(W_NS + 'r')
+    return runs
 
 
 def merge_and_replace_paragraph(paragraph, field_values: Dict[str, str]):
@@ -15,6 +69,10 @@ def merge_and_replace_paragraph(paragraph, field_values: Dict[str, str]):
     runs = paragraph.findall(W_NS + 'r')
     if not runs:
         return
+
+    # Normalize mixed runs (text + w:br/w:drawing) holding placeholders so
+    # breaks stay at their document position instead of sliding past values.
+    runs = _split_mixed_runs(paragraph, runs)
 
     # First pass: try in-place replacement within each run
     # If a run contains a complete placeholder, replace it directly
@@ -60,13 +118,22 @@ def merge_and_replace_paragraph(paragraph, field_values: Dict[str, str]):
             continue
 
     # Second pass: handle placeholders that span multiple runs
-    # Re-scan after in-place replacements
+    # Re-scan after in-place replacements. Non-text children (w:br,
+    # w:drawing, ...) carry no merged chars; record each as a mark at its
+    # text offset so it can be re-emitted at the same document position.
     merged = ''
     char_to_run = []
+    marks = []
     for idx, run in enumerate(runs):
-        for ch in run_text(run):
-            char_to_run.append(idx)
-            merged += ch
+        for child in run:
+            if child.tag == W_NS + 't':
+                for ch in (child.text or ''):
+                    char_to_run.append(idx)
+                    merged += ch
+            elif child.tag == W_NS + 'rPr':
+                continue
+            else:
+                marks.append((len(merged), idx, child))
 
     if not merged:
         return
@@ -98,56 +165,69 @@ def merge_and_replace_paragraph(paragraph, field_values: Dict[str, str]):
         run_ids = {char_to_run[i] for i in range(start, end) if i < len(char_to_run)}
         return min(run_ids) if run_ids else 0
 
-    merged_segments = []
-    cur_type, cur_start, cur_end, cur_repl = segments[0]
-    cur_template_run_idx = get_template_run_idx(cur_start, cur_end)
-
-    for seg_type, start, end, repl in segments[1:]:
-        template_run_idx = get_template_run_idx(start, end)
-        # Only merge if same run AND same type (both text or both replace)
-        if template_run_idx == cur_template_run_idx and seg_type == cur_type:
-            cur_end = end
-            if seg_type == 'replace':
-                cur_repl = repl
-        else:
-            merged_segments.append((cur_type, cur_start, cur_end, cur_repl, cur_template_run_idx))
-            cur_type, cur_start, cur_end, cur_repl = seg_type, start, end, repl
-            cur_template_run_idx = template_run_idx
-
-    merged_segments.append((cur_type, cur_start, cur_end, cur_repl, cur_template_run_idx))
-
-    new_runs_by_idx = {}
-    for seg_type, start, end, repl, template_run_idx in merged_segments:
-        template_run = runs[template_run_idx]
+    # Order-preserving emission: interleave non-text marks at their offsets.
+    # A mark strictly inside a {{...}} span is emitted before the value (it
+    # cannot stay inside it); a mark inside a text span splits it; boundary
+    # marks go between neighbours.
+    out = []
+    mi = 0
+    for seg_type, start, end, repl in segments:
+        while mi < len(marks) and marks[mi][0] <= start:
+            _, m_idx, m_el = marks[mi]
+            out.append(('mark', m_idx, m_el))
+            mi += 1
         if seg_type == 'replace' and repl is not None:
-            text = repl
+            while mi < len(marks) and start < marks[mi][0] < end:
+                _, m_idx, m_el = marks[mi]
+                out.append(('mark', m_idx, m_el))
+                mi += 1
+            out.append(('value', get_template_run_idx(start, end), repl))
         else:
-            text = merged[start:end]
-        if not text:
-            continue
-        new_run = clone_run_with_text(template_run, text)
-        # Non-text payload (w:br, w:drawing, ...) stays in its original run
-        # at its original position (handled below) - strip it from the clone
-        # so it is neither lost nor duplicated.
-        for child in list(new_run):
-            if child.tag != W_NS + 't' and child.tag != W_NS + 'rPr':
-                new_run.remove(child)
-        new_runs_by_idx.setdefault(template_run_idx, []).append(new_run)
+            cur = start
+            while mi < len(marks) and start < marks[mi][0] < end:
+                pos = marks[mi][0]
+                _, m_idx, m_el = marks[mi]
+                if cur < pos:
+                    out.append(('text', get_template_run_idx(cur, pos), merged[cur:pos]))
+                out.append(('mark', m_idx, m_el))
+                cur = pos
+                mi += 1
+            if cur < end:
+                out.append(('text', get_template_run_idx(cur, end), merged[cur:end]))
+    while mi < len(marks):
+        _, m_idx, m_el = marks[mi]
+        out.append(('mark', m_idx, m_el))
+        mi += 1
 
-    for idx, run in enumerate(runs):
-        for new_run in new_runs_by_idx.get(idx, []):
-            run.addprevious(new_run)
-        has_non_text = any(
-            child.tag != W_NS + 't' and child.tag != W_NS + 'rPr'
-            for child in run
-        )
-        if has_non_text:
-            # Mixed run (text + w:br/w:drawing): its text was already re-emitted
-            # above, keep the run in place with only its non-text content.
-            for t_el in run.findall(W_NS + 't'):
-                run.remove(t_el)
+    new_nodes = []
+    for item in out:
+        if item[0] in ('text', 'value'):
+            _, template_run_idx, text = item
+            if not text:
+                continue
+            new_run = clone_run_with_text(runs[template_run_idx], text)
+            # Strip non-text payload from the clone so it is neither lost
+            # nor duplicated (marks are re-emitted separately, in order).
+            for child in list(new_run):
+                if child.tag != W_NS + 't' and child.tag != W_NS + 'rPr':
+                    new_run.remove(child)
+            new_nodes.append(new_run)
         else:
-            paragraph.remove(run)
+            _, m_idx, m_el = item
+            mark_run = etree.Element(W_NS + 'r')
+            rpr = runs[m_idx].find(W_NS + 'rPr')
+            if rpr is not None:
+                mark_run.append(deepcopy(rpr))
+            mark_run.append(deepcopy(m_el))
+            new_nodes.append(mark_run)
+
+    if not new_nodes:
+        return
+    anchor = runs[0]
+    for new_run in new_nodes:
+        anchor.addprevious(new_run)
+    for run in runs:
+        paragraph.remove(run)
 
 
 def expand_table_cycle(table_element, cycle: CycleMapping,

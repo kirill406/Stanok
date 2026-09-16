@@ -1,5 +1,7 @@
 # REPORT — 001-review: глубокое ревью кода
 
+Status: done
+
 Date: 2026-09-13. Branch: `review/code-001-review` (от `review/directory-structure`,
 т.к. ревьюится код после src/uv-миграции — от `main` было бы устаревшим; см. PLAN.md §Branching).
 Baseline: `pytest tests/ -q` → 261 passed. После trivial-фиксов: 261 passed + smoke OK.

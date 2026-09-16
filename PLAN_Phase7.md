@@ -9,9 +9,9 @@ Out of scope: формат недавних проектов НЕ меняетс
 открывает выходной файл через `zipfile.ZipFile(out_path, 'w')` — существующий файл молча перезаписывается.
 
 - [x] P1: ветка + этот план (коммит + push)
-- [ ] P2: engine: `resolve_unique_output_path()` в `render_loop.py` + использование в `write_output_doc`
+- [x] P2: engine: `resolve_unique_output_path()` в `render_loop.py` + использование в `write_output_doc`
       (существует → `файл (1).docx`, `файл (2).docx`, …; существующий не трогаем)
-- [ ] P3: регрессионный тест `tests/test_b5_no_overwrite.py`
+- [x] P3: регрессионный тест `tests/test_b5_no_overwrite.py`
       (предсоздать файл → сгенерировать → оба на месте + юнит-тест цепочки `(1)`→`(2)`)
 - [ ] P4: `pytest tests/ -q` зелёный; merge --no-ff в `spec-002`, push
 

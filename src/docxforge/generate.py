@@ -500,6 +500,80 @@ def copy_data_folder(src_project_dir: str, dst_project_dir: str) -> str:
     return dst_data
 
 
+# ---------------------------------------------------------------------------
+# B4: skip-copy flags (excluded tables are not copied into generated projects).
+# New functions only — project-creation functions (B1 zone) are untouched;
+# B1 wires these flags into the creation paths.
+# ---------------------------------------------------------------------------
+
+def get_skip_copy_tables(batch_sources) -> set:
+    """Return file names of batch sources flagged to skip copying.
+
+    The flag is read via ``getattr(bsc, 'skip_copy', False)`` so no schema
+    change is required: once ``BatchSourceConfig`` gains a real ``skip_copy``
+    field this keeps working unchanged.
+
+    Args:
+        batch_sources: Mapping of name to batch source config (any object
+            with ``file`` and optional ``skip_copy`` attributes).
+
+    Returns:
+        Set of data file names (``bsc.file``) whose ``skip_copy`` is truthy.
+    """
+    skipped = set()
+    for name, bsc in (batch_sources or {}).items():
+        if getattr(bsc, 'skip_copy', False):
+            skipped.add(getattr(bsc, 'file', None) or name)
+    return skipped
+
+
+def copy_data_tree(src_data_dir: str, dst_data_dir: str,
+                   exclude_names=None) -> str:
+    """Copy a data folder, skipping excluded table files.
+
+    Every entry of ``src_data_dir`` is copied into ``dst_data_dir`` except
+    files whose base name is in ``exclude_names``. Excluded tables are
+    logged and left out; everything else is copied as before.
+
+    Args:
+        src_data_dir: Existing source ``Данные/`` folder.
+        dst_data_dir: Destination folder (created if missing).
+        exclude_names: Optional iterable of file base names to skip.
+
+    Returns:
+        Destination path.
+
+    Raises:
+        GenerationError: Source folder missing or copy failure.
+    """
+    if not os.path.isdir(src_data_dir):
+        raise GenerationError(
+            f'Data folder not found: {src_data_dir}'
+        )
+    excluded = set(exclude_names or ())
+    try:
+        os.makedirs(dst_data_dir, exist_ok=True)
+        for entry in sorted(os.listdir(src_data_dir)):
+            src_entry = os.path.join(src_data_dir, entry)
+            if os.path.isfile(src_entry) and entry in excluded:
+                logger.info('Skipped excluded table: %s', entry)
+                continue
+            dst_entry = os.path.join(dst_data_dir, entry)
+            if os.path.isdir(src_entry):
+                shutil.copytree(src_entry, dst_entry, dirs_exist_ok=True)
+            else:
+                shutil.copy2(src_entry, dst_entry)
+    except PermissionError as e:
+        raise GenerationError(
+            f'Permission denied copying data folder: {e}') from e
+    except OSError as e:
+        raise GenerationError(
+            f'Failed to copy data folder: {e}') from e
+    logger.info('Copied data folder (excluded=%s): %s -> %s',
+                sorted(excluded), src_data_dir, dst_data_dir)
+    return dst_data_dir
+
+
 def copy_template_file(src_template_path: str, dst_project_dir: str) -> str:
     """Copy template .docx into nested `<project>/шаблоны/`. Returns dst path."""
     if not os.path.exists(src_template_path):

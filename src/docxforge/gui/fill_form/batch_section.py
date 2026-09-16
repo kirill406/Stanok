@@ -112,6 +112,18 @@ class BatchSourceRow(QObject):
         resume_layout.addWidget(self.chk_resume, alignment=Qt.AlignLeft)
         resume_layout.addStretch()
         rl.addWidget(resume_widget)
+
+        # Skip-copy checkbox (B4): when checked, this table is not copied
+        # into the Данные/ folder of generated projects.
+        skip_widget = QWidget()
+        skip_layout = QHBoxLayout(skip_widget)
+        skip_layout.setContentsMargins(20, 0, 0, 0)
+        skip_layout.setSpacing(4)
+        self.chk_skip_copy = QCheckBox(STRINGS['batch_skip_copy'])
+        self.chk_skip_copy.setChecked(False)
+        skip_layout.addWidget(self.chk_skip_copy, alignment=Qt.AlignLeft)
+        skip_layout.addStretch()
+        rl.addWidget(skip_widget)
     
     def _connect_signals(self):
         # Lookup column change
@@ -281,6 +293,7 @@ class BatchSourceRow(QObject):
             'counter_row_spin': self.ccr,
             'counter_val_combo': self.ccv,
             'chk_resume': self.chk_resume,
+            'chk_skip_copy': self.chk_skip_copy,
         }
 
 

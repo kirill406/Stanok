@@ -157,6 +157,7 @@ class TemplateConfig:
     directory_template: Optional[str] = None  # Template for output subdirectories
     create_projects: bool = False  # Create project folders instead of documents
     folder_name_template: Optional[str] = None  # Template for project folder names
+    generated_project_fields: List[str] = field(default_factory=list)  # B1: subset for generated проект.docxforge ([] = all)
     resume: ResumeState = field(default_factory=ResumeState)
     ui_state: Dict[str, Any] = field(default_factory=dict)  # UI-specific state
 
@@ -234,6 +235,7 @@ class Project:
             # Create-projects mode (absent in older files -> defaults)
             tc.create_projects = tpl_data.get('create_projects', False)
             tc.folder_name_template = tpl_data.get('folder_name_template')
+            tc.generated_project_fields = list(tpl_data.get('generated_project_fields', []) or [])
             # Resume
             resume_data = tpl_data.get('resume', {})
             tc.resume = ResumeState(
@@ -314,6 +316,8 @@ class Project:
                 td['create_projects'] = True
             if tc.folder_name_template is not None:
                 td['folder_name_template'] = tc.folder_name_template
+            if tc.generated_project_fields:
+                td['generated_project_fields'] = list(tc.generated_project_fields)
 
             # Resume
             td['resume'] = {

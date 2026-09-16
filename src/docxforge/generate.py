@@ -288,7 +288,8 @@ def create_projects_from_template(
                     f'Project directory already exists: {project_subdir}') from e
 
             new_config = _build_project_config(
-                template_config, row_data, primary_source_config.file)
+                template_config, row_data, primary_source_config.file,
+                include_fields=template_config.generated_project_fields)
 
             new_project_file = os.path.join(project_subdir, 'проект.docxforge')
             new_project = Project(version=2)
@@ -383,6 +384,7 @@ def _build_project_config(
     template_config: TemplateConfig,
     row_data: Dict[str, str],
     primary_source_file: str,
+    include_fields: Optional[List[str]] = None,
 ) -> TemplateConfig:
     """Build per-project config: TABLE→CONSTANT, COUNTER reset, batch→CONSTANT.
 
@@ -391,13 +393,27 @@ def _build_project_config(
         row_data: Resolved row as {column: value} dict (keys are column names).
         primary_source_file: Name of the primary batch file (kept for signature
             compatibility; row_data already holds the resolved row values).
+        include_fields: B1 subset from the FillForm section «Поля шаблона для
+            генерируемых проектов». Non-empty → only these fields enter the
+            generated проект.docxforge; empty/None → all fields (back-compat).
 
     Returns:
         New TemplateConfig with transformed fields and CONSTANT batch sources.
     """
     new_config = TemplateConfig()
 
-    for fn, fm in template_config.fields.items():
+    wanted = set(include_fields or [])
+    source_fields = template_config.fields
+    if wanted:
+        unknown = sorted(n for n in wanted if n not in source_fields)
+        if unknown:
+            logger.warning(
+                'generated_project_fields has unknown field(s) %s; ignored',
+                unknown)
+        source_fields = {fn: fm for fn, fm in source_fields.items()
+                         if fn in wanted}
+
+    for fn, fm in source_fields.items():
         if fm.type == FieldType.CONSTANT:
             new_config.fields[fn] = FieldMapping(type=FieldType.CONSTANT, value=fm.value)
         elif fm.type == FieldType.TABLE:
@@ -959,7 +975,8 @@ def create_nested_employee_projects(
                 os.makedirs(os.path.join(project_dir, 'Результат'), exist_ok=True)
 
                 new_config = _build_project_config(
-                    template_config, row, primary_source_config.file)
+                    template_config, row, primary_source_config.file,
+                    include_fields=template_config.generated_project_fields)
                 for bsc in new_config.batch_sources.values():
                     bsc.mode = RowIterationMode.CONSTANT
                     bsc.continue_from_last = False

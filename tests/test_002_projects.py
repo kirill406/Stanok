@@ -257,3 +257,117 @@ def test_002_nested_generated_projects_prefilled(tmp_path):
             assert 'ORG_VALUE' in text
             checked += 1
     assert checked == 2
+
+
+# --- (в) Generated-project template fields ------------------------------------
+
+def test_002_generated_fields_schema_round_trip(tmp_path):
+    """generated_project_fields persist; old files default to [] (= all)."""
+    prj = Project()
+    tc = TemplateConfig()
+    tc.fields['a'] = FieldMapping(type=FieldType.CONSTANT, value='1')
+    tc.fields['b'] = FieldMapping(type=FieldType.CONSTANT, value='2')
+    tc.generated_project_fields = ['a']
+    prj.templates['t.docx'] = tc
+    path = os.path.join(str(tmp_path), 'проект.docxforge')
+    prj.to_file(path)
+    loaded = Project.from_file(path)
+    assert loaded.templates['t.docx'].generated_project_fields == ['a']
+    with open(path, encoding='utf-8') as f:
+        raw = json.load(f)
+    assert raw['templates']['t.docx']['generated_project_fields'] == ['a']
+
+    prj2 = Project()
+    tc2 = TemplateConfig()
+    tc2.fields['a'] = FieldMapping(type=FieldType.CONSTANT, value='1')
+    prj2.templates['t.docx'] = tc2
+    path2 = os.path.join(str(tmp_path), 'old.docxforge')
+    prj2.to_file(path2)
+    with open(path2, encoding='utf-8') as f:
+        raw2 = json.load(f)
+    assert 'generated_project_fields' not in raw2['templates']['t.docx']
+    assert Project.from_file(path2).templates['t.docx'].generated_project_fields == []
+
+
+def test_002_build_project_config_respects_include_fields():
+    """Non-empty include_fields → only subset in generated config."""
+    tc = TemplateConfig()
+    tc.fields['keep'] = FieldMapping(
+        type=FieldType.TABLE, file='b.xlsx', column='keep')
+    tc.fields['drop'] = FieldMapping(
+        type=FieldType.TABLE, file='b.xlsx', column='drop')
+    tc.fields['const'] = FieldMapping(type=FieldType.CONSTANT, value='C')
+    row = {'keep': 'K', 'drop': 'D'}
+    full = gen_module._build_project_config(tc, row, 'b.xlsx')
+    assert set(full.fields) == {'keep', 'drop', 'const'}
+    subset = gen_module._build_project_config(
+        tc, row, 'b.xlsx', include_fields=['keep'])
+    assert set(subset.fields) == {'keep'}
+    assert subset.fields['keep'].type == FieldType.CONSTANT
+    assert subset.fields['keep'].value == 'K'
+    empty_means_all = gen_module._build_project_config(
+        tc, row, 'b.xlsx', include_fields=[])
+    assert set(empty_means_all.fields) == {'keep', 'drop', 'const'}
+
+
+def test_002_flat_creation_applies_stored_subset(tmp_path):
+    """Stored generated_project_fields subset flows into created projects."""
+    source_dir = _make_flat_source(str(tmp_path))
+    home = str(tmp_path / 'home')
+    os.makedirs(home, exist_ok=True)
+    prj = Project.from_file(os.path.join(source_dir, 'проект.docxforge'))
+    prj.templates['contract.docx'].generated_project_fields = ['client_name']
+    prj.to_file(os.path.join(source_dir, 'проект.docxforge'))
+    projects_dir, count = gen_module.create_projects_from_template(
+        source_dir, 'contract.docx', '{{client_name}}', home_dir=home)
+    assert count == 3
+    for folder in sorted(os.listdir(projects_dir)):
+        cfg = Project.from_file(
+            os.path.join(projects_dir, folder, 'проект.docxforge')
+        ).templates['contract.docx']
+        assert set(cfg.fields) == {'client_name'}
+        assert cfg.fields['client_name'].type == FieldType.CONSTANT
+
+
+@pytest.mark.gui
+class TestGeneratedFieldsSection:
+    """FillForm section «Поля шаблона для генерируемых проектов»."""
+
+    def test_002_section_present_all_checked_by_default(
+            self, qtbot, sample_project):
+        """Section exists, one checked box per field, STRINGS title."""
+        from PyQt5.QtWidgets import QGroupBox
+
+        from docxforge.gui.fill_form import FillForm
+        from docxforge.gui.strings import STRINGS
+
+        dlg = FillForm(sample_project, 'all_fields.docx')
+        qtbot.addWidget(dlg)
+        dlg.show()
+
+        groups = [g for g in dlg.findChildren(QGroupBox)
+                  if g.title() == STRINGS['fill_generated_fields_section']]
+        assert len(groups) == 1
+        assert set(dlg.generated_field_checks) == set(dlg.field_widgets)
+        assert all(box.isChecked() for box in dlg.generated_field_checks.values())
+        assert dlg._collect_config().generated_project_fields == []
+
+    def test_002_unchecked_field_excluded_from_collected_config(
+            self, qtbot, sample_project):
+        """Unchecking one field stores the rest as the subset."""
+        from docxforge.gui.fill_form import FillForm
+
+        dlg = FillForm(sample_project, 'all_fields.docx')
+        qtbot.addWidget(dlg)
+        dlg.show()
+
+        names = sorted(dlg.generated_field_checks)
+        assert len(names) >= 2
+        dlg.generated_field_checks[names[0]].setChecked(False)
+        collected = dlg._collect_config()
+        assert set(collected.generated_project_fields) == set(names[1:])
+        assert names[0] not in collected.generated_project_fields
+
+        for box in dlg.generated_field_checks.values():
+            box.setChecked(True)
+        assert dlg._collect_config().generated_project_fields == []

@@ -299,6 +299,8 @@ class FillForm(FieldRowsMixin, AdvancedSectionMixin, BatchSectionMixin, ConfigIO
 
         scroll_layout.addWidget(batch_group)
 
+        self._build_generated_project_section(scroll_layout)
+
         scroll.setWidget(scroll_content)
         main_layout.addWidget(scroll, stretch=1)
 
@@ -343,6 +345,58 @@ class FillForm(FieldRowsMixin, AdvancedSectionMixin, BatchSectionMixin, ConfigIO
     def _on_create_projects_toggled(self, checked: bool):
         """Handle create projects checkbox toggle."""
         self._set_folder_name_visible(checked)
+
+    def _build_generated_project_section(self, scroll_layout):
+        """Build the B1 section «Поля шаблона для генерируемых проектов».
+
+        Lives at the end of the class, away from the B3-owned ``__init__``
+        guard hunk. Checkboxes are synced later (fields are populated after
+        ``_build_ui``) via ``_sync_generated_field_checks``.
+        """
+        group = QGroupBox(STRINGS['fill_generated_fields_section'])
+        layout = QVBoxLayout(group)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(4)
+        hint = QLabel(STRINGS['fill_generated_fields_hint'])
+        hint.setStyleSheet('color: #666; font-size: 9pt;')
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
+        self.generated_fields_layout = QVBoxLayout()
+        self.generated_fields_layout.setContentsMargins(0, 0, 0, 0)
+        self.generated_fields_layout.setSpacing(2)
+        layout.addLayout(self.generated_fields_layout)
+        self.generated_field_checks = {}
+        self.generated_fields_empty = QLabel(STRINGS['fill_generated_fields_empty'])
+        self.generated_fields_empty.setStyleSheet('color: #888; font-size: 9pt;')
+        self.generated_fields_layout.addWidget(self.generated_fields_empty)
+        scroll_layout.addWidget(group)
+
+    def _sync_generated_field_checks(self):
+        """Ensure one checkbox per template field, preserving check states.
+
+        Called after fields exist (end of ``_load_existing_config``) and on
+        every ``_collect_config`` (covers fields added later via the dialog).
+        Only adds missing boxes — never rebuilds, so focus is never stolen.
+        """
+        container = getattr(self, 'generated_fields_layout', None)
+        if container is None:
+            return
+        checks = getattr(self, 'generated_field_checks', None)
+        if checks is None:
+            self.generated_field_checks = {}
+            checks = self.generated_field_checks
+        stored = set(getattr(getattr(self, 'config', None),
+                             'generated_project_fields', []) or [])
+        for name in sorted(self.field_widgets.keys()):
+            if name in checks:
+                continue
+            box = QCheckBox(name)
+            box.setChecked(not stored or name in stored)
+            box.toggled.connect(self._schedule_save)
+            container.addWidget(box)
+            checks[name] = box
+        if checks and hasattr(self, 'generated_fields_empty'):
+            self.generated_fields_empty.setVisible(False)
 
     @staticmethod
     def validate_composite_template(template):

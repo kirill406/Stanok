@@ -31,7 +31,7 @@ Non-overlap: B3 имеет ПРИОРИТЕТ на guard-ханках `config_io
       уже в проводке P2; этот подпункт = регрессионные тесты (flat + nested: docx
       существует в `Результат/`, константа в тексте, плейсхолдеров не осталось) в
       `tests/test_002_projects.py`. Коммит + push.
-- [ ] P4(в). Секция «Поля шаблона для генерируемых проектов» в `FillForm`: новый
+- [x] P4(в). Секция «Поля шаблона для генерируемых проектов» в `FillForm`: новый
       `QGroupBox` отдельным методом `_build_generated_project_section` (STRINGS, без хардкода RU),
       чекбоксы полей → новое опциональное поле `TemplateConfig.generated_project_fields`
       (`schema.py`, сериализация round-trip; `[]` = все поля, back-compat), сбор в

@@ -108,6 +108,13 @@ class ConfigIOMixin:
                         bw['counter_col_combo'].setCurrentIndex(idx)
                 if bsc.counter_current_row > 1:
                     bw['counter_row_spin'].setValue(bsc.counter_current_row)
+        # B1: sync the «Поля шаблона для генерируемых проектов» section
+        # (fields exist by now) and restore the stored subset selection.
+        if hasattr(self, '_sync_generated_field_checks'):
+            self._sync_generated_field_checks()
+        stored = set(getattr(self.config, 'generated_project_fields', []) or [])
+        for name, box in (getattr(self, 'generated_field_checks', {}) or {}).items():
+            box.setChecked(not stored or name in stored)
         if self.config.total_docs is not None:
             self.chk_auto_docs.setChecked(False)
             self.spin_total_docs.setValue(self.config.total_docs)

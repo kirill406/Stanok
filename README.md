@@ -26,10 +26,14 @@ python run.py
 
 `powershell
 pip install pyinstaller
-pyinstaller --onefile --windowed --name Станок run.py
+pyinstaller Станок.spec
 `
 
 Результат: dist/Станок.exe — один файл, работает без Python.
+
+> ⚠️ Собирай только через `Станок.spec` — в нём прописаны `src/` (`pathex`),
+> иконки и данные. Голый `pyinstaller run.py` даст нерабочий .exe
+> (`ModuleNotFoundError: No module named 'docxforge'`) и затрёт спеку.
 
 ## Быстрый старт
 

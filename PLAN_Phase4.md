@@ -11,14 +11,14 @@ Spec: `specs/002-stabilization/spec.md`, блок B2.
   (`get_settings_path()` в `main_window.py`). Логи кладём рядом: `~/.docxforge/docxforge.log`.
 
 ## Подпункты
-- [ ] P0. План и ветка: этот файл `PLAN_Phase4.md`, коммит + `push -u origin feat/002-user-logs`.
-- [ ] P1. (б) Новый модуль `src/docxforge/app_logging.py`: единая константа `APP_LOG_FILE`
+- [x] P0. План и ветка: этот файл `PLAN_Phase4.md`, коммит + `push -u origin feat/002-user-logs`.
+- [x] P1. (б) Новый модуль `src/docxforge/app_logging.py`: единая константа `APP_LOG_FILE`
   (полный путь в Home) + функция `setup_app_logging()` (создаёт каталог, RotatingFileHandler
   в режиме append, формат как в `run.py`). Никакого хардкода имени/пути вне модуля.
-- [ ] P2. (а) `run.py` переходит на модуль: импорт `APP_LOG_FILE`/`setup_app_logging`,
+- [x] P2. (а) `run.py` переходит на модуль: импорт `APP_LOG_FILE`/`setup_app_logging`,
   удаление локального `log_dir`/`log_file` и `basicConfig` с захардкоженным путём.
   Поведение хендлеров сохраняется (stdout + ротация 5МБ x3, utf-8).
-- [ ] P3. (в) Тест `tests/test_app_logging.py` (путь в Home, append после «перезапуска»,
+- [x] P3. (в) Тест `tests/test_app_logging.py` (путь в Home, append после «перезапуска»,
   `run.py` без хардкода) + ручная проверка дописывания файла.
 - [ ] P4. Полный сьют `pytest tests/ -q` зелёный; финал: checkout spec-002,
   pull --ff-only, merge --no-ff, push origin spec-002.

@@ -203,4 +203,57 @@ def test_002_nested_home_snapshots_named_after_project(tmp_path):
         assert 'contract.docx' in snap_project.templates
 
 
-# --- (б) Prefilled documents: tests land with P3 (this marker keeps the split) ---
+# --- (б) Prefilled documents -------------------------------------------------
+
+def test_002_flat_generated_projects_prefilled(tmp_path):
+    """Each flat project renders ≥1 doc with row value + constant, no {{ }}."""
+    source_dir = _make_flat_source(str(tmp_path))
+    home = str(tmp_path / 'home')
+    os.makedirs(home, exist_ok=True)
+    projects_dir, count = gen_module.create_projects_from_template(
+        source_dir, 'contract.docx', '{{client_name}}', home_dir=home)
+    assert count == 3
+    seen_clients = set()
+    for folder in sorted(os.listdir(projects_dir)):
+        result_dir = os.path.join(projects_dir, folder, 'Результат')
+        docs = [f for f in os.listdir(result_dir) if f.endswith('.docx')]
+        assert len(docs) >= 1, folder
+        text = _read_docx_text(os.path.join(result_dir, docs[0]))
+        assert '{{' not in text and '}}' not in text, text
+        assert 'ORG_VALUE' in text
+        cfg = Project.from_file(
+            os.path.join(projects_dir, folder, 'проект.docxforge')
+        ).templates['contract.docx']
+        client = cfg.fields['client_name'].value
+        assert client in text
+        seen_clients.add(client)
+    assert seen_clients == {'ООО Альфа', 'ООО Бета', 'ИП Гамма'}
+
+
+def test_002_nested_generated_projects_prefilled(tmp_path):
+    """Each nested project renders ≥1 doc with constant, no {{ }}."""
+    source_dir = _make_nested_source(str(tmp_path))
+    home = str(tmp_path / 'home')
+    os.makedirs(home, exist_ok=True)
+    projects_dir, n_employees, n_projects = (
+        gen_module.create_nested_employee_projects(
+            source_dir, 'contract.docx', '{{employee}}/{{project_name}}',
+            home_dir=home))
+    assert (n_employees, n_projects) == (2, 2)
+    checked = 0
+    for emp in sorted(os.listdir(projects_dir)):
+        emp_dir = os.path.join(projects_dir, emp)
+        if not os.path.isdir(emp_dir):
+            continue
+        for proj in sorted(os.listdir(emp_dir)):
+            pdir = os.path.join(emp_dir, proj)
+            if not os.path.isdir(pdir):
+                continue
+            result_dir = os.path.join(pdir, 'Результат')
+            docs = [f for f in os.listdir(result_dir) if f.endswith('.docx')]
+            assert len(docs) >= 1, pdir
+            text = _read_docx_text(os.path.join(result_dir, docs[0]))
+            assert '{{' not in text and '}}' not in text, text
+            assert 'ORG_VALUE' in text
+            checked += 1
+    assert checked == 2

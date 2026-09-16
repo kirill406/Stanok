@@ -15,7 +15,9 @@ Non-overlap: B3 имеет ПРИОРИТЕТ на guard-ханках `config_io
 - [ ] P1(г). ДОП `output/` → `Результат`: `config_io.py:218` (однословная правка внутри
       `_create`, конфликт-риск с B3 зафиксировать в отчёте), убрать legacy-fallback
       `output/` в `generate.py:137-143` + `render_execute.py:41-48` (всегда `Результат/`),
-      `generate.py:914` `print` → `logging` + текст `<project>/output/` → `Результат`.
+      `generate.py:914` текст `<project>/output/` → `Результат` (stdout `print` сохраняю:
+      покрыт тестом `test_generate_cli_returns_outputs` через capsys — перевод на logging
+      его сломает; зафиксировано как осознанное отклонение).
       Обновить 2 ассёрта `tests/test_gui_fill_form.py:314,393` (`output` → `Результат`).
       `project_window.py` НЕ трогаю (приоритет B3). Коммит + push.
 - [ ] P2(а). Снапшот `проект.docxforge` по имени проекта в Home: новые хелперы в `generate.py`

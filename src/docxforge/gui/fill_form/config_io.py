@@ -215,7 +215,7 @@ class ConfigIOMixin:
             outputs = self.renderer.render(
                 self.template_rel_path,
                 {},
-                output_dir=os.path.join(self.project_dir, 'output'),
+                output_dir=os.path.join(self.project_dir, 'Результат'),
                 max_docs=total_docs,
             )
             progress.close()

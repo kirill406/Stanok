@@ -311,7 +311,7 @@ class TestFillForm:
         QTest.qWait(3000)  # Wait for generation
 
         # Check output files created
-        output_dir = Path(sample_project) / 'output'
+        output_dir = Path(sample_project) / 'Результат'
         if output_dir.exists():
             docs = list(output_dir.glob('*.docx'))
             assert len(docs) >= 1
@@ -390,7 +390,7 @@ class TestFillFormIntegration:
         QTest.qWait(5000)
 
         # Verify output - at least 1 document generated
-        output_dir = Path(sample_project) / 'output'
+        output_dir = Path(sample_project) / 'Результат'
         docs = list(output_dir.glob('*.docx'))
         assert len(docs) >= 1, f"Expected at least 1 document, got {len(docs)}"
 

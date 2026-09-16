@@ -136,12 +136,7 @@ def generate_project(
     renderer.project = project
 
     if output_dir is None:
-        legacy_output = os.path.join(project_path, 'output')
-        new_output = os.path.join(project_path, 'Результат')
-        if os.path.exists(legacy_output):
-            output_dir = legacy_output
-        else:
-            output_dir = new_output
+        output_dir = os.path.join(project_path, 'Результат')
     os.makedirs(output_dir, exist_ok=True)
 
     template_config = project.templates[template_name]
@@ -997,7 +992,7 @@ def generate_cli(project_path: str, template: str = None, count: int = None, out
     print(f'Project: {project_path}')
     print(f'Template: {template or "first configured"}')
     print(f'Count: {count or "auto"}')
-    print(f'Output: {out or "<project>/output/"}')
+    print(f'Output: {out or "<project>/Результат/"}')
 
     outputs = generate_project(project_path, template, count, out)
 

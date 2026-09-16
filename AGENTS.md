@@ -39,6 +39,7 @@
 - GUI imports engine, never vice versa
 - Schema (`engine/schema.py`) = single source of truth for .docxforge config
 - Renderer uses XML-run merge (preserves formatting), not text replacement
+- Nested project generation (Employee → Projects) lives in `generate.py`, details in `docs/nested-projects.md`
 
 ## Testing
 - Unit tests in `tests/` mirroring `docxforge/engine/` modules

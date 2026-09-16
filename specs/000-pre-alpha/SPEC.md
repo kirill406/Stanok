@@ -1,5 +1,7 @@
 # SPEC.md — Nested Employee/Project Generation (v1.0)
 
+Status: done
+
 ## Overview
 Extend "Create Projects" mode to generate **two-level nested folder structure**: Employee → Projects. Input: single Excel batch source with `employee` and `project_name` columns. Output: `EmployeeFolder/ProjectFolder/` with data, templates, result folders + `проект.docxforge`. Employee folder contains `docxforge_settings.json` listing their projects.
 

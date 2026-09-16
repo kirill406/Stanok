@@ -1065,5 +1065,42 @@ class TestFillFormCrashGuardsPhase5:
         assert infos == []
 
 
+    def test_corrupt_project_file_guarded(self, qtbot, sample_project, monkeypatch):
+        """Test corrupt проект.docxforge raises guarded error with dialog, not raw traceback."""
+        from docxforge.gui.fill_form import FillFormOpenError
+
+        criticals = []
+        monkeypatch.setattr(QMessageBox, 'critical', lambda *a, **k: criticals.append(a))
+
+        # Corrupt the project config (RECON B3 scenario 2).
+        with open(os.path.join(sample_project, 'проект.docxforge'), 'w', encoding='utf-8') as f:
+            f.write('{broken json,,,}')
+
+        with pytest.raises(FillFormOpenError):
+            FillForm(sample_project, 'all_fields.docx')
+
+        assert len(criticals) == 1
+        assert criticals[0][1] == STRINGS['msg_error']
+        assert STRINGS['msg_project_load_error'].split(':')[0] in criticals[0][2]
+
+    def test_corrupt_template_guarded(self, qtbot, sample_project, monkeypatch):
+        """Test broken template raises guarded error with dialog, not raw BadZipFile."""
+        from docxforge.gui.fill_form import FillFormOpenError
+
+        criticals = []
+        monkeypatch.setattr(QMessageBox, 'critical', lambda *a, **k: criticals.append(a))
+
+        # Corrupt the template (RECON B3 scenario 3).
+        with open(os.path.join(sample_project, 'Шаблоны', 'all_fields.docx'), 'wb') as f:
+            f.write(b'not a zip file')
+
+        with pytest.raises(FillFormOpenError):
+            FillForm(sample_project, 'all_fields.docx')
+
+        assert len(criticals) == 1
+        assert criticals[0][1] == STRINGS['msg_error']
+        assert STRINGS['msg_template_load_error'].split(':')[0] in criticals[0][2]
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])

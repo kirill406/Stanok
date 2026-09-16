@@ -49,6 +49,14 @@ COMPOSITE_PLACEHOLDER_EMPLOYEE = '{{employee}}'
 COMPOSITE_PLACEHOLDER_PROJECT = '{{project_name}}'
 
 
+class FillFormOpenError(Exception):
+    """FillForm cannot open the project config or the template (B3 guard).
+
+    Raised after an error dialog was already shown, so callers
+    (e.g. ProjectWindow._open_fill_form) must only abort, not warn again.
+    """
+
+
 class FillForm(FieldRowsMixin, AdvancedSectionMixin, BatchSectionMixin, ConfigIOMixin, ConfigCollectorMixin, QDialog):
     def __init__(self, project_dir: str, template_rel_path: str, parent=None):
         super().__init__(parent)
@@ -57,9 +65,24 @@ class FillForm(FieldRowsMixin, AdvancedSectionMixin, BatchSectionMixin, ConfigIO
         self.template_path = os.path.join(project_dir, '\u0428\u0430\u0431\u043b\u043e\u043d\u044b', template_rel_path)
         self.data_reader = DataReader()
         self.renderer = Renderer(project_dir, self.data_reader)
-        self.renderer.load_project()
+        # B3 guards: a corrupt проект.docxforge (JSONDecodeError) or a broken
+        # template (BadZipFile) must show an error dialog instead of escaping
+        # the constructor as an unhandled traceback.
+        try:
+            self.renderer.load_project()
+        except Exception as e:
+            logging.getLogger(__name__).error('Failed to load project file: %s', e)
+            QMessageBox.critical(parent, STRINGS['msg_error'],
+                                 STRINGS['msg_project_load_error'].format(error=e))
+            raise FillFormOpenError('project load failed: %s' % e) from e
 
-        self.scan_result = scan_template(self.template_path)
+        try:
+            self.scan_result = scan_template(self.template_path)
+        except Exception as e:
+            logging.getLogger(__name__).error('Failed to scan template %s: %s', self.template_path, e)
+            QMessageBox.critical(parent, STRINGS['msg_error'],
+                                 STRINGS['msg_template_load_error'].format(error=e))
+            raise FillFormOpenError('template scan failed: %s' % e) from e
         self.config = self.renderer.project.templates.get(
             template_rel_path, TemplateConfig())
         self.field_widgets = {}

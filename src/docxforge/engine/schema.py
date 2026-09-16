@@ -124,6 +124,28 @@ class ResumeState:
     continue_from_last: bool = True  # чекбокс «Продолжить»
 
 
+def advance_counter_after_creation(resume: ResumeState, created_count: int) -> int:
+    """Advance the generation counter after creation-from-generation (B6).
+
+    Mirrors normal generation math in ``render_loop.update_resume_state``
+    (``last_counter_value = offset + rendered``): each created project
+    counts like one generated document. Only the counter moves; per-source
+    row offsets are out of scope (owned by project-creation logic).
+
+    Args:
+        resume: Source template resume state (mutated in place).
+        created_count: Number of projects actually created (<= 0 = no-op).
+
+    Returns:
+        The new ``last_counter_value``.
+    """
+    if created_count <= 0:
+        return resume.last_counter_value
+    base = resume.last_counter_value if resume.continue_from_last else 0
+    resume.last_counter_value = base + created_count
+    return resume.last_counter_value
+
+
 @dataclass
 class TemplateConfig:
     fields: Dict[str, FieldMapping] = field(default_factory=dict)

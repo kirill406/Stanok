@@ -20,16 +20,16 @@ Non-overlap: B3 имеет ПРИОРИТЕТ на guard-ханках `config_io
       его сломает; зафиксировано как осознанное отклонение).
       Обновить 2 ассёрта `tests/test_gui_fill_form.py:314,393` (`output` → `Результат`).
       `project_window.py` НЕ трогаю (приоритет B3). Коммит + push.
-- [ ] P2(а). Снапшот `проект.docxforge` по имени проекта в Home: новые хелперы в `generate.py`
-      (`get_home_dir`, `unique_home_project_file`, `save_project_snapshot_to_home`),
+- [x] P2(а). Снапшот `проект.docxforge` по имени проекта в Home: новые хелперы в `generate.py`
+      (`get_home_dir`, `unique_home_project_file`, `save_project_snapshot_to_home`
+      + `_render_prefilled_project_docs` — имплементация предзаполнения едет здесь же),
       коллизия имени → переименование создаваемого `(1)`, `(2)`, … (существующее не трогать),
       опциональный параметр `home_dir` для hermetic-тестов. Вызов из flat +
-      nested создания. Регрессионные тесты в новом `tests/test_002_projects.py`
+      nested создания. Регрессионные тесты Home в новом `tests/test_002_projects.py`
       (новый файл — без конфликта с B3). Коммит + push.
-- [ ] P3(б). Предзаполнение генерируемых проектов: после сборки каждого проекта рендер
-      ≥1 документа в его `Результат/` (`_render_prefilled_project_docs` в `generate.py`,
-      best-effort с warning-логом), константы уже подставлены via `_build_project_config`.
-      Регрессионные тесты (flat + nested: docx существует, константа в тексте) в
+- [ ] P3(б). Предзаполнение генерируемых проектов: вызов `_render_prefilled_project_docs`
+      уже в проводке P2; этот подпункт = регрессионные тесты (flat + nested: docx
+      существует в `Результат/`, константа в тексте, плейсхолдеров не осталось) в
       `tests/test_002_projects.py`. Коммит + push.
 - [ ] P4(в). Секция «Поля шаблона для генерируемых проектов» в `FillForm`: новый
       `QGroupBox` отдельным методом `_build_generated_project_section` (STRINGS, без хардкода RU),

@@ -173,6 +173,7 @@ def create_projects_from_template(
     template_name: str,
     folder_name_template: str,
     max_projects: Optional[int] = None,
+    home_dir: Optional[str] = None,
 ) -> Tuple[str, int]:
     """Create per-row projects for a flat template (full pipeline).
 
@@ -198,6 +199,7 @@ def create_projects_from_template(
             project_path, template_name, folder_name_template, max_projects,
             employee_column=parsed.get('employee_column') or 'employee',
             project_column=parsed.get('project_column') or 'project_name',
+            home_dir=home_dir,
         )
 
     project_file = os.path.join(project_path, 'проект.docxforge')
@@ -317,6 +319,16 @@ def create_projects_from_template(
             except OSError as e:
                 raise GenerationError(
                     f'Failed to copy data folder: {e}') from e
+
+            # B1: Home snapshot + prefilled documents — only after the
+            # project folder is fully assembled (template + data + config).
+            try:
+                save_project_snapshot_to_home(
+                    folder_name, new_project, home_dir=home_dir)
+            except Exception as e:
+                logger.warning('Home snapshot for %r skipped: %s', folder_name, e)
+
+            _render_prefilled_project_docs(project_subdir, template_name)
 
             created_count += 1
     except GenerationError:
@@ -739,6 +751,7 @@ def create_nested_employee_projects(
     max_projects: Optional[int] = None,
     employee_column: str = 'employee',
     project_column: str = 'project_name',
+    home_dir: Optional[str] = None,
 ) -> Tuple[str, int, int]:
     """Create nested Employee/Project folders from a batch source.
 
@@ -954,6 +967,14 @@ def create_nested_employee_projects(
                 new_project.templates[template_name] = new_config
                 new_project.to_file(os.path.join(project_dir, 'проект.docxforge'))
 
+                try:
+                    save_project_snapshot_to_home(
+                        project_folder, new_project, home_dir=home_dir)
+                except Exception as e:
+                    logger.warning('Home snapshot for %r skipped: %s', project_folder, e)
+
+                _render_prefilled_project_docs(project_dir, template_name)
+
                 stamp = datetime.now().isoformat(timespec='seconds')
                 settings_projects.append({
                     'name': str(row.get(project_column, '') or project_folder),
@@ -985,6 +1006,82 @@ def create_nested_employee_projects(
         advance_counter_after_creation(template_config.resume, project_count)
         project.to_file(project_file)
     return projects_dir, employee_counter, project_count
+
+
+# ---------------------------------------------------------------------------
+# B1 (002-stabilization): Home snapshots + prefilled documents.
+# Each generated project additionally leaves a `<project>.docxforge` snapshot
+# named after the project itself in the user's Home directory, and is born
+# with its documents already rendered (TABLE fields were frozen to row
+# values as CONSTANT, so a plain render resolves everything).
+# ---------------------------------------------------------------------------
+
+def get_home_dir() -> str:
+    """Return the user's Home directory (B1 snapshot location)."""
+    return os.path.expanduser('~')
+
+
+def unique_home_project_file(
+    project_name: str,
+    home_dir: Optional[str] = None,
+) -> str:
+    """Return a non-existing ``<project_name>.docxforge`` path in Home.
+
+    On name collision the file being created is renamed (``name (1)``,
+    ``name (2)``, …) while the existing file is left untouched — the same
+    rule as B5 output files, applied to Home snapshots.
+    """
+    base_dir = home_dir or get_home_dir()
+    safe = _sanitize_folder_name(project_name) or 'project'
+    candidate = os.path.join(base_dir, safe + '.docxforge')
+    if not os.path.exists(candidate):
+        return candidate
+    root, ext = os.path.splitext(candidate)
+    index = 1
+    while True:
+        renamed = '%s (%d)%s' % (root, index, ext)
+        if not os.path.exists(renamed):
+            logger.info('Home snapshot %r exists; using %r instead',
+                        candidate, renamed)
+            return renamed
+        index += 1
+
+
+def save_project_snapshot_to_home(
+    project_name: str,
+    project: 'Project',
+    home_dir: Optional[str] = None,
+) -> str:
+    """Write a ``<project_name>.docxforge`` snapshot to Home. Returns path."""
+    path = unique_home_project_file(project_name, home_dir)
+    project.to_file(path)
+    logger.info('Wrote home snapshot: %s', path)
+    return path
+
+
+def _render_prefilled_project_docs(
+    project_dir: str,
+    template_name: str,
+) -> List[str]:
+    """Render prefilled documents into a generated project's ``Результат/``.
+
+    Best-effort: failures are logged with a warning and never abort project
+    creation (the project folder + config already exist at this point).
+    """
+    try:
+        renderer = Renderer(project_dir, DataReader())
+        renderer.load_project()
+        outputs = renderer.render(
+            template_name, {},
+            output_dir=os.path.join(project_dir, 'Результат'),
+            max_docs=1,
+        )
+        renderer.save_project()
+        logger.info('Prefilled %d document(s) in %s', len(outputs), project_dir)
+        return outputs
+    except Exception as e:
+        logger.warning('Prefill render skipped for %s: %s', project_dir, e)
+        return []
 
 
 def generate_cli(project_path: str, template: str = None, count: int = None, out: str = None) -> List[str]:

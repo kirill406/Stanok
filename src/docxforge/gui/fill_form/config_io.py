@@ -295,8 +295,10 @@ class ConfigIOMixin:
         # (after confirmation). Follow the resolved file (folder or migrated
         # Home copy). Snapshot first: on engine failure the previous
         # config is restored instead of leaving a half-applied one (M12).
-        project_file = getattr(self.renderer, 'project_file',
-                               os.path.join(self.project_dir, 'проект.docxforge'))
+        project_file = getattr(self.renderer, 'project_file', None)
+        if project_file is None:
+            from docxforge.engine.schema import default_project_file
+            project_file = default_project_file(self.project_dir)
         snapshot = None
         if os.path.exists(project_file):
             with open(project_file, 'rb') as f:

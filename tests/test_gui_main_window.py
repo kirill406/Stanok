@@ -62,7 +62,9 @@ class TestMainWindow:
         qtbot.waitUntil(lambda: window.project_window is not None, timeout=2000)
         assert window.project_window is not None
         assert project_path.exists()
-        assert (project_path / 'проект.docxforge').exists()
+        assert not (project_path / (project_path.name + '.docxforge')).exists()
+        assert (tmp_path / 'fake_docxforge_home'
+                / 'new_project.docxforge').exists()
 
     def test_open_project_button(self, qtbot, sample_project, monkeypatch):
         """Test opening an existing project."""
@@ -206,8 +208,10 @@ class TestMainWindowIntegration:
         qtbot.mouseClick(btn_open, Qt.LeftButton)
         qtbot.waitUntil(lambda: window.project_window is not None, timeout=2000)
 
-        # Verify project structure exists
-        assert (project_path / 'проект.docxforge').exists()
+        # Verify project structure exists (config migrated to Home on open)
+        assert not (project_path / (project_path.name + '.docxforge')).exists()
+        fake_home = tmp_path / 'fake_docxforge_home'
+        assert (fake_home / 'integration_project.docxforge').exists()
         assert (project_path / 'Шаблоны').exists()
         assert (project_path / 'Данные').exists()
 

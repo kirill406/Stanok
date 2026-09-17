@@ -201,7 +201,7 @@ class ProjectWindow(QMainWindow):
             dlg = FillForm(self.project_dir, rel_path, self)
         except FillFormOpenError:
             # FillForm already showed an error dialog (corrupt
-            # проект.docxforge or template unreadable past the zip check).
+            # config or template unreadable past the zip check).
             logger.error('FillForm failed to open for %s', rel_path)
             return
         except Exception as e:
@@ -282,20 +282,16 @@ class ProjectWindow(QMainWindow):
         # Remove from recent in main window
         self.main_window.remove_recent_project(self.project_dir)
 
-        # Delete Шаблоны folder, project configs (fixed or per-project
-        # names) and the migrated Home copy, if any.
-        from docxforge.generate import resolve_project_file
+        # Delete Шаблоны folder, project configs (any names) and the migrated
+        # Home copy, if any.
+        from docxforge.engine.schema import resolve_project_file
         templates_dir = os.path.join(self.project_dir, 'Шаблоны')
-        project_file = os.path.join(self.project_dir, 'проект.docxforge')
-        project_bak = os.path.join(self.project_dir, 'проект.docxforge.bak')
-        project_tmp = os.path.join(self.project_dir, 'проект.docxforge.tmp')
         folder_configs = [
             os.path.join(self.project_dir, n)
             for n in sorted(os.listdir(self.project_dir))
-            if n.endswith('.docxforge') and not n.endswith(('.bak', '.tmp'))]
+            if '.docxforge' in n]
         home_copy = resolve_project_file(self.project_dir)
-        for path in [templates_dir, project_file, project_bak, project_tmp,
-                     *folder_configs]:
+        for path in [templates_dir, *folder_configs]:
             if path and os.path.exists(path):
                 if os.path.isdir(path):
                     shutil.rmtree(path)

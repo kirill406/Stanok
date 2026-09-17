@@ -58,16 +58,17 @@ def test_resolve_none_without_any_config(tmp_path):
     assert gen_module.resolve_project_file(folder, str(tmp_path)) is None
 
 
-def test_migrate_skips_legacy_and_gates_on_data_dirs(tmp_path):
-    """проект.docxforge stays; folders without Данные/Шаблоны untouched."""
+def test_migrate_moves_all_configs_to_folder_name_and_gates(tmp_path):
+    """All configs migrate under the folder name; folders w/o data untouched."""
     home = str(tmp_path / 'home')
     os.makedirs(home, exist_ok=True)
     folder = _make_folder(str(tmp_path), 'Proj1', 'проект.docxforge')
     with open(os.path.join(folder, 'Other.docxforge'), 'w') as f:
         f.write('{}')
     migrated = gen_module.migrate_project_configs_to_home(folder, home)
-    assert migrated == [os.path.join(home, 'Other.docxforge')]
-    assert os.path.isfile(os.path.join(folder, 'проект.docxforge'))
+    assert migrated == [os.path.join(home, 'Proj1.docxforge'),
+                        os.path.join(home, 'Proj1 (1).docxforge')]
+    assert sorted(os.listdir(folder)) == ['Данные', 'Шаблоны']
 
     plain = os.path.join(str(tmp_path), 'plain')
     os.makedirs(plain, exist_ok=True)
@@ -99,7 +100,8 @@ def test_renderer_round_trips_through_home_copy(tmp_path, monkeypatch):
 
     home = str(tmp_path / 'home')
     os.makedirs(home, exist_ok=True)
-    monkeypatch.setattr(gen_module, 'get_docxforge_home', lambda: home)
+    import docxforge.engine.schema as schema_module
+    monkeypatch.setattr(schema_module, 'get_docxforge_home', lambda: home)
     folder = _make_folder(str(tmp_path), 'Proj1', 'Proj1.docxforge')
     gen_module.migrate_project_configs_to_home(folder, home)
     renderer = Renderer(folder, None)

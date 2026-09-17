@@ -133,7 +133,8 @@ class TestReviewB5SchemaDirectoryTemplate:
             assert os.path.basename(created[1]) == 'Same_1'
             # First project kept its own row value (not overwritten).
             first = Project.from_file(
-                os.path.join(created[0], 'проект.docxforge'))
+                os.path.join(created[0],
+                             os.path.basename(created[0]) + '.docxforge'))
             assert first.templates['t.docx'].fields['name'].value == 'Same'
 
     def test_review_schema_template_whitespace_tolerant(self):

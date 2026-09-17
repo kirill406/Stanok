@@ -114,9 +114,10 @@ def generate_project(
     num_docs: Optional[int] = None,
     output_dir: Optional[str] = None,
 ) -> List[str]:
-    project_file = os.path.join(project_path, 'проект.docxforge')
-    if not os.path.exists(project_file):
-        raise GenerationError(f'Project file not found: {project_file}')
+    project_file = resolve_project_file(project_path)
+    if project_file is None or not os.path.exists(project_file):
+        raise GenerationError(
+            f'Project file not found: {project_path}')
 
     project = Project.from_file(project_file)
     if not project.templates:
@@ -291,7 +292,8 @@ def create_projects_from_template(
                 template_config, row_data, primary_source_config.file,
                 include_fields=template_config.generated_project_fields)
 
-            new_project_file = os.path.join(project_subdir, 'проект.docxforge')
+            new_project_file = unique_project_file_in_folder(
+                project_subdir, folder_name)
             new_project = Project(version=2)
             new_project.templates[template_name] = new_config
             try:
@@ -325,14 +327,6 @@ def create_projects_from_template(
             except OSError as e:
                 raise GenerationError(
                     f'Failed to copy data folder: {e}') from e
-
-            # B1: Home snapshot + prefilled documents — only after the
-            # project folder is fully assembled (template + data + config).
-            try:
-                save_project_snapshot_to_home(
-                    folder_name, new_project, home_dir=home_dir)
-            except Exception as e:
-                logger.warning('Home snapshot for %r skipped: %s', folder_name, e)
 
             _render_prefilled_project_docs(project_subdir, template_name)
 
@@ -992,13 +986,8 @@ def create_nested_employee_projects(
                     bsc.continue_from_last = False
                 new_project = Project(version=2)
                 new_project.templates[template_name] = new_config
-                new_project.to_file(os.path.join(project_dir, 'проект.docxforge'))
-
-                try:
-                    save_project_snapshot_to_home(
-                        project_folder, new_project, home_dir=home_dir)
-                except Exception as e:
-                    logger.warning('Home snapshot for %r skipped: %s', project_folder, e)
+                new_project.to_file(unique_project_file_in_folder(
+                    project_dir, project_folder))
 
                 _render_prefilled_project_docs(project_dir, template_name)
 
@@ -1037,11 +1026,120 @@ def create_nested_employee_projects(
 
 # ---------------------------------------------------------------------------
 # B1 (002-stabilization): Home snapshots + prefilled documents.
-# Each generated project additionally leaves a `<project>.docxforge` snapshot
-# named after the project itself in the user's Home directory, and is born
-# with its documents already rendered (TABLE fields were frozen to row
-# values as CONSTANT, so a plain render resolves everything).
+# Generated projects carry a `<folder>.docxforge` config named after their own
+# folder (not a fixed `проект.docxforge`). On open the config is migrated to
+# `~/.docxforge` and removed from the folder; opening resolves folder-first,
+# Home-second (see resolve_project_file).
 # ---------------------------------------------------------------------------
+
+LEGACY_PROJECT_FILE = 'проект.docxforge'
+
+
+def resolve_project_file(project_dir: str, home_dir: str = None):
+    """Locate the config for a project folder.
+
+    1. ``<folder>/проект.docxforge`` (regular projects, back-compat).
+    2. The single ``<folder>/*.docxforge`` (generated, not yet migrated).
+    3. ``~/.docxforge/<folder>.docxforge`` — migrated generated projects
+       (exact stem first, then ``<stem> (n)`` collision variants, newest wins).
+    Returns path or None.
+    """
+    folder_file = os.path.join(project_dir, LEGACY_PROJECT_FILE)
+    if os.path.isfile(folder_file):
+        return folder_file
+    try:
+        names = sorted(os.listdir(project_dir))
+    except OSError:
+        names = []
+    singles = [n for n in names
+               if n.endswith('.docxforge') and not n.endswith(('.bak', '.tmp'))]
+    if len(singles) == 1:
+        return os.path.join(project_dir, singles[0])
+    base = _sanitize_folder_name(
+        os.path.basename(os.path.normpath(project_dir))) or 'project'
+    home = home_dir or get_docxforge_home()
+    try:
+        names = os.listdir(home)
+    except OSError:
+        return None
+    exact = base + '.docxforge'
+    if exact in names:
+        return os.path.join(home, exact)
+    variants = []
+    for name in names:
+        if (name.startswith(base + ' (') and name.endswith(').docxforge')):
+            variants.append(os.path.join(home, name))
+    if not variants:
+        return None
+    variants.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+    return variants[0]
+
+
+def is_project_folder(path: str, home_dir: str = None) -> bool:
+    """True if a folder looks like an openable project."""
+    try:
+        names = os.listdir(path)
+    except OSError:
+        return False
+    for name in names:
+        if name.endswith('.docxforge') and not name.endswith(('.bak', '.tmp')):
+            return True
+    if 'Данные' in names or 'Шаблоны' in names:
+        return resolve_project_file(path, home_dir) is not None
+    return False
+
+
+def migrate_project_configs_to_home(project_dir: str, home_dir: str = None):
+    """Move per-project configs from a project folder to ``~/.docxforge``.
+
+    For every ``*.docxforge`` next to ``Данные/``/``Шаблоны/`` (except the
+    regular ``проект.docxforge``): copy bytes to a unique Home path and
+    delete the source. Best-effort — never raises. Returns Home paths.
+    """
+    migrated = []
+    try:
+        names = os.listdir(project_dir)
+    except OSError as e:
+        logger.debug('Migration scan failed for %r: %s', project_dir, e)
+        return migrated
+    if 'Данные' not in names and 'Шаблоны' not in names:
+        return migrated
+    for name in sorted(names):
+        if not name.endswith('.docxforge'):
+            continue
+        if name == LEGACY_PROJECT_FILE or name.endswith(('.bak', '.tmp')):
+            continue
+        src = os.path.join(project_dir, name)
+        if not os.path.isfile(src):
+            continue
+        try:
+            with open(src, 'rb') as f:
+                payload = f.read()
+            stem = os.path.splitext(name)[0]
+            dst = unique_home_project_file(stem, home_dir)
+            with open(dst, 'wb') as f:
+                f.write(payload)
+            os.remove(src)
+            logger.info('Migrated project config: %s -> %s', src, dst)
+            migrated.append(dst)
+        except OSError as e:
+            logger.warning('Config migration skipped for %r: %s', src, e)
+    return migrated
+
+
+def unique_project_file_in_folder(project_dir: str, stem: str) -> str:
+    """Non-existing ``<stem>.docxforge`` path inside a project folder."""
+    safe = _sanitize_folder_name(stem) or 'project'
+    candidate = os.path.join(project_dir, safe + '.docxforge')
+    if not os.path.exists(candidate):
+        return candidate
+    root, ext = os.path.splitext(candidate)
+    index = 1
+    while True:
+        renamed = '%s (%d)%s' % (root, index, ext)
+        if not os.path.exists(renamed):
+            return renamed
+        index += 1
 
 def get_home_dir() -> str:
     """Return the user's Home directory (B1 snapshot location)."""
@@ -1081,18 +1179,6 @@ def unique_home_project_file(
                         candidate, renamed)
             return renamed
         index += 1
-
-
-def save_project_snapshot_to_home(
-    project_name: str,
-    project: 'Project',
-    home_dir: Optional[str] = None,
-) -> str:
-    """Write a ``<project_name>.docxforge`` snapshot to ``~/.docxforge``."""
-    path = unique_home_project_file(project_name, home_dir)
-    project.to_file(path)
-    logger.info('Wrote home snapshot: %s', path)
-    return path
 
 
 def _render_prefilled_project_docs(

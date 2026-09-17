@@ -291,10 +291,12 @@ class ConfigIOMixin:
             if not ok:
                 return
 
-        # Engine reads проект.docxforge from disk, so persist the config now
-        # (after confirmation). Snapshot first: on engine failure the previous
+        # Engine reads the project file from disk, so persist the config now
+        # (after confirmation). Follow the resolved file (folder or migrated
+        # Home copy). Snapshot first: on engine failure the previous
         # config is restored instead of leaving a half-applied one (M12).
-        project_file = os.path.join(self.project_dir, 'проект.docxforge')
+        project_file = getattr(self.renderer, 'project_file',
+                               os.path.join(self.project_dir, 'проект.docxforge'))
         snapshot = None
         if os.path.exists(project_file):
             with open(project_file, 'rb') as f:

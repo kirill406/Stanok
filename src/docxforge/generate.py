@@ -1048,17 +1048,26 @@ def get_home_dir() -> str:
     return os.path.expanduser('~')
 
 
+def get_docxforge_home() -> str:
+    """Return ``~/.docxforge`` (snapshots, logs, settings), creating it."""
+    path = os.path.join(get_home_dir(), '.docxforge')
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
 def unique_home_project_file(
     project_name: str,
     home_dir: Optional[str] = None,
 ) -> str:
-    """Return a non-existing ``<project_name>.docxforge`` path in Home.
+    """Return a non-existing ``<project_name>.docxforge`` path.
 
-    On name collision the file being created is renamed (``name (1)``,
-    ``name (2)``, …) while the existing file is left untouched — the same
-    rule as B5 output files, applied to Home snapshots.
+    Snapshots live in ``~/.docxforge`` (next to logs and settings), not in
+    plain Home. On name collision the file being created is renamed
+    (``name (1)``, ``name (2)``, …) while the existing file is left
+    untouched — the same rule as B5 output files.
+
     """
-    base_dir = home_dir or get_home_dir()
+    base_dir = home_dir or get_docxforge_home()
     safe = _sanitize_folder_name(project_name) or 'project'
     candidate = os.path.join(base_dir, safe + '.docxforge')
     if not os.path.exists(candidate):
@@ -1079,7 +1088,7 @@ def save_project_snapshot_to_home(
     project: 'Project',
     home_dir: Optional[str] = None,
 ) -> str:
-    """Write a ``<project_name>.docxforge`` snapshot to Home. Returns path."""
+    """Write a ``<project_name>.docxforge`` snapshot to ``~/.docxforge``."""
     path = unique_home_project_file(project_name, home_dir)
     project.to_file(path)
     logger.info('Wrote home snapshot: %s', path)

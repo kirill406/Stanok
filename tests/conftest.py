@@ -9,6 +9,22 @@ from pathlib import Path
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _isolate_home_snapshots(tmp_path, monkeypatch):
+    """Redirect ``~/.docxforge`` snapshots to tmp: tests must not pollute Home.
+
+    Creation paths default to the real ``~/.docxforge`` when ``home_dir`` is
+    not passed — this fixture swaps it for a per-test tmp dir, and tmp_path
+    cleanup removes all generated ``проект.docxforge`` files automatically.
+    """
+    import docxforge.generate as gen_module
+
+    fake_home = tmp_path / 'fake_docxforge_home'
+    fake_home.mkdir(exist_ok=True)
+    monkeypatch.setattr(
+        gen_module, 'get_docxforge_home', lambda: str(fake_home))
+
+
 @pytest.fixture
 def temp_project_dir(tmp_path):
     """Create a temporary project directory with fixture data copied."""

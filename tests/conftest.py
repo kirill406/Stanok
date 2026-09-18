@@ -8,6 +8,10 @@ from pathlib import Path
 
 import pytest
 
+# Same headless default as the root conftest (matters when tests/ is used
+# as rootdir on its own).
+os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
+
 
 @pytest.fixture(autouse=True)
 def _isolate_home_snapshots(tmp_path, monkeypatch):

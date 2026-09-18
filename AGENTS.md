@@ -45,6 +45,7 @@
 - Unit tests in `tests/` mirroring `docxforge/engine/` modules
 - Engine coverage target: 85%+ (currently ~86%)
 - GUI: manual testing, QTest optional
+- GUI tests run headless (conftest forces QT_QPA_PLATFORM=offscreen); skip them with `pytest -m "not gui"`
 - Every new engine feature → add test in `tests/`
 - Bug fix → regression test
 - Test naming: `test_<module>_<scenario>_<expectation>`

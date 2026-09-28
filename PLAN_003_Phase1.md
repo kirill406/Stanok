@@ -6,8 +6,8 @@ Spec: `specs/003-json/spec.md` (Phase 1), Filling JSON format:
 
 ## Subpoints (one commit + push each)
 
-- [ ] 1. Plan file (`PLAN_003_Phase1.md`) — this file.
-- [ ] 2. `Renderer.render_from_json(filling, output_dir=None)` in
+- [x] 1. Plan file (`PLAN_003_Phase1.md`) — this file.
+- [x] 2. `Renderer.render_from_json(filling, output_dir=None)` in
   `src/docxforge/engine/renderer.py` + validation message codes in
   `src/docxforge/engine/errors.py`. Validation: `filling` must be a dict,
   `template` non-empty string, `fields` present and a dict — else
@@ -19,9 +19,9 @@ Spec: `specs/003-json/spec.md` (Phase 1), Filling JSON format:
   Rationale for `ValueError` over `GenerationError`: `renderer.py` cannot
   import `docxforge.generate` (circular: `generate` imports `Renderer`);
   `generate.py` (P4) wraps into `GenerationError` at its own boundary.
-- [ ] 3. Harness `tests/test_json_fixtures.py` → `render_from_json`
+- [x] 3. Harness `tests/test_json_fixtures.py` → `render_from_json`
   (allowed consumer-side change; no fixture content changes).
-- [ ] 4. New `tests/test_003_render_json.py`: validation (missing/invalid
+- [x] 4. New `tests/test_003_render_json.py`: validation (missing/invalid
   `template`, `fields`), render-from-JSON without Excel, line break kept,
   table cells rendered. Full `pytest tests/ -q` green incl. fixtures.
 

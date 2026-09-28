@@ -771,6 +771,334 @@ def is_project_folder(path: str, home_dir: str = None) -> bool:
     return False
 
 
+# ---------------------------------------------------------------------------
+# 003-json Phase 3: Project JSON validation / normalization.
+#
+# Normative example: specs/003-json/project_generation.json
+# (dict-shaped `templates`, relative paths, field types
+# constant/table/counter/today/image, dict-shaped batch sources, `resume`).
+# Messages are English technical strings (no hardcoded Russian strings).
+# ---------------------------------------------------------------------------
+
+#: Field types accepted by Project JSON (legacy `number` migrates to `counter`).
+PROJECT_FIELD_TYPES = frozenset(
+    ft.value for ft in FieldType)  # constant/table/counter/today/image
+
+#: Batch/row-iteration modes accepted by Project JSON.
+PROJECT_BATCH_MODES = frozenset(
+    m.value for m in RowIterationMode)  # constant/sequential/circular
+
+#: Legacy batch modes migrated by normalize_project_json().
+_LEGACY_BATCH_MODES = {
+    'single': RowIterationMode.CONSTANT.value,
+    'all_rows': RowIterationMode.SEQUENTIAL.value,
+    'n_rows': RowIterationMode.SEQUENTIAL.value,
+}
+
+_ABSOLUTE_PATH_RE = re.compile(r'^[a-zA-Z]:[\\/]')
+
+
+def _is_absolute_path(value: Any) -> bool:
+    """Cross-platform absolute-path check (str only; non-str is False)."""
+    if not isinstance(value, str) or not value:
+        return False
+    text = value.replace('\\', '/')
+    if text.startswith('/') or _ABSOLUTE_PATH_RE.match(value):
+        return True
+    try:
+        if os.path.isabs(value):
+            return True
+    except Exception as e:
+        logger.debug('Absolute-path check failed for %r: %s', value, e)
+    return False
+
+
+def validate_project_json(data: dict) -> List[str]:
+    """Validate a Project JSON dict, returning a list of error strings.
+
+    Checks: required `templates` dict (non-empty) and per-template `fields`
+    dict (non-empty); known field types; required `file`+`column` on `table`
+    fields; batch `mode` in constant/sequential/circular; relative paths
+    only (absolute paths are errors — template names, field/batch `file`
+    values, `filename_template`, `directory_template`, `folder_name_template`).
+
+    An empty list means the document is valid.
+    """
+    errors: List[str] = []
+    if not isinstance(data, dict):
+        return ['project: must be an object']
+    templates = data.get('templates')
+    if not isinstance(templates, dict) or not templates:
+        errors.append('templates: must be a non-empty object')
+        return errors
+    for tpl_name, tpl in templates.items():
+        loc = 'templates[%r]' % (tpl_name,)
+        if _is_absolute_path(tpl_name):
+            errors.append('%s: template name must be a relative path' % loc)
+        if not isinstance(tpl, dict):
+            errors.append('%s: must be an object' % loc)
+            continue
+        fields = tpl.get('fields')
+        if not isinstance(fields, dict) or not fields:
+            errors.append('%s.fields: must be a non-empty object' % loc)
+        else:
+            for fname, fdata in fields.items():
+                floc = '%s.fields[%r]' % (loc, fname)
+                if not isinstance(fdata, dict):
+                    errors.append('%s: must be an object' % floc)
+                    continue
+                ftype = fdata.get('type')
+                if ftype not in PROJECT_FIELD_TYPES:
+                    errors.append(
+                        '%s.type: unknown field type %r '
+                        '(expected one of constant/table/counter/today/image)'
+                        % (floc, ftype))
+                    continue
+                if ftype == FieldType.TABLE.value:
+                    if not fdata.get('file'):
+                        errors.append(
+                            '%s: table field requires "file"' % floc)
+                    elif _is_absolute_path(fdata.get('file')):
+                        errors.append(
+                            '%s.file: must be a relative path' % floc)
+                    if not fdata.get('column'):
+                        errors.append(
+                            '%s: table field requires "column"' % floc)
+                else:
+                    for key in ('file', 'path'):
+                        if key in fdata and fdata[key] is not None \
+                                and _is_absolute_path(fdata[key]):
+                            errors.append(
+                                '%s.%s: must be a relative path'
+                                % (floc, key))
+        batch = tpl.get('batch', {})
+        if not isinstance(batch, dict):
+            errors.append('%s.batch: must be an object' % loc)
+        else:
+            sources = batch.get('sources', {})
+            if sources is not None and not isinstance(sources, dict):
+                errors.append('%s.batch.sources: must be an object' % loc)
+            elif isinstance(sources, dict):
+                for sname, sdata in sources.items():
+                    sloc = '%s.batch.sources[%r]' % (loc, sname)
+                    if not isinstance(sdata, dict):
+                        errors.append('%s: must be an object' % sloc)
+                        continue
+                    mode = sdata.get('mode', RowIterationMode.CONSTANT.value)
+                    if mode not in PROJECT_BATCH_MODES:
+                        errors.append(
+                            '%s.mode: unknown batch mode %r '
+                            '(expected one of constant/sequential/circular)'
+                            % (sloc, mode))
+                    for key in ('file', 'path'):
+                        if key in sdata and sdata[key] is not None \
+                                and _is_absolute_path(sdata[key]):
+                            errors.append(
+                                '%s.%s: must be a relative path'
+                                % (sloc, key))
+            for key in ('filename_template', 'directory_template',
+                        'folder_name_template'):
+                val = batch.get(key, tpl.get(key))
+                if val is not None and _is_absolute_path(val):
+                    errors.append(
+                        '%s.%s: must be a relative path' % (loc, key))
+    return errors
+
+
+def _basename_of(path_value: Any) -> Any:
+    """Return the final segment of a path-like string (forward-slash aware)."""
+    if not isinstance(path_value, str):
+        return path_value
+    return path_value.replace('\\', '/').rstrip('/').split('/')[-1]
+
+
+def _normalize_fields(raw: Any) -> Dict[str, dict]:
+    """Normalize a fields mapping: legacy list-of-{name,...} → dict."""
+    if isinstance(raw, list):
+        out: Dict[str, dict] = {}
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            name = item.get('name')
+            if not name:
+                logger.warning('Skipping legacy field without name: %r', item)
+                continue
+            rest = {k: v for k, v in item.items() if k != 'name'}
+            out[str(name)] = rest
+        return out
+    if isinstance(raw, dict):
+        return {str(k): (dict(v) if isinstance(v, dict) else v)
+                for k, v in raw.items()}
+    return {}
+
+
+def _normalize_batch_sources(raw: Any) -> Dict[str, dict]:
+    """Normalize batch sources: legacy list-of-{name,...} → dict."""
+    if isinstance(raw, list):
+        out: Dict[str, dict] = {}
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            name = item.get('name') or item.get('file')
+            if not name:
+                logger.warning(
+                    'Skipping legacy batch source without name: %r', item)
+                continue
+            rest = {k: v for k, v in item.items() if k != 'name'}
+            out[str(name)] = rest
+        return out
+    if isinstance(raw, dict):
+        return {str(k): (dict(v) if isinstance(v, dict) else v)
+                for k, v in raw.items()}
+    return {}
+
+
+def _normalize_field_entry(fdata: Any) -> dict:
+    """Migrate one field entry: `number` → `counter`, absolute file → basename."""
+    if not isinstance(fdata, dict):
+        return fdata
+    fd = dict(fdata)
+    if fd.get('type') == 'number':
+        logger.info('Migrating legacy field type number -> counter')
+        fd['type'] = FieldType.COUNTER.value
+        fd.setdefault('start', 1)
+    for key in ('file', 'path'):
+        if key in fd and _is_absolute_path(fd[key]):
+            logger.info('Relativizing absolute %s %r -> basename', key, fd[key])
+            if key == 'path' and not _is_absolute_path(fd.get('file', '')):
+                fd.pop(key, None)
+                continue
+            fd[key] = _basename_of(fd[key])
+    # Legacy 'path' alongside a relative 'file' carries no extra meaning.
+    if 'path' in fd and 'file' in fd \
+            and not _is_absolute_path(fd.get('file', '')):
+        fd.pop('path', None)
+    return fd
+
+
+def _normalize_source_entry(sdata: Any) -> dict:
+    """Migrate one batch source: legacy mode, absolute file → basename."""
+    if not isinstance(sdata, dict):
+        return sdata
+    sd = dict(sdata)
+    mode = sd.get('mode')
+    if mode in _LEGACY_BATCH_MODES:
+        logger.info('Migrating legacy batch mode %r -> %r',
+                    mode, _LEGACY_BATCH_MODES[mode])
+        sd['mode'] = _LEGACY_BATCH_MODES[mode]
+    for key in ('file', 'path'):
+        if key in sd and _is_absolute_path(sd[key]):
+            logger.info('Relativizing absolute %s %r -> basename', key, sd[key])
+            if key == 'path' and not _is_absolute_path(sd.get('file', '')):
+                sd.pop(key, None)
+                continue
+            sd[key] = _basename_of(sd[key])
+    if 'path' in sd and 'file' in sd \
+            and not _is_absolute_path(sd.get('file', '')):
+        sd.pop('path', None)
+    sd.setdefault('continue_from_last', True)
+    return sd
+
+
+def _normalize_resume(raw: Any) -> dict:
+    """Fill resume defaults (mirrors _from_dict): last 0, sources {}, resume on."""
+    resume = dict(raw) if isinstance(raw, dict) else {}
+    resume.setdefault('last_counter_value', 0)
+    if not isinstance(resume.get('sources'), dict):
+        resume['sources'] = {}
+    resume.setdefault('continue_from_last', True)
+    return resume
+
+
+def normalize_project_json(data: dict) -> dict:
+    """Migrate a Project JSON dict to the normalized schema (deep copy out).
+
+    Legacy migrations: `type: number` → `counter`; `templates_new` array →
+    `templates` dict (when present); list-shaped `fields`/`batch.sources` →
+    dicts; legacy batch modes (`single`/`all_rows`/`n_rows`); absolute paths →
+    basenames (or dropped `path` duplicates); missing `resume` and per-source
+    `continue_from_last` defaults filled in. Normalized output validates
+    cleanly via :func:`validate_project_json`.
+    """
+    import copy
+    if not isinstance(data, dict):
+        logger.warning('normalize_project_json: expected dict, got %r',
+                       type(data))
+        return {}
+    norm = copy.deepcopy(data)
+    templates = norm.get('templates')
+    if not isinstance(templates, dict):
+        templates = {}
+    # Legacy: templates_new array → dict (existing `templates` wins on clash).
+    legacy = norm.pop('templates_new', None)
+    if isinstance(legacy, list):
+        for item in legacy:
+            if not isinstance(item, dict):
+                continue
+            name = item.get('name')
+            if not name:
+                logger.warning(
+                    'Skipping legacy templates_new entry without name: %r',
+                    item)
+                continue
+            name = _basename_of(name) if _is_absolute_path(name) else str(name)
+            entry: dict = {}
+            entry['fields'] = {
+                fname: _normalize_field_entry(fdata)
+                for fname, fdata in _normalize_fields(
+                    item.get('fields', {})).items()
+            }
+            batch = item.get('batch', {}) if isinstance(
+                item.get('batch', {}), dict) else {}
+            sources = {
+                sname: _normalize_source_entry(sdata)
+                for sname, sdata in _normalize_batch_sources(
+                    batch.get('sources', {})).items()
+            }
+            new_batch = {k: v for k, v in batch.items() if k != 'sources'}
+            if _is_absolute_path(new_batch.get('filename_template', '')):
+                new_batch['filename_template'] = _basename_of(
+                    new_batch['filename_template'])
+            new_batch['sources'] = sources
+            entry['batch'] = new_batch
+            resume = item.get('resume')
+            entry['resume'] = _normalize_resume(resume)
+            if name in templates:
+                logger.warning(
+                    'templates_new entry %r clashes with templates; '
+                    'keeping templates version', name)
+            else:
+                templates[name] = entry
+    # Normalize every template in place.
+    for tpl_name, tpl in list(templates.items()):
+        if not isinstance(tpl, dict):
+            continue
+        tpl['fields'] = {
+            fname: _normalize_field_entry(fdata)
+            for fname, fdata in _normalize_fields(
+                tpl.get('fields', {})).items()
+        }
+        batch = tpl.get('batch', {})
+        if not isinstance(batch, dict):
+            batch = {}
+        sources = {
+            sname: _normalize_source_entry(sdata)
+            for sname, sdata in _normalize_batch_sources(
+                batch.get('sources', {})).items()
+        }
+        new_batch = {k: v for k, v in batch.items() if k != 'sources'}
+        for key in ('filename_template', 'directory_template',
+                    'folder_name_template'):
+            if _is_absolute_path(new_batch.get(key, '')):
+                logger.info('Relativizing absolute %s -> basename', key)
+                new_batch[key] = _basename_of(new_batch[key])
+        new_batch['sources'] = sources
+        tpl['batch'] = new_batch
+        tpl['resume'] = _normalize_resume(tpl.get('resume'))
+    norm['templates'] = templates
+    return norm
+
+
 def migrate_project_configs_to_home(project_dir: str,
                                     home_dir: str = None) -> list:
     """Move a project folder's configs to ``~/.docxforge``.

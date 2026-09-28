@@ -18,9 +18,11 @@ Graduated from `specs/003-json/` (Status: done). Примеры: `specs/003-json
 - `schema.validate_project_json` / `normalize_project_json` — схема PJ
   (`number`→`counter`, `templates_new`→словарь, абсолютные→basename).
 - Префилл создания (flat/nested) идёт через `resolve_fields` +
-  `render_from_json`. Основной цикл `render_loop` и CLI — consciously не
-  переключены (резолвер цикла богаче: linked-таблицы, legacy, M7) —
-  follow-up с M7-паритетом.
+  `render_from_json`. Резолвер основного цикла — `resolve_document_fields()`
+  здесь же (перенесён из `render_loop` бит-в-бит: linked-таблицы, legacy,
+  M7, агрегации, image-пути); `render_loop.resolve_field_values` — тонкая
+  обёртка. Коэрсия цикла — plain `str()` (legacy M6); strip/int-fix только
+  в `value_to_str` для новых путей.
 
 ## Тесты
 - `tests/json/<имя>/` (xlsx + docx + filling.json + expected.docx) +

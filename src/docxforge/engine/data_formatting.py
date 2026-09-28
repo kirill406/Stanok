@@ -1,25 +1,31 @@
 # -*- coding: utf-8 -*-
 """Excel → JSON boundary: read tables once, resolve Filling JSON fields.
 
-Strangler step (003 Phase 2): this module lives *next to* the legacy
-Excel-direct path. Nothing here is wired into generate/render yet; the
-old reading path keeps working untouched. Downstream code (counters,
-tests, render-from-JSON) will consume the resolved JSON data produced
-here.
+003-json layer: the single home of per-document field resolution.
+``resolve_document_fields`` is the exact legacy loop semantics (moved
+verbatim from ``render_loop``: linked tables, legacy unmanaged fallback,
+M7 no-masking, aggregations, image paths, raw-template today) — the
+generation loop and all callers consume it from here.
 """
 
 import logging
+import re
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from docxforge.engine.data_reader import DataReader
-from docxforge.engine.formatting import format_counter, format_today
+from docxforge.engine.formatting import (
+    compute_aggregation,
+    format_counter,
+    format_today,
+)
 from docxforge.engine.schema import (
     BatchSourceConfig,
     FieldMapping,
     FieldType,
     ResumeState,
     RowIterationMode,
+    TemplateConfig,
 )
 
 logger = logging.getLogger(__name__)
@@ -197,6 +203,140 @@ def resolve_fields(field_mappings: Dict[str, FieldMapping],
             logger.warning("Unknown field type %r for field '%s'; skipped",
                            getattr(fm.type, 'value', fm.type), name)
     return resolved
+
+
+def resolve_document_fields(
+    config: TemplateConfig,
+    all_raw_phs: List[str],
+    doc_index: int,
+    per_source_rows: Dict[str, Optional[Dict[str, str]]],
+    all_table_data: Dict[str, List[Dict[str, str]]],
+    cycle_data: Dict[str, List[Dict[str, str]]],
+    resume_compute: ResumeState,
+    now: datetime,
+    user_values: Dict[str, str],
+):
+    """Build the effective field_values dict for a single document.
+
+    Canonical implementation (moved verbatim from the legacy render loop):
+    user_values base → raw-template today → counter → config today →
+    constants → primary TABLE (legacy unmanaged fallback, M7 no-masking) →
+    linked TABLE → aggregations → image paths. Returns ``(effective,
+    image_paths)``. Coercion is plain ``str()`` (legacy M6 behavior);
+    stripped/int-fixed coercion lives in :func:`value_to_str` for new paths.
+    """
+    effective = dict(user_values)
+
+    # 1. today from raw template
+    for raw_ph in all_raw_phs:
+        stripped = raw_ph.strip()
+        if stripped.startswith('today'):
+            fmt = stripped[len('today:'):] if stripped.startswith('today:') else 'dd.MM.yyyy'
+            effective[stripped] = format_today(fmt, now)
+
+    # 2. Counter
+    counter_field = next(
+        (fn for fn, fm in config.fields.items() if fm.type == FieldType.COUNTER), None)
+    if counter_field:
+        start = config.fields[counter_field].start
+        fmt = config.fields[counter_field].format
+        counter_offset = 0
+        if resume_compute and resume_compute.continue_from_last:
+            counter_offset = resume_compute.last_counter_value
+        effective[counter_field] = format_counter(start + counter_offset + doc_index, fmt)
+
+    # 3. Today from config
+    for fn, fm in config.fields.items():
+        if fm.type == FieldType.TODAY:
+            effective[fn] = format_today(fm.format or 'dd.MM.yyyy', now)
+
+    # 4. Constants
+    for fn, fm in config.fields.items():
+        if fm.type == FieldType.CONSTANT:
+            effective[fn] = fm.value or ''
+
+    # 5. TABLE — primary (not linked)
+    for fn, fm in config.fields.items():
+        if fm.type == FieldType.TABLE and not fm.linked_to:
+            source_row = per_source_rows.get(fm.file)
+            if source_row and fm.column in source_row:
+                effective[fn] = str(source_row[fm.column])
+            else:
+                rows = all_table_data.get(fm.file, [])
+                if not rows:
+                    # No data at all: leave the placeholder untouched.
+                    continue
+                managed = (fm.file in per_source_rows
+                           or fm.file in (config.batch_sources or {}))
+                if not managed and fm.column in rows[0]:
+                    # Legacy default for unmanaged files (first row).
+                    effective[fn] = str(rows[0][fm.column])
+                else:
+                    # M7: missing data must not be masked with rows[0].
+                    effective[fn] = ''
+                    logger.warning(
+                        "No data for field '%s' (table '%s', column '%s'); "
+                        "using empty string", fn, fm.file, fm.column)
+
+    # 6. TABLE — linked (same table → same row; different table → find by value)
+    for fn, fm in config.fields.items():
+        if fm.type == FieldType.TABLE and fm.linked_to:
+            primary_fm = config.fields.get(fm.linked_to)
+            if not primary_fm or not fm.file:
+                continue
+            if primary_fm.file == fm.file:
+                source_row = per_source_rows.get(fm.file)
+                if source_row and fm.column in source_row:
+                    effective[fn] = str(source_row[fm.column])
+                else:
+                    rows = all_table_data.get(fm.file, [])
+                    if not rows:
+                        # No data at all: leave the placeholder untouched.
+                        continue
+                    managed = (fm.file in per_source_rows
+                               or fm.file in (config.batch_sources or {}))
+                    if not managed and fm.column in rows[0]:
+                        # Legacy default for unmanaged files (first row).
+                        effective[fn] = str(rows[0][fm.column])
+                    else:
+                        # M7: missing data must not be masked with rows[0].
+                        effective[fn] = ''
+                        logger.warning(
+                            "No data for field '%s' (table '%s', column '%s'); "
+                            "using empty string", fn, fm.file, fm.column)
+            else:
+                primary_val = effective.get(fm.linked_to)
+                if primary_val:
+                    rows = all_table_data.get(fm.file, [])
+                    primary_col = primary_fm.column
+                    matched = False
+                    for row in rows:
+                        if str(row.get(primary_col, '')) == primary_val:
+                            effective[fn] = str(row.get(fm.column, ''))
+                            matched = True
+                            break
+                    if not matched:
+                        if not rows:
+                            # No data at all: leave placeholder.
+                            continue
+                        # M7: lookup miss is missing data, not rows[0].
+                        effective[fn] = ''
+                        logger.warning(
+                            "Lookup miss for field '%s' (table '%s'); "
+                            "using empty string", fn, fm.file)
+
+    # 7. Aggregations
+    for aname, agg in config.aggregations.items():
+        data = cycle_data.get(agg.table, [])
+        effective[aname] = compute_aggregation(agg, data)
+
+    # 8. IMAGE fields - store paths (not text values)
+    image_paths = {}
+    for fn, fm in config.fields.items():
+        if fm.type == FieldType.IMAGE and fm.value:
+            image_paths[fn] = fm.value
+
+    return effective, image_paths
 
 
 def advance_resume(resume: ResumeState, created: int) -> int:

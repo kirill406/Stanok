@@ -58,9 +58,8 @@ def test_json_fixture_case(tmp_path, case):
 
     renderer = Renderer(work, DataReader())
     renderer.load_project()
-    outputs = renderer.render(
-        filling['template'], dict(filling.get('fields', {})),
-        output_dir=str(tmp_path / 'out'))
+    outputs = renderer.render_from_json(
+        filling, output_dir=str(tmp_path / 'out'))
     assert len(outputs) == 1, outputs
     assert_docx_text_equal(
         outputs[0], os.path.join(case_dir, 'expected.docx'))

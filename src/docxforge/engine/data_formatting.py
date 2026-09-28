@@ -197,3 +197,19 @@ def resolve_fields(field_mappings: Dict[str, FieldMapping],
             logger.warning("Unknown field type %r for field '%s'; skipped",
                            getattr(fm.type, 'value', fm.type), name)
     return resolved
+
+
+def advance_resume(resume: ResumeState, created: int) -> int:
+    """Advance the resume counter after documents were created (B6 math).
+
+    Same rule as the legacy generation loop: ``last = last + created``
+    when continuing from the last row, otherwise ``last = 0 + created``.
+    ``created <= 0`` is a no-op. Only the counter moves; per-source row
+    offsets are owned by the generation loop, not this boundary.
+    Mutates ``resume`` in place and returns the new ``last_counter_value``.
+    """
+    if created <= 0:
+        return resume.last_counter_value
+    base = resume.last_counter_value if resume.continue_from_last else 0
+    resume.last_counter_value = base + int(created)
+    return resume.last_counter_value

@@ -25,6 +25,16 @@ def _case_dirs():
         and not d.startswith(('_', '.')))
 
 
+def _fj_case_dirs():
+    return [d for d in _case_dirs()
+            if os.path.isfile(os.path.join(FIXTURES_ROOT, d, 'filling.json'))]
+
+
+def _pj_case_dirs():
+    return [d for d in _case_dirs()
+            if os.path.isfile(os.path.join(FIXTURES_ROOT, d, 'project.json'))]
+
+
 def _docx_texts(path):
     from docx import Document
 
@@ -41,7 +51,7 @@ def assert_docx_text_equal(result_path: str, expected_path: str):
     assert _docx_texts(result_path) == _docx_texts(expected_path)
 
 
-@pytest.mark.parametrize('case', _case_dirs())
+@pytest.mark.parametrize('case', _fj_case_dirs())
 def test_json_fixture_case(tmp_path, case):
     """Render template.docx with filling.json → text equals expected.docx."""
     from docxforge.engine.data_reader import DataReader
@@ -63,3 +73,35 @@ def test_json_fixture_case(tmp_path, case):
     assert len(outputs) == 1, outputs
     assert_docx_text_equal(
         outputs[0], os.path.join(case_dir, 'expected.docx'))
+
+
+@pytest.mark.parametrize('case', _pj_case_dirs())
+def test_json_pj_excel_to_filling(case):
+    """PJ + Excel → Filling JSON equals expected_filling.json."""
+    from docxforge.engine.data_formatting import (
+        read_table_rows,
+        resolve_fields,
+        resolve_source_row,
+    )
+    from docxforge.engine.data_reader import DataReader
+    from docxforge.engine.schema import FieldMapping, FieldType
+
+    case_dir = os.path.join(FIXTURES_ROOT, case)
+    with open(os.path.join(case_dir, 'project.json'), encoding='utf-8') as f:
+        pj = json.load(f)
+    with open(os.path.join(case_dir, 'expected_filling.json'),
+              encoding='utf-8') as f:
+        expected = json.load(f)
+
+    mappings = {}
+    for name, spec in pj['fields'].items():
+        ftype = FieldType(spec['type'])
+        mappings[name] = FieldMapping(
+            type=ftype, file=spec.get('file'), column=spec.get('column'),
+            value=spec.get('value'))
+
+    reader = DataReader()
+    rows = read_table_rows(
+        reader, os.path.join(case_dir, pj['source']['file']))
+    row = resolve_source_row(rows, pj['source'].get('mode', 'sequential'), 0)
+    assert resolve_fields(mappings, row=row, doc_index=0) == expected['fields']

@@ -15,8 +15,6 @@ from docxforge.engine.schema import (
     advance_counter_after_creation,
     sanitize_folder_name as _sanitize_folder_name,
     default_project_file,
-    get_docxforge_home,
-    get_home_dir,
     is_project_folder,
     migrate_project_configs_to_home,
     resolve_project_file,

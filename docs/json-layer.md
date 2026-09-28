@@ -27,4 +27,8 @@ Graduated from `specs/003-json/` (Status: done). Примеры: `specs/003-json
 ## Тесты
 - `tests/json/<имя>/` (xlsx + docx + filling.json + expected.docx) +
   `tests/test_json_fixtures.py` (текстовое сравнение с эталоном).
+- Поток PJ + Excel → FJ: кейсы с `project.json` + `data.xlsx` +
+  `expected_filling.json` в том же харнесе.
+- Потоки GUI ↔ AJ и GUI → PJ: `tests/test_json_gui_flows.py`
+  (AJ изолирован в tmp).
 - `test_003_render_json`, `test_003_data_formatting`, `test_003_project_json`.

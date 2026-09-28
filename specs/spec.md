@@ -99,6 +99,7 @@ flowchart LR
     Filling --> Docs[Готовые docx]
     GUI[Станок GUI] <--> AJ[Application JSON]
     GUI --> Engine
+    GUI --> PJ
 ```
 
 `Filling JSON` — разрешённые данные одного документа (`{поле: значение}` +

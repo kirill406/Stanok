@@ -1,0 +1,23 @@
+{
+  "template": "contract.docx",
+  "fields": {
+    "client": {
+      "type": "table",
+      "file": "data.xlsx",
+      "column": "client"
+    },
+    "city": {
+      "type": "table",
+      "file": "data.xlsx",
+      "column": "city"
+    },
+    "org": {
+      "type": "constant",
+      "value": "Roga i Kopyta"
+    }
+  },
+  "source": {
+    "file": "data.xlsx",
+    "mode": "sequential"
+  }
+}

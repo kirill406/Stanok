@@ -1,0 +1,8 @@
+{
+  "template": "template.docx",
+  "fields": {
+    "org": "Roga i Kopyta",
+    "client": "OOO Romashka",
+    "city": "Moscow"
+  }
+}

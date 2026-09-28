@@ -49,6 +49,14 @@ COMPOSITE_PLACEHOLDER_EMPLOYEE = '{{employee}}'
 COMPOSITE_PLACEHOLDER_PROJECT = '{{project_name}}'
 
 
+class FillFormOpenError(Exception):
+    """FillForm cannot open the project config or the template (B3 guard).
+
+    Raised after an error dialog was already shown, so callers
+    (e.g. ProjectWindow._open_fill_form) must only abort, not warn again.
+    """
+
+
 class FillForm(FieldRowsMixin, AdvancedSectionMixin, BatchSectionMixin, ConfigIOMixin, ConfigCollectorMixin, QDialog):
     def __init__(self, project_dir: str, template_rel_path: str, parent=None):
         super().__init__(parent)
@@ -57,9 +65,24 @@ class FillForm(FieldRowsMixin, AdvancedSectionMixin, BatchSectionMixin, ConfigIO
         self.template_path = os.path.join(project_dir, '\u0428\u0430\u0431\u043b\u043e\u043d\u044b', template_rel_path)
         self.data_reader = DataReader()
         self.renderer = Renderer(project_dir, self.data_reader)
-        self.renderer.load_project()
+        # B3 guards: a corrupt project config (JSONDecodeError) or a broken
+        # template (BadZipFile) must show an error dialog instead of escaping
+        # the constructor as an unhandled traceback.
+        try:
+            self.renderer.load_project()
+        except Exception as e:
+            logging.getLogger(__name__).error('Failed to load project file: %s', e)
+            QMessageBox.critical(parent, STRINGS['msg_error'],
+                                 STRINGS['msg_project_load_error'].format(error=e))
+            raise FillFormOpenError('project load failed: %s' % e) from e
 
-        self.scan_result = scan_template(self.template_path)
+        try:
+            self.scan_result = scan_template(self.template_path)
+        except Exception as e:
+            logging.getLogger(__name__).error('Failed to scan template %s: %s', self.template_path, e)
+            QMessageBox.critical(parent, STRINGS['msg_error'],
+                                 STRINGS['msg_template_load_error'].format(error=e))
+            raise FillFormOpenError('template scan failed: %s' % e) from e
         self.config = self.renderer.project.templates.get(
             template_rel_path, TemplateConfig())
         self.field_widgets = {}
@@ -299,6 +322,8 @@ class FillForm(FieldRowsMixin, AdvancedSectionMixin, BatchSectionMixin, ConfigIO
 
         scroll_layout.addWidget(batch_group)
 
+        self._build_generated_project_section(scroll_layout)
+
         scroll.setWidget(scroll_content)
         main_layout.addWidget(scroll, stretch=1)
 
@@ -343,6 +368,58 @@ class FillForm(FieldRowsMixin, AdvancedSectionMixin, BatchSectionMixin, ConfigIO
     def _on_create_projects_toggled(self, checked: bool):
         """Handle create projects checkbox toggle."""
         self._set_folder_name_visible(checked)
+
+    def _build_generated_project_section(self, scroll_layout):
+        """Build the B1 section «Поля шаблона для генерируемых проектов».
+
+        Lives at the end of the class, away from the B3-owned ``__init__``
+        guard hunk. Checkboxes are synced later (fields are populated after
+        ``_build_ui``) via ``_sync_generated_field_checks``.
+        """
+        group = QGroupBox(STRINGS['fill_generated_fields_section'])
+        layout = QVBoxLayout(group)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(4)
+        hint = QLabel(STRINGS['fill_generated_fields_hint'])
+        hint.setStyleSheet('color: #666; font-size: 9pt;')
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
+        self.generated_fields_layout = QVBoxLayout()
+        self.generated_fields_layout.setContentsMargins(0, 0, 0, 0)
+        self.generated_fields_layout.setSpacing(2)
+        layout.addLayout(self.generated_fields_layout)
+        self.generated_field_checks = {}
+        self.generated_fields_empty = QLabel(STRINGS['fill_generated_fields_empty'])
+        self.generated_fields_empty.setStyleSheet('color: #888; font-size: 9pt;')
+        self.generated_fields_layout.addWidget(self.generated_fields_empty)
+        scroll_layout.addWidget(group)
+
+    def _sync_generated_field_checks(self):
+        """Ensure one checkbox per template field, preserving check states.
+
+        Called after fields exist (end of ``_load_existing_config``) and on
+        every ``_collect_config`` (covers fields added later via the dialog).
+        Only adds missing boxes — never rebuilds, so focus is never stolen.
+        """
+        container = getattr(self, 'generated_fields_layout', None)
+        if container is None:
+            return
+        checks = getattr(self, 'generated_field_checks', None)
+        if checks is None:
+            self.generated_field_checks = {}
+            checks = self.generated_field_checks
+        stored = set(getattr(getattr(self, 'config', None),
+                             'generated_project_fields', []) or [])
+        for name in sorted(self.field_widgets.keys()):
+            if name in checks:
+                continue
+            box = QCheckBox(name)
+            box.setChecked(not stored or name in stored)
+            box.toggled.connect(self._schedule_save)
+            container.addWidget(box)
+            checks[name] = box
+        if checks and hasattr(self, 'generated_fields_empty'):
+            self.generated_fields_empty.setVisible(False)
 
     @staticmethod
     def validate_composite_template(template):

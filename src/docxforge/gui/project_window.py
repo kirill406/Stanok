@@ -4,6 +4,7 @@
 import os
 import shutil
 import logging
+import zipfile
 from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                               QPushButton, QLabel, QTreeWidget, QTreeWidgetItem,
                               QListWidget, QListWidgetItem, QFileDialog,
@@ -11,7 +12,7 @@ from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont
 
-from docxforge.gui.fill_form import FillForm
+from docxforge.gui.fill_form import FillForm, FillFormOpenError
 from docxforge.engine.data_reader import DataReader
 from .strings import STRINGS
 
@@ -188,7 +189,26 @@ class ProjectWindow(QMainWindow):
             QMessageBox.warning(self, 'Ошибка', 'Шаблон не найден: %s' % full_path)
             return
 
-        dlg = FillForm(self.project_dir, rel_path, self)
+        # B3: the file may exist but be unreadable (broken zip). Validate
+        # readability, not just existence, before opening the fill form.
+        if not zipfile.is_zipfile(full_path):
+            logger.error('Template is not a valid .docx: %s', full_path)
+            QMessageBox.warning(self, STRINGS['msg_error'],
+                                STRINGS['msg_template_load_error'].format(error=full_path))
+            return
+
+        try:
+            dlg = FillForm(self.project_dir, rel_path, self)
+        except FillFormOpenError:
+            # FillForm already showed an error dialog (corrupt
+            # config or template unreadable past the zip check).
+            logger.error('FillForm failed to open for %s', rel_path)
+            return
+        except Exception as e:
+            logger.error('FillForm failed to open for %s: %s', rel_path, e)
+            QMessageBox.warning(self, STRINGS['msg_error'],
+                                STRINGS['msg_template_load_error'].format(error=e))
+            return
         dlg.exec_()
         self._scan_project()
 
@@ -262,18 +282,24 @@ class ProjectWindow(QMainWindow):
         # Remove from recent in main window
         self.main_window.remove_recent_project(self.project_dir)
 
-        # Delete Шаблоны folder and проект.docxforge
+        # Delete Шаблоны folder, project configs (any names) and the migrated
+        # Home copy, if any.
+        from docxforge.engine.schema import resolve_project_file
         templates_dir = os.path.join(self.project_dir, 'Шаблоны')
-        project_file = os.path.join(self.project_dir, 'проект.docxforge')
-        project_bak = os.path.join(self.project_dir, 'проект.docxforge.bak')
-        project_tmp = os.path.join(self.project_dir, 'проект.docxforge.tmp')
-
-        for path in [templates_dir, project_file, project_bak, project_tmp]:
-            if os.path.exists(path):
+        folder_configs = [
+            os.path.join(self.project_dir, n)
+            for n in sorted(os.listdir(self.project_dir))
+            if '.docxforge' in n]
+        home_copy = resolve_project_file(self.project_dir)
+        for path in [templates_dir, *folder_configs]:
+            if path and os.path.exists(path):
                 if os.path.isdir(path):
                     shutil.rmtree(path)
                 else:
                     os.remove(path)
+        if (home_copy and os.path.isfile(home_copy)
+                and os.path.dirname(home_copy) != self.project_dir):
+            os.remove(home_copy)
 
         QMessageBox.information(self, 'Готово', 'Проект удалён. Данные и сгенерированные файлы сохранены.')
         self.main_window.show()

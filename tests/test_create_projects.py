@@ -99,7 +99,7 @@ class TestCreateProjectsBasic:
 
             assert len(created) == 3
             for proj_dir in created:
-                assert os.path.exists(os.path.join(proj_dir, 'проект.docxforge'))
+                assert os.path.exists(os.path.join(proj_dir, os.path.basename(proj_dir) + '.docxforge'))
                 assert os.path.exists(os.path.join(proj_dir, 'Данные'))
                 assert os.path.exists(os.path.join(proj_dir, 'Шаблоны'))
                 assert os.path.exists(os.path.join(proj_dir, 'Результат'))
@@ -162,7 +162,7 @@ class TestConstantsPreserved:
             )
 
             for proj_dir in created:
-                prj = Project.from_file(os.path.join(proj_dir, 'проект.docxforge'))
+                prj = Project.from_file(os.path.join(proj_dir, os.path.basename(proj_dir) + '.docxforge'))
                 tc = prj.templates['contract.docx']
                 fm = tc.fields['constant_field']
                 assert fm.type == FieldType.CONSTANT
@@ -191,7 +191,7 @@ class TestTableFieldsPopulated:
             expected_cities = ['Москва', 'Санкт-Петербург', 'Екатеринбург']
 
             for i, proj_dir in enumerate(created):
-                prj = Project.from_file(os.path.join(proj_dir, 'проект.docxforge'))
+                prj = Project.from_file(os.path.join(proj_dir, os.path.basename(proj_dir) + '.docxforge'))
                 tc = prj.templates['contract.docx']
 
                 assert tc.fields['client_name'].type == FieldType.CONSTANT
@@ -224,7 +224,7 @@ class TestCounterReset:
             )
 
             for proj_dir in created:
-                prj = Project.from_file(os.path.join(proj_dir, 'проект.docxforge'))
+                prj = Project.from_file(os.path.join(proj_dir, os.path.basename(proj_dir) + '.docxforge'))
                 tc = prj.templates['contract.docx']
                 fm = tc.fields['doc_number']
                 assert fm.type == FieldType.COUNTER
@@ -453,7 +453,7 @@ class TestCreateProjectsEdgeCases:
 
             # All projects should have counter start=1
             for proj_dir in created:
-                prj = Project.from_file(os.path.join(proj_dir, 'проект.docxforge'))
+                prj = Project.from_file(os.path.join(proj_dir, os.path.basename(proj_dir) + '.docxforge'))
                 tc = prj.templates['contract.docx']
                 fm = tc.fields['doc_number']
                 assert fm.start == 1
@@ -552,7 +552,7 @@ class TestCreateProjectsEdgeCases:
             )
 
             for proj_dir in created:
-                prj2 = Project.from_file(os.path.join(proj_dir, 'проект.docxforge'))
+                prj2 = Project.from_file(os.path.join(proj_dir, os.path.basename(proj_dir) + '.docxforge'))
                 tc2 = prj2.templates['test.docx']
                 # source1 (iterated) should be CONSTANT
                 assert tc2.batch_sources['source1.xlsx'].mode == RowIterationMode.CONSTANT

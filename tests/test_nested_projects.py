@@ -162,7 +162,7 @@ def test_nested_basic_generation_creates_employee_and_project_folders():
             total_projects += len(projects)
             for proj in projects:
                 proj_dir = os.path.join(emp_dir, proj)
-                assert os.path.exists(os.path.join(proj_dir, 'проект.docxforge'))
+                assert os.path.exists(os.path.join(proj_dir, proj + '.docxforge'))
         assert total_projects == 6
 
 
@@ -424,7 +424,7 @@ def test_nested_flat_mode_backward_compatible_still_works():
         assert len(generated) == 2
         for proj in generated:
             assert os.path.exists(
-                os.path.join(projects_dir, proj, 'проект.docxforge'))
+                os.path.join(projects_dir, proj, proj + '.docxforge'))
 
 
 def test_nested_max_projects_limit_respected_flat():

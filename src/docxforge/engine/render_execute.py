@@ -39,13 +39,7 @@ def execute_render(renderer, template_rel_path: str,
     config = renderer.project.templates.get(template_rel_path, TemplateConfig()) if renderer.project else TemplateConfig()
 
     if output_dir is None:
-        # Backward compatibility: use existing "output" folder if present
-        legacy_output = os.path.join(renderer.project_dir, 'output')
-        new_output = os.path.join(renderer.project_dir, 'Результат')
-        if os.path.exists(legacy_output):
-            output_dir = legacy_output
-        else:
-            output_dir = new_output
+        output_dir = os.path.join(renderer.project_dir, 'Результат')
     os.makedirs(output_dir, exist_ok=True)
 
     if batch_configs is None:

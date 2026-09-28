@@ -40,11 +40,13 @@
 - Schema (`engine/schema.py`) = single source of truth for .docxforge config
 - Renderer uses XML-run merge (preserves formatting), not text replacement
 - Nested project generation (Employee → Projects) lives in `generate.py`, details in `docs/nested-projects.md`
+- Project configs are per-project `<name>.docxforge` (no fixed name): migrate to `~/.docxforge` on open, resolve folder-first via `resolve_project_file()` — details in `docs/project-configs.md`
 
 ## Testing
 - Unit tests in `tests/` mirroring `docxforge/engine/` modules
 - Engine coverage target: 85%+ (currently ~86%)
 - GUI: manual testing, QTest optional
+- GUI tests run headless (conftest forces QT_QPA_PLATFORM=offscreen); skip them with `pytest -m "not gui"`
 - Every new engine feature → add test in `tests/`
 - Bug fix → regression test
 - Test naming: `test_<module>_<scenario>_<expectation>`
@@ -65,6 +67,7 @@
 - Pre-commit hook runs automatically: `pytest tests/ -q` + `trufflehog3`
 - If hook false-positive: ask user
 - Push: `git push -u origin <branch-name>` after successful commit
+- Build exe with flags (Станок.spec is gitignored, not in repo): `pyinstaller --onefile --windowed --name Станок --paths src --add-data "src/docxforge/gui/icon.png;docxforge/gui" --icon src/docxforge/gui/icon.ico run.py`; never omit --paths/--add-data/--icon (broken exe)
 - Open PR: one logical change per PR, link to PLAN.md item
 - Squash merge to main after review
 - Separate refactoring from features into different commits/branches

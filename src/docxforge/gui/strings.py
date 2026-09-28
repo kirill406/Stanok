@@ -75,6 +75,7 @@ STRINGS = {
     'batch_counter_current_row': 'Текущая строка:',
     'batch_counter_value': 'Значение строки:',
     'batch_counter_summary': 'Счётчики источников: {counters}',
+    'batch_skip_copy': 'Исключить копирование',
     'fill_directory_template': 'Шаблон папки:',
     'fill_directory_placeholder': '{{ region }}/{{ city }} (пусто = без подпапок)',
     'fill_directory_tooltip': 'Используйте {{ field_name }} для подстановки. Папки будут созданы внутри выходной директории. Пусто = файлы напрямую в папку результатов.',
@@ -103,6 +104,13 @@ STRINGS = {
     'msg_composite_single_separator': 'Шаблон пути: нужен ровно один разделитель «/» вида {{столбец_сотрудника}}/{{столбец_проекта}}',
     'msg_composite_invalid_path': 'Шаблон пути: запрещены «..», «\\», «:», «*», «?», «"», «<», «>», «|»',
 
+    # Generated-project template fields (B1 «Генерируемые проекты»).
+    # The checked fields define the per-project config file
+    # template used when creating projects from this template.
+    'fill_generated_fields_section': 'Поля шаблона для генерируемых проектов',
+    'fill_generated_fields_hint': 'Отмеченные поля войдут в файл конфигурации генерируемых проектов. Отмечены все (или полей нет) — войдут все поля.',
+    'fill_generated_fields_empty': 'Нет полей в шаблоне',
+
     # Messages
     'msg_error': 'Ошибка',
     'msg_check': 'Проверка',
@@ -116,6 +124,9 @@ STRINGS = {
     'msg_validation_ok': 'Всё корректно. Конфигурация сохранена.',
     'msg_generation_done': 'Создано документов: {count}\n{files}',
     'msg_generation_failed': 'Не удалось создать документы',
+    'msg_render_error': 'Не удалось создать документы: {error}',
+    'msg_project_load_error': 'Не удалось открыть файл проекта: {error}',
+    'msg_template_load_error': 'Не удалось открыть шаблон: {error}',
     'msg_project_not_found': 'Файл проекта не найден',
     'msg_template_not_found': 'Файл шаблона не найден',
     'msg_template_not_configured': 'Шаблон не настроен',
@@ -125,7 +136,7 @@ STRINGS = {
     'dlg_select_dirs': 'Выберите папки проектов',
     'main_add_many_btn': 'Добавить несколько проектов',
     'main_added_many': 'Добавлено проектов: {count}',
-    'main_added_many_skipped': 'Добавлено проектов: {count}\nПропущено без проект.docxforge: {skipped}',
+    'main_added_many_skipped': 'Добавлено проектов: {count}\nПропущено (нет файла конфигурации): {skipped}',
     'msg_table_field_missing': 'Поле {{{{ {name} }}}}: укажите файл и столбец',
 
     # Field labels

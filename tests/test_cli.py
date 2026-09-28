@@ -15,7 +15,7 @@ from pathlib import Path
 from docxforge.engine.schema import (
     Project, TemplateConfig, FieldMapping, FieldType,
     CycleMapping, AggregationMapping, AggregationFunction,
-    create_project,
+    create_project, resolve_project_file,
 )
 from docxforge.engine import Renderer
 from docxforge.engine.data_reader import DataReader
@@ -130,7 +130,8 @@ class TestCliCreate:
             create_project(project_dir)
             # Second call should not fail
             create_project(project_dir)
-            assert os.path.exists(os.path.join(project_dir, 'проект.docxforge'))
+            assert os.path.exists(
+                os.path.join(project_dir, 'test_project.docxforge'))
 
 
 class TestCliScan:
@@ -411,7 +412,7 @@ class TestCliInfo:
     def test_info_shows_project_path(self):
         with tempfile.TemporaryDirectory() as tmp:
             create_project(tmp)
-            prj = Project.from_file(os.path.join(tmp, 'проект.docxforge'))
+            prj = Project.from_file(resolve_project_file(tmp))
             assert prj.version == 2
 
     def test_info_shows_template_count(self):
@@ -424,5 +425,5 @@ class TestCliInfo:
     def test_info_empty_project(self):
         with tempfile.TemporaryDirectory() as tmp:
             create_project(tmp)
-            prj = Project.from_file(os.path.join(tmp, 'проект.docxforge'))
+            prj = Project.from_file(resolve_project_file(tmp))
             assert len(prj.templates) == 0

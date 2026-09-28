@@ -114,6 +114,8 @@ class BatchSourceConfig:
     # Per-source counter settings (for sequential and circular modes)
     counter_column: Optional[str] = None  # column to use as counter
     counter_current_row: int = 1          # current row number (1-based)
+    # B4: skip copying this table's file into generated projects
+    skip_copy: bool = False
 
 
 @dataclass
@@ -122,6 +124,28 @@ class ResumeState:
     last_counter_value: int = 0
     sources: Dict[str, int] = field(default_factory=dict)  # file → last_row (0-based)
     continue_from_last: bool = True  # чекбокс «Продолжить»
+
+
+def advance_counter_after_creation(resume: ResumeState, created_count: int) -> int:
+    """Advance the generation counter after creation-from-generation (B6).
+
+    Mirrors normal generation math in ``render_loop.update_resume_state``
+    (``last_counter_value = offset + rendered``): each created project
+    counts like one generated document. Only the counter moves; per-source
+    row offsets are out of scope (owned by project-creation logic).
+
+    Args:
+        resume: Source template resume state (mutated in place).
+        created_count: Number of projects actually created (<= 0 = no-op).
+
+    Returns:
+        The new ``last_counter_value``.
+    """
+    if created_count <= 0:
+        return resume.last_counter_value
+    base = resume.last_counter_value if resume.continue_from_last else 0
+    resume.last_counter_value = base + created_count
+    return resume.last_counter_value
 
 
 @dataclass
@@ -135,6 +159,7 @@ class TemplateConfig:
     directory_template: Optional[str] = None  # Template for output subdirectories
     create_projects: bool = False  # Create project folders instead of documents
     folder_name_template: Optional[str] = None  # Template for project folder names
+    generated_project_fields: List[str] = field(default_factory=list)  # B1: subset for the generated per-project config ([] = all)
     resume: ResumeState = field(default_factory=ResumeState)
     ui_state: Dict[str, Any] = field(default_factory=dict)  # UI-specific state
 
@@ -205,6 +230,7 @@ class Project:
                     continue_from_last=bdata.get('continue_from_last', True),
                     counter_column=bdata.get('counter_column'),
                     counter_current_row=bdata.get('counter_current_row', 1),
+                    skip_copy=bdata.get('skip_copy', False),
                 )
             tc.total_docs = tpl_data.get('batch', {}).get('total_docs')
             tc.filename_template = tpl_data.get('batch', {}).get('filename_template')
@@ -212,6 +238,7 @@ class Project:
             # Create-projects mode (absent in older files -> defaults)
             tc.create_projects = tpl_data.get('create_projects', False)
             tc.folder_name_template = tpl_data.get('folder_name_template')
+            tc.generated_project_fields = list(tpl_data.get('generated_project_fields', []) or [])
             # Resume
             resume_data = tpl_data.get('resume', {})
             tc.resume = ResumeState(
@@ -277,6 +304,8 @@ class Project:
                         bd['counter_column'] = bsc.counter_column
                     if bsc.counter_current_row != 1:
                         bd['counter_current_row'] = bsc.counter_current_row
+                    if bsc.skip_copy:
+                        bd['skip_copy'] = True
                     batch['sources'][bname] = bd
             if tc.total_docs is not None:
                 batch['total_docs'] = tc.total_docs
@@ -292,6 +321,8 @@ class Project:
                 td['create_projects'] = True
             if tc.folder_name_template is not None:
                 td['folder_name_template'] = tc.folder_name_template
+            if tc.generated_project_fields:
+                td['generated_project_fields'] = list(tc.generated_project_fields)
 
             # Resume
             td['resume'] = {
@@ -418,7 +449,7 @@ def create_project(project_dir: str) -> str:
     os.makedirs(os.path.join(project_dir, 'Данные'), exist_ok=True)
     os.makedirs(os.path.join(project_dir, 'Шаблоны'), exist_ok=True)
     os.makedirs(os.path.join(project_dir, 'Результат'), exist_ok=True)
-    project_file = os.path.join(project_dir, 'проект.docxforge')
+    project_file = default_project_file(project_dir)
     Project().to_file(project_file)
     return project_file
 
@@ -453,9 +484,11 @@ def create_projects(
     """
     from docxforge.engine.data_reader import DataReader
 
-    source_project = Project.from_file(
-        os.path.join(source_project_dir, 'проект.docxforge')
-    )
+    source_file = resolve_project_file(source_project_dir)
+    if source_file is None:
+        raise ValueError(
+            f'Project config not found in: {source_project_dir}')
+    source_project = Project.from_file(source_file)
 
     if template_name not in source_project.templates:
         raise ValueError(f'Template not found: {template_name}')
@@ -590,9 +623,190 @@ def create_projects(
 
         new_project.templates[template_name] = new_template
 
-        project_file = os.path.join(project_dir, 'проект.docxforge')
+        project_file = default_project_file(project_dir)
         new_project.to_file(project_file)
 
         created_projects.append(project_dir)
 
+    if created_projects:
+        # B6: creation-from-generation advances the source counter just like
+        # normal generation; persist the source project to its own file.
+        advance_counter_after_creation(template_config.resume, len(created_projects))
+        source_project.to_file(source_file)
+
     return created_projects
+
+
+# ---------------------------------------------------------------------------
+# Project config files: every project owns `<name>.docxforge` named after
+# itself (no fixed file name). Generated folders carry it next to Данные/;
+# on open it migrates to `~/.docxforge` and opening resolves folder-first,
+# Home-second.
+# ---------------------------------------------------------------------------
+
+INVALID_FOLDER_CHARS = '<>:"/\\|?*'
+
+
+def sanitize_folder_name(name) -> str:
+    """Filesystem-safe stem: replaces Windows-unsafe/control chars."""
+    if name is None:
+        return ''
+    text = ''.join('_' if (ch in INVALID_FOLDER_CHARS or ord(ch) < 32)
+                   else ch for ch in str(name).strip())
+    text = text.strip().rstrip('.')
+    if len(text) > 100:
+        text = text[:100].rstrip('.').strip()
+    return text
+
+
+def get_home_dir() -> str:
+    """Return the user's Home directory."""
+    return os.path.expanduser('~')
+
+
+def get_docxforge_home() -> str:
+    """Return ``~/.docxforge`` (configs, logs, settings), creating it."""
+    path = os.path.join(get_home_dir(), '.docxforge')
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+def unique_home_project_file(project_name: str, home_dir: str = None) -> str:
+    """Non-existing ``<name>.docxforge`` path in ``~/.docxforge``.
+
+    Collision renames the new file (``name (1)``, ``name (2)``, …),
+    the existing file is never touched.
+    """
+    base_dir = home_dir or get_docxforge_home()
+    safe = sanitize_folder_name(project_name) or 'project'
+    candidate = os.path.join(base_dir, safe + '.docxforge')
+    if not os.path.exists(candidate):
+        return candidate
+    root, ext = os.path.splitext(candidate)
+    index = 1
+    while True:
+        renamed = '%s (%d)%s' % (root, index, ext)
+        if not os.path.exists(renamed):
+            logger.info('Home config %r exists; using %r instead',
+                        candidate, renamed)
+            return renamed
+        index += 1
+
+
+def unique_project_file_in_folder(project_dir: str, stem: str) -> str:
+    """Non-existing ``<stem>.docxforge`` path inside a project folder."""
+    safe = sanitize_folder_name(stem) or 'project'
+    candidate = os.path.join(project_dir, safe + '.docxforge')
+    if not os.path.exists(candidate):
+        return candidate
+    root, ext = os.path.splitext(candidate)
+    index = 1
+    while True:
+        renamed = '%s (%d)%s' % (root, index, ext)
+        if not os.path.exists(renamed):
+            return renamed
+        index += 1
+
+
+def default_project_file(project_dir: str) -> str:
+    """Default config path for a folder: ``<folder-basename>.docxforge``."""
+    base = sanitize_folder_name(
+        os.path.basename(os.path.normpath(project_dir))) or 'project'
+    return os.path.join(project_dir, base + '.docxforge')
+
+
+def resolve_project_file(project_dir: str, home_dir: str = None):
+    """Locate the config for a project folder.
+
+    1. ``<folder>/<folder-basename>.docxforge`` (named config).
+    2. ``<folder>/проект.docxforge`` (legacy, migrates on open).
+    3. The single ``<folder>/*.docxforge`` (unmigrated generated folder).
+    4. ``~/.docxforge/<folder>.docxforge`` — migrated copy (exact stem,
+       then ``<stem> (n)`` variants, newest wins).
+    Returns path or None.
+    """
+    base = sanitize_folder_name(
+        os.path.basename(os.path.normpath(project_dir))) or 'project'
+    named = os.path.join(project_dir, base + '.docxforge')
+    if os.path.isfile(named):
+        return named
+    legacy = os.path.join(project_dir, 'проект.docxforge')
+    if os.path.isfile(legacy):
+        return legacy
+    try:
+        names = sorted(os.listdir(project_dir))
+    except OSError:
+        names = []
+    singles = [n for n in names
+               if n.endswith('.docxforge') and not n.endswith(('.bak', '.tmp'))]
+    if len(singles) == 1:
+        return os.path.join(project_dir, singles[0])
+    home = home_dir or get_docxforge_home()
+    try:
+        hnames = os.listdir(home)
+    except OSError:
+        return None
+    exact = base + '.docxforge'
+    if exact in hnames:
+        return os.path.join(home, exact)
+    variants = [os.path.join(home, n) for n in hnames
+                if n.startswith(base + ' (') and n.endswith(').docxforge')]
+    if not variants:
+        return None
+    variants.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+    return variants[0]
+
+
+def is_project_folder(path: str, home_dir: str = None) -> bool:
+    """True if a folder looks like an openable project."""
+    try:
+        names = os.listdir(path)
+    except OSError:
+        return False
+    for name in names:
+        if name.endswith('.docxforge') and not name.endswith(('.bak', '.tmp')):
+            return True
+    if 'Данные' in names or 'Шаблоны' in names:
+        return resolve_project_file(path, home_dir) is not None
+    return False
+
+
+def migrate_project_configs_to_home(project_dir: str,
+                                    home_dir: str = None) -> list:
+    """Move a project folder's configs to ``~/.docxforge``.
+
+    For every ``*.docxforge`` next to ``Данные/``/``Шаблоны/`` (except
+    ``*.bak``/``*.tmp``): copy bytes to ``~/.docxforge/<folder-basename>``
+    (collision → ``(1)``, ``(2)``…) and delete the source. Best-effort —
+    never raises. Returns the created Home paths.
+    """
+    migrated = []
+    try:
+        names = os.listdir(project_dir)
+    except OSError as e:
+        logger.debug('Migration scan failed for %r: %s', project_dir, e)
+        return migrated
+    if 'Данные' not in names and 'Шаблоны' not in names:
+        return migrated
+    base = sanitize_folder_name(
+        os.path.basename(os.path.normpath(project_dir))) or 'project'
+    for name in sorted(names):
+        if not name.endswith('.docxforge'):
+            continue
+        if name.endswith(('.bak', '.tmp')):
+            continue
+        src = os.path.join(project_dir, name)
+        if not os.path.isfile(src):
+            continue
+        try:
+            with open(src, 'rb') as f:
+                payload = f.read()
+            dst = unique_home_project_file(base, home_dir)
+            with open(dst, 'wb') as f:
+                f.write(payload)
+            os.remove(src)
+            logger.info('Migrated project config: %s -> %s', src, dst)
+            migrated.append(dst)
+        except OSError as e:
+            logger.warning('Config migration skipped for %r: %s', src, e)
+    return migrated

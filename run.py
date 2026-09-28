@@ -4,24 +4,16 @@
 import sys
 import os
 import logging
-from logging.handlers import RotatingFileHandler
 
-# Setup logging
-log_dir = os.path.dirname(os.path.abspath(__file__))
-log_file = os.path.join(log_dir, 'docxforge.log')
-
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        RotatingFileHandler(log_file, maxBytes=5_000_000, backupCount=3, encoding='utf-8')
-    ]
-)
-
-# Ensure project root and src layout are on path
+# Ensure project root and src layout are on path (needed for the import below)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src'))
+
+# Shared log file location: single constant APP_LOG_FILE (Home), no hardcode here.
+from docxforge.app_logging import APP_LOG_FILE, setup_app_logging
+
+setup_app_logging()
+logging.getLogger(__name__).info('Application log: %s', APP_LOG_FILE)
 
 from docxforge.gui.main_window import run
 

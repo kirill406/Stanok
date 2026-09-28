@@ -12,6 +12,16 @@ from typing import List, Optional, Tuple, Dict, Any
 from docxforge.engine.schema import (
     Project, ResumeState, TemplateConfig, FieldMapping, FieldType,
     BatchSourceConfig, RowIterationMode, limit_rows, substitute_placeholders,
+    advance_counter_after_creation,
+    sanitize_folder_name as _sanitize_folder_name,
+    default_project_file,
+    get_docxforge_home,
+    get_home_dir,
+    is_project_folder,
+    migrate_project_configs_to_home,
+    resolve_project_file,
+    unique_home_project_file,
+    unique_project_file_in_folder,
 )
 from docxforge.engine.data_reader import DataReader
 from docxforge.engine.errors import (
@@ -113,9 +123,10 @@ def generate_project(
     num_docs: Optional[int] = None,
     output_dir: Optional[str] = None,
 ) -> List[str]:
-    project_file = os.path.join(project_path, 'проект.docxforge')
-    if not os.path.exists(project_file):
-        raise GenerationError(f'Project file not found: {project_file}')
+    project_file = resolve_project_file(project_path)
+    if project_file is None or not os.path.exists(project_file):
+        raise GenerationError(
+            f'Project file not found: {project_path}')
 
     project = Project.from_file(project_file)
     if not project.templates:
@@ -135,12 +146,7 @@ def generate_project(
     renderer.project = project
 
     if output_dir is None:
-        legacy_output = os.path.join(project_path, 'output')
-        new_output = os.path.join(project_path, 'Результат')
-        if os.path.exists(legacy_output):
-            output_dir = legacy_output
-        else:
-            output_dir = new_output
+        output_dir = os.path.join(project_path, 'Результат')
     os.makedirs(output_dir, exist_ok=True)
 
     template_config = project.templates[template_name]
@@ -177,6 +183,7 @@ def create_projects_from_template(
     template_name: str,
     folder_name_template: str,
     max_projects: Optional[int] = None,
+    home_dir: Optional[str] = None,
 ) -> Tuple[str, int]:
     """Create per-row projects for a flat template (full pipeline).
 
@@ -202,11 +209,12 @@ def create_projects_from_template(
             project_path, template_name, folder_name_template, max_projects,
             employee_column=parsed.get('employee_column') or 'employee',
             project_column=parsed.get('project_column') or 'project_name',
+            home_dir=home_dir,
         )
 
-    project_file = os.path.join(project_path, 'проект.docxforge')
-    if not os.path.exists(project_file):
-        raise GenerationError(f'Project file not found: {project_file}')
+    project_file = resolve_project_file(project_path)
+    if project_file is None or not os.path.exists(project_file):
+        raise GenerationError(f'Project file not found: {project_path}')
 
     project = Project.from_file(project_file)
     if not project.templates:
@@ -290,9 +298,11 @@ def create_projects_from_template(
                     f'Project directory already exists: {project_subdir}') from e
 
             new_config = _build_project_config(
-                template_config, row_data, primary_source_config.file)
+                template_config, row_data, primary_source_config.file,
+                include_fields=template_config.generated_project_fields)
 
-            new_project_file = os.path.join(project_subdir, 'проект.docxforge')
+            new_project_file = unique_project_file_in_folder(
+                project_subdir, folder_name)
             new_project = Project(version=2)
             new_project.templates[template_name] = new_config
             try:
@@ -310,7 +320,12 @@ def create_projects_from_template(
             try:
                 data_subdir = os.path.join(project_subdir, 'Данные')
                 if src_data_dir is not None:
-                    shutil.copytree(src_data_dir, data_subdir)
+                    # B4: excluded tables are not copied into new projects.
+                    _skip = get_skip_copy_tables(template_config.batch_sources)
+                    if _skip:
+                        copy_data_tree(src_data_dir, data_subdir, _skip)
+                    else:
+                        shutil.copytree(src_data_dir, data_subdir)
                 else:
                     os.makedirs(data_subdir, exist_ok=True)
                 os.makedirs(os.path.join(project_subdir, 'Результат'),
@@ -322,6 +337,8 @@ def create_projects_from_template(
                 raise GenerationError(
                     f'Failed to copy data folder: {e}') from e
 
+            _render_prefilled_project_docs(project_subdir, template_name)
+
             created_count += 1
     except GenerationError:
         _rollback_created(created_paths)
@@ -329,6 +346,12 @@ def create_projects_from_template(
     except Exception as e:
         _rollback_created(created_paths)
         raise GenerationError(f'Failed to create projects: {e}') from e
+
+    if created_count > 0:
+        # B6: creation-from-generation advances the source counter just like
+        # normal generation; persist the source project.
+        advance_counter_after_creation(template_config.resume, created_count)
+        project.to_file(project_file)
 
     return projects_dir, created_count
 
@@ -369,6 +392,7 @@ def _build_project_config(
     template_config: TemplateConfig,
     row_data: Dict[str, str],
     primary_source_file: str,
+    include_fields: Optional[List[str]] = None,
 ) -> TemplateConfig:
     """Build per-project config: TABLE→CONSTANT, COUNTER reset, batch→CONSTANT.
 
@@ -377,13 +401,27 @@ def _build_project_config(
         row_data: Resolved row as {column: value} dict (keys are column names).
         primary_source_file: Name of the primary batch file (kept for signature
             compatibility; row_data already holds the resolved row values).
+        include_fields: B1 subset from the FillForm section «Поля шаблона для
+            генерируемых проектов». Non-empty → only these fields enter the
+            generated per-project config; empty/None → all fields (back-compat).
 
     Returns:
         New TemplateConfig with transformed fields and CONSTANT batch sources.
     """
     new_config = TemplateConfig()
 
-    for fn, fm in template_config.fields.items():
+    wanted = set(include_fields or [])
+    source_fields = template_config.fields
+    if wanted:
+        unknown = sorted(n for n in wanted if n not in source_fields)
+        if unknown:
+            logger.warning(
+                'generated_project_fields has unknown field(s) %s; ignored',
+                unknown)
+        source_fields = {fn: fm for fn, fm in source_fields.items()
+                         if fn in wanted}
+
+    for fn, fm in source_fields.items():
         if fm.type == FieldType.CONSTANT:
             new_config.fields[fn] = FieldMapping(type=FieldType.CONSTANT, value=fm.value)
         elif fm.type == FieldType.TABLE:
@@ -457,7 +495,7 @@ def _copy_template_files(src_template: str, dst_templates_dir: str) -> None:
 # ---------------------------------------------------------------------------
 # Phase 4: nested project file operations (used by Phase 3 grouping core).
 # Layout per SPEC: <project>/данные/ + <project>/шаблоны/ + <project>/результат/
-#                  + <project>/проект.docxforge ; settings live in employee dir.
+#                  + <project>/<name>.docxforge ; settings live in employee dir.
 # ---------------------------------------------------------------------------
 
 #: Accepted source data-folder spellings (existing projects use capital).
@@ -466,7 +504,6 @@ DATA_DIR_CANDIDATES = ('Данные', 'данные')
 NESTED_DATA_DIR = 'данные'
 NESTED_TEMPLATES_DIR = 'шаблоны'
 NESTED_RESULT_DIR = 'результат'
-NESTED_PROJECT_FILE = 'проект.docxforge'
 EMPLOYEE_SETTINGS_FILE = 'docxforge_settings.json'
 
 
@@ -498,6 +535,80 @@ def copy_data_folder(src_project_dir: str, dst_project_dir: str) -> str:
         raise GenerationError(f'Failed to copy data folder: {e}') from e
     logger.info(f'Copied data folder: {src_data} -> {dst_data}')
     return dst_data
+
+
+# ---------------------------------------------------------------------------
+# B4: skip-copy flags (excluded tables are not copied into generated projects).
+# New functions only — project-creation functions (B1 zone) are untouched;
+# B1 wires these flags into the creation paths.
+# ---------------------------------------------------------------------------
+
+def get_skip_copy_tables(batch_sources) -> set:
+    """Return file names of batch sources flagged to skip copying.
+
+    The flag is read via ``getattr(bsc, 'skip_copy', False)`` so no schema
+    change is required: once ``BatchSourceConfig`` gains a real ``skip_copy``
+    field this keeps working unchanged.
+
+    Args:
+        batch_sources: Mapping of name to batch source config (any object
+            with ``file`` and optional ``skip_copy`` attributes).
+
+    Returns:
+        Set of data file names (``bsc.file``) whose ``skip_copy`` is truthy.
+    """
+    skipped = set()
+    for name, bsc in (batch_sources or {}).items():
+        if getattr(bsc, 'skip_copy', False):
+            skipped.add(getattr(bsc, 'file', None) or name)
+    return skipped
+
+
+def copy_data_tree(src_data_dir: str, dst_data_dir: str,
+                   exclude_names=None) -> str:
+    """Copy a data folder, skipping excluded table files.
+
+    Every entry of ``src_data_dir`` is copied into ``dst_data_dir`` except
+    files whose base name is in ``exclude_names``. Excluded tables are
+    logged and left out; everything else is copied as before.
+
+    Args:
+        src_data_dir: Existing source ``Данные/`` folder.
+        dst_data_dir: Destination folder (created if missing).
+        exclude_names: Optional iterable of file base names to skip.
+
+    Returns:
+        Destination path.
+
+    Raises:
+        GenerationError: Source folder missing or copy failure.
+    """
+    if not os.path.isdir(src_data_dir):
+        raise GenerationError(
+            f'Data folder not found: {src_data_dir}'
+        )
+    excluded = set(exclude_names or ())
+    try:
+        os.makedirs(dst_data_dir, exist_ok=True)
+        for entry in sorted(os.listdir(src_data_dir)):
+            src_entry = os.path.join(src_data_dir, entry)
+            if os.path.isfile(src_entry) and entry in excluded:
+                logger.info('Skipped excluded table: %s', entry)
+                continue
+            dst_entry = os.path.join(dst_data_dir, entry)
+            if os.path.isdir(src_entry):
+                shutil.copytree(src_entry, dst_entry, dirs_exist_ok=True)
+            else:
+                shutil.copy2(src_entry, dst_entry)
+    except PermissionError as e:
+        raise GenerationError(
+            f'Permission denied copying data folder: {e}') from e
+    except OSError as e:
+        raise GenerationError(
+            f'Failed to copy data folder: {e}') from e
+    logger.info('Copied data folder (excluded=%s): %s -> %s',
+                sorted(excluded), src_data_dir, dst_data_dir)
+    return dst_data_dir
 
 
 def copy_template_file(src_template_path: str, dst_project_dir: str) -> str:
@@ -535,10 +646,10 @@ def write_nested_project_config(
     new_config: TemplateConfig,
     version: int = 2,
 ) -> str:
-    """Write `проект.docxforge` for a nested project. Returns file path."""
+    """Write the per-project config for a nested project. Returns file path."""
     new_project = Project(version=version)
     new_project.templates[template_name] = new_config
-    config_path = os.path.join(dst_project_dir, NESTED_PROJECT_FILE)
+    config_path = default_project_file(dst_project_dir)
     try:
         new_project.to_file(config_path)
     except (PermissionError, OSError) as e:
@@ -589,7 +700,7 @@ def setup_nested_project_files(
 ) -> Dict[str, str]:
     """Per-project file assembly for the Phase 3 nested loop.
 
-    Creates <project>/{данные/,шаблоны/,результат/,проект.docxforge}.
+    Creates <project>/{данные/,шаблоны/,результат/,<name>.docxforge}.
     Rolls back (removes dst dir) on any failure. Returns dict of created paths.
     """
     os.makedirs(dst_project_dir, exist_ok=True)
@@ -610,26 +721,6 @@ def setup_nested_project_files(
         'result_dir': result_dir,
         'config': config_path,
     }
-
-
-_INVALID_FOLDER_CHARS = '<>:"/\\|?*'
-
-
-def _sanitize_folder_name(name: Optional[str]) -> str:
-    """Make a filesystem-safe folder name from a resolved value.
-
-    Replaces Windows-unsafe characters and control characters with '_',
-    strips trailing dots/spaces and truncates to 100 characters.
-    Returns '' when nothing usable is left (caller applies N-fallback).
-    """
-    if name is None:
-        return ''
-    text = ''.join('_' if (ch in _INVALID_FOLDER_CHARS or ord(ch) < 32) else ch
-                   for ch in str(name).strip())
-    text = text.strip().rstrip('.')
-    if len(text) > 100:
-        text = text[:100].rstrip('.').strip()
-    return text
 
 
 def _unique_folder_name(base: str, used: set, parent_dir: str) -> str:
@@ -663,6 +754,7 @@ def create_nested_employee_projects(
     max_projects: Optional[int] = None,
     employee_column: str = 'employee',
     project_column: str = 'project_name',
+    home_dir: Optional[str] = None,
 ) -> Tuple[str, int, int]:
     """Create nested Employee/Project folders from a batch source.
 
@@ -670,8 +762,8 @@ def create_nested_employee_projects(
     and creates ``Projects/<employee>/<project>/`` folders. Each employee folder
     gets a ``docxforge_settings.json`` listing its projects; each project folder
     gets a full copy of ``Данные/``, the template in ``Шаблоны/``, an empty
-    ``Результат/`` and a ``проект.docxforge`` (TABLE fields frozen to row values
-    as CONSTANT, COUNTER reset, batch sources forced to CONSTANT).
+    ``Результат/`` and a per-project ``<name>.docxforge`` (TABLE fields frozen
+    to row values as CONSTANT, COUNTER reset, batch sources forced to CONSTANT).
 
     Folder parts are obtained via the Phase 2 helper ``parse_composite_template``:
     for a composite template the employee/project parts resolve each folder;
@@ -690,7 +782,7 @@ def create_nested_employee_projects(
     routing in ``create_projects_from_template`` can pass it positionally.
 
     Args:
-        project_path: Source project directory (with проект.docxforge).
+        project_path: Source project directory (with its config file).
         template_name: Template filename (relative to Шаблоны/).
         folder_name_template: Composite template, e.g. "{{employee}}/{{project_name}}".
         max_projects: Cap on the TOTAL number of projects (None or <= 0 = all).
@@ -705,9 +797,9 @@ def create_nested_employee_projects(
             employee/project column, empty data, or filesystem failure
             (created directories are rolled back first).
     """
-    project_file = os.path.join(project_path, 'проект.docxforge')
-    if not os.path.exists(project_file):
-        raise GenerationError(f'Project file not found: {project_file}')
+    project_file = resolve_project_file(project_path)
+    if project_file is None or not os.path.exists(project_file):
+        raise GenerationError(f'Project file not found: {project_path}')
 
     project = Project.from_file(project_file)
     if not project.templates:
@@ -859,7 +951,12 @@ def create_nested_employee_projects(
 
                 data_dir = os.path.join(project_dir, 'Данные')
                 if os.path.isdir(source_data_dir):
-                    shutil.copytree(source_data_dir, data_dir)
+                    # B4: excluded tables are not copied into new projects.
+                    _skip = get_skip_copy_tables(template_config.batch_sources)
+                    if _skip:
+                        copy_data_tree(source_data_dir, data_dir, _skip)
+                    else:
+                        shutil.copytree(source_data_dir, data_dir)
                 else:
                     os.makedirs(data_dir, exist_ok=True)
 
@@ -870,13 +967,17 @@ def create_nested_employee_projects(
                 os.makedirs(os.path.join(project_dir, 'Результат'), exist_ok=True)
 
                 new_config = _build_project_config(
-                    template_config, row, primary_source_config.file)
+                    template_config, row, primary_source_config.file,
+                    include_fields=template_config.generated_project_fields)
                 for bsc in new_config.batch_sources.values():
                     bsc.mode = RowIterationMode.CONSTANT
                     bsc.continue_from_last = False
                 new_project = Project(version=2)
                 new_project.templates[template_name] = new_config
-                new_project.to_file(os.path.join(project_dir, 'проект.docxforge'))
+                new_project.to_file(unique_project_file_in_folder(
+                    project_dir, project_folder))
+
+                _render_prefilled_project_docs(project_dir, template_name)
 
                 stamp = datetime.now().isoformat(timespec='seconds')
                 settings_projects.append({
@@ -903,7 +1004,37 @@ def create_nested_employee_projects(
 
     logger.info(
         f'Created {employee_counter} employee(s), {project_count} project(s) in {projects_dir}')
+    if project_count > 0:
+        # B6: creation-from-generation advances the source counter just like
+        # normal generation; persist the source project.
+        advance_counter_after_creation(template_config.resume, project_count)
+        project.to_file(project_file)
     return projects_dir, employee_counter, project_count
+
+
+def _render_prefilled_project_docs(
+    project_dir: str,
+    template_name: str,
+) -> List[str]:
+    """Render prefilled documents into a generated project's ``Результат/``.
+
+    Best-effort: failures are logged with a warning and never abort project
+    creation (the project folder + config already exist at this point).
+    """
+    try:
+        renderer = Renderer(project_dir, DataReader())
+        renderer.load_project()
+        outputs = renderer.render(
+            template_name, {},
+            output_dir=os.path.join(project_dir, 'Результат'),
+            max_docs=1,
+        )
+        renderer.save_project()
+        logger.info('Prefilled %d document(s) in %s', len(outputs), project_dir)
+        return outputs
+    except Exception as e:
+        logger.warning('Prefill render skipped for %s: %s', project_dir, e)
+        return []
 
 
 def generate_cli(project_path: str, template: str = None, count: int = None, out: str = None) -> List[str]:
@@ -911,7 +1042,7 @@ def generate_cli(project_path: str, template: str = None, count: int = None, out
     print(f'Project: {project_path}')
     print(f'Template: {template or "first configured"}')
     print(f'Count: {count or "auto"}')
-    print(f'Output: {out or "<project>/output/"}')
+    print(f'Output: {out or "<project>/Результат/"}')
 
     outputs = generate_project(project_path, template, count, out)
 

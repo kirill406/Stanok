@@ -36,29 +36,6 @@ def scan_raw_placeholders(zdata: dict) -> List[str]:
     return re.findall(r'\{\{(.+?)\}\}', merged_all)
 
 
-def resolve_field_values(
-    config: TemplateConfig,
-    all_raw_phs: List[str],
-    doc_index: int,
-    per_source_rows: Dict[str, Optional[Dict[str, str]]],
-    all_table_data: Dict[str, List[Dict[str, str]]],
-    cycle_data: Dict[str, List[Dict[str, str]]],
-    resume_compute: ResumeState,
-    now: datetime,
-    user_values: Dict[str, str],
-) -> Dict[str, str]:
-    """Build the effective field_values dict for a single document.
-
-    Thin wrapper over ``data_formatting.resolve_document_fields`` (003-json:
-    single implementation of loop semantics lives in the JSON layer).
-    """
-    from .data_formatting import resolve_document_fields
-    return resolve_document_fields(
-        config, all_raw_phs, doc_index, per_source_rows, all_table_data,
-        cycle_data, resume_compute, now, user_values)
-
-
-
 def resolve_folder_name_template(
     template: str,
     row_data: Optional[Dict[str, str]] = None,
@@ -99,7 +76,7 @@ def resolve_folder_name_template(
     if user_values is None:
         user_values = {}
 
-    # Build effective values dict using same priority as resolve_field_values
+    # Build effective values dict using same priority as the document resolver
     effective = {}
     effective.update(constants)
     effective.update(row_data)

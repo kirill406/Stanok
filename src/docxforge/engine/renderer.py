@@ -15,7 +15,7 @@ from .schema import (
 )
 from .data_reader import DataReader
 from .render_loop import (
-    scan_raw_placeholders, resolve_field_values, process_xml,
+    scan_raw_placeholders, process_xml,
     write_output_doc, update_resume_state,
 )
 

@@ -16,7 +16,7 @@ import openpyxl
 import pytest
 
 from docxforge.engine.data_reader import DataReader, _coerce_cell
-from docxforge.engine.render_loop import resolve_field_values
+from docxforge.engine.data_formatting import resolve_document_fields
 from docxforge.engine.renderer import Renderer
 from docxforge.engine.schema import (
     BatchSourceConfig, FieldMapping, FieldType, RowIterationMode,
@@ -101,7 +101,7 @@ class TestM7NoRowsZeroFallback:
         tc = self._config()
         with caplog.at_level(logging.WARNING,
                              logger='docxforge.engine.render_loop'):
-            effective, _images = resolve_field_values(
+            effective, _images = resolve_document_fields(
                 tc, [], 0, {}, {'d.xlsx': [{'other': 'v'}]}, {},
                 ResumeState(), datetime.now(), {})
         assert effective['name'] == ''
@@ -110,7 +110,7 @@ class TestM7NoRowsZeroFallback:
     def test_m7_present_value_still_resolves(self):
         from docxforge.engine.schema import ResumeState
         tc = self._config()
-        effective, _images = resolve_field_values(
+        effective, _images = resolve_document_fields(
             tc, [], 0, {'d.xlsx': {'name': 'Ann'}},
             {'d.xlsx': [{'name': 'First'}]}, {}, ResumeState(),
             datetime.now(), {})

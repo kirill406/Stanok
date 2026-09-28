@@ -19,9 +19,10 @@ from .errors import (
     message_for_code,
 )
 from .render_loop import (
-    scan_raw_placeholders, resolve_field_values, process_xml,
+    scan_raw_placeholders, process_xml,
     write_output_doc, update_resume_state,
 )
+from .data_formatting import resolve_document_fields
 
 
 def execute_render(renderer, template_rel_path: str,
@@ -165,7 +166,7 @@ def execute_render(renderer, template_rel_path: str,
                     'no data rows for the first document.')
             break
 
-        effective, image_paths = resolve_field_values(
+        effective, image_paths = resolve_document_fields(
             config, all_raw_phs, doc_index, per_source_rows,
             all_table_data, cycle_data, resume_compute, now, user_values)
 

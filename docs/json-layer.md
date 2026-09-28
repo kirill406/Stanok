@@ -20,8 +20,8 @@ Graduated from `specs/003-json/` (Status: done). Примеры: `specs/003-json
 - Префилл создания (flat/nested) идёт через `resolve_fields` +
   `render_from_json`. Резолвер основного цикла — `resolve_document_fields()`
   здесь же (перенесён из `render_loop` бит-в-бит: linked-таблицы, legacy,
-  M7, агрегации, image-пути); `render_loop.resolve_field_values` — тонкая
-  обёртка. Коэрсия цикла — plain `str()` (legacy M6); strip/int-fix только
+  M7, агрегации, image-пути); обёртка в `render_loop` удалена, все вызовы
+  идут напрямую в `data_formatting`. Коэрсия цикла — plain `str()` (legacy M6); strip/int-fix только
   в `value_to_str` для новых путей.
 
 ## Тесты

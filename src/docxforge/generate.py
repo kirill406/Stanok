@@ -337,7 +337,8 @@ def create_projects_from_template(
                 raise GenerationError(
                     f'Failed to copy data folder: {e}') from e
 
-            _render_prefilled_project_docs(project_subdir, template_name)
+            _render_prefilled_project_docs(
+                project_subdir, template_name, new_config.fields, row_data)
 
             created_count += 1
     except GenerationError:
@@ -500,10 +501,6 @@ def _copy_template_files(src_template: str, dst_templates_dir: str) -> None:
 
 #: Accepted source data-folder spellings (existing projects use capital).
 DATA_DIR_CANDIDATES = ('Данные', 'данные')
-#: Nested project subfolder names (SPEC, lowercase).
-NESTED_DATA_DIR = 'данные'
-NESTED_TEMPLATES_DIR = 'шаблоны'
-NESTED_RESULT_DIR = 'результат'
 EMPLOYEE_SETTINGS_FILE = 'docxforge_settings.json'
 
 
@@ -515,33 +512,6 @@ def _resolve_source_data_dir(src_project_dir: str) -> Optional[str]:
             return candidate
     return None
 
-
-def copy_data_folder(src_project_dir: str, dst_project_dir: str) -> str:
-    """Copy the entire source `Данные/` folder (no slicing, all files as-is).
-
-    Returns destination path. Raises GenerationError if source data missing.
-    """
-    src_data = _resolve_source_data_dir(src_project_dir)
-    if src_data is None:
-        raise GenerationError(
-            f'Data folder not found in source project: {src_project_dir}'
-        )
-    dst_data = os.path.join(dst_project_dir, NESTED_DATA_DIR)
-    try:
-        shutil.copytree(src_data, dst_data, dirs_exist_ok=True)
-    except PermissionError as e:
-        raise GenerationError(f'Permission denied copying data folder: {e}') from e
-    except OSError as e:
-        raise GenerationError(f'Failed to copy data folder: {e}') from e
-    logger.info(f'Copied data folder: {src_data} -> {dst_data}')
-    return dst_data
-
-
-# ---------------------------------------------------------------------------
-# B4: skip-copy flags (excluded tables are not copied into generated projects).
-# New functions only — project-creation functions (B1 zone) are untouched;
-# B1 wires these flags into the creation paths.
-# ---------------------------------------------------------------------------
 
 def get_skip_copy_tables(batch_sources) -> set:
     """Return file names of batch sources flagged to skip copying.
@@ -611,52 +581,6 @@ def copy_data_tree(src_data_dir: str, dst_data_dir: str,
     return dst_data_dir
 
 
-def copy_template_file(src_template_path: str, dst_project_dir: str) -> str:
-    """Copy template .docx into nested `<project>/шаблоны/`. Returns dst path."""
-    if not os.path.exists(src_template_path):
-        raise GenerationError(f'Template file not found: {src_template_path}')
-    dst_dir = os.path.join(dst_project_dir, NESTED_TEMPLATES_DIR)
-    os.makedirs(dst_dir, exist_ok=True)
-    dst_template = os.path.join(dst_dir, os.path.basename(src_template_path))
-    try:
-        shutil.copy2(src_template_path, dst_template)
-    except PermissionError as e:
-        raise GenerationError(f'Permission denied copying template: {e}') from e
-    except OSError as e:
-        raise GenerationError(f'Failed to copy template file: {e}') from e
-    logger.info(f'Copied template: {src_template_path} -> {dst_template}')
-    return dst_template
-
-
-def create_result_folder(dst_project_dir: str) -> str:
-    """Create empty nested `<project>/результат/`. Returns its path."""
-    result_dir = os.path.join(dst_project_dir, NESTED_RESULT_DIR)
-    try:
-        os.makedirs(result_dir, exist_ok=True)
-    except PermissionError as e:
-        raise GenerationError(
-            f'Permission denied creating result folder: {e}'
-        ) from e
-    return result_dir
-
-
-def write_nested_project_config(
-    dst_project_dir: str,
-    template_name: str,
-    new_config: TemplateConfig,
-    version: int = 2,
-) -> str:
-    """Write the per-project config for a nested project. Returns file path."""
-    new_project = Project(version=version)
-    new_project.templates[template_name] = new_config
-    config_path = default_project_file(dst_project_dir)
-    try:
-        new_project.to_file(config_path)
-    except (PermissionError, OSError) as e:
-        raise GenerationError(f'Failed to write project config: {e}') from e
-    return config_path
-
-
 def write_employee_settings(
     employee_dir: str,
     employee: str,
@@ -688,39 +612,6 @@ def write_employee_settings(
         raise GenerationError(f'Failed to write employee settings: {e}') from e
     logger.info(f'Wrote employee settings: {settings_path}')
     return settings_path
-
-
-def setup_nested_project_files(
-    src_project_dir: str,
-    dst_project_dir: str,
-    src_template_path: str,
-    template_name: str,
-    new_config: TemplateConfig,
-    version: int = 2,
-) -> Dict[str, str]:
-    """Per-project file assembly for the Phase 3 nested loop.
-
-    Creates <project>/{данные/,шаблоны/,результат/,<name>.docxforge}.
-    Rolls back (removes dst dir) on any failure. Returns dict of created paths.
-    """
-    os.makedirs(dst_project_dir, exist_ok=True)
-    try:
-        data_dir = copy_data_folder(src_project_dir, dst_project_dir)
-        template_copy = copy_template_file(src_template_path, dst_project_dir)
-        result_dir = create_result_folder(dst_project_dir)
-        config_path = write_nested_project_config(
-            dst_project_dir, template_name, new_config, version
-        )
-    except Exception:
-        shutil.rmtree(dst_project_dir, ignore_errors=True)
-        raise
-    return {
-        'project_dir': dst_project_dir,
-        'data_dir': data_dir,
-        'template': template_copy,
-        'result_dir': result_dir,
-        'config': config_path,
-    }
 
 
 def _unique_folder_name(base: str, used: set, parent_dir: str) -> str:
@@ -977,7 +868,8 @@ def create_nested_employee_projects(
                 new_project.to_file(unique_project_file_in_folder(
                     project_dir, project_folder))
 
-                _render_prefilled_project_docs(project_dir, template_name)
+                _render_prefilled_project_docs(
+                    project_dir, template_name, new_config.fields, row)
 
                 stamp = datetime.now().isoformat(timespec='seconds')
                 settings_projects.append({
@@ -1015,19 +907,24 @@ def create_nested_employee_projects(
 def _render_prefilled_project_docs(
     project_dir: str,
     template_name: str,
+    field_mappings=None,
+    row=None,
 ) -> List[str]:
     """Render prefilled documents into a generated project's ``Результат/``.
 
+    003-json path: fields are resolved to Filling JSON via data_formatting
+    and rendered with ``render_from_json`` (no Excel read inside render).
     Best-effort: failures are logged with a warning and never abort project
     creation (the project folder + config already exist at this point).
     """
     try:
+        from docxforge.engine.data_formatting import resolve_fields
+        fields = resolve_fields(field_mappings or {}, row=row, doc_index=0)
         renderer = Renderer(project_dir, DataReader())
         renderer.load_project()
-        outputs = renderer.render(
-            template_name, {},
+        outputs = renderer.render_from_json(
+            {'template': template_name, 'fields': fields},
             output_dir=os.path.join(project_dir, 'Результат'),
-            max_docs=1,
         )
         renderer.save_project()
         logger.info('Prefilled %d document(s) in %s', len(outputs), project_dir)

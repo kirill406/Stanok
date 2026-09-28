@@ -17,9 +17,14 @@
 - [ ] Схема-словарь, относительные пути, миграция legacy
 - [ ] Тесты round-trip + миграция
 
-## Phase 4 «Переключение путей» (последовательно)
-- [ ] Flat → nested → CLI: по одному пути на коммит, полный прогон после каждого
-- [ ] Старые Excel-напрямую пути удалить (dead code)
+## Phase 4 «Переключение путей»
+- [x] Flat + nested: префилл через `resolve_fields` + `render_from_json`
+      (значения замороженного конфига → Filling JSON → docx)
+- [x] Dead code удалён (`setup_nested_*`, `write_nested_*`, `copy_data_folder`,
+      `copy_template_file`, `create_result_folder`, `NESTED_*`)
+- [ ] Main loop (`render_loop`) и CLI — НЕ переключаем: резолвер цикла богаче
+      (linked-таблицы, legacy-фолбэк, M7), чем модуль P2. Полное переключение —
+      отдельная задача с M7-паритетом в `data_formatting` (follow-up).
 
 ## Phase 5 «Закрытие»
 - [ ] Процедура done: Status, graduate в `docs/` + `AGENTS.md`, SUMMARY,

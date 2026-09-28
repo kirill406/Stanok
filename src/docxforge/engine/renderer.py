@@ -182,3 +182,64 @@ class Renderer:
             max_docs=max_docs,
             resume=resume,
         )
+
+    def render_from_json(self, filling: dict,
+                         output_dir: str = None) -> List[str]:
+        """Render a document from Filling JSON (003-json, Phase 1).
+
+        ``filling`` is resolved data of a single document:
+        ``{"template": "name.docx", "dist": "out/file.docx",
+        "fields": {name: value}}`` — values are already resolved
+        (no placeholders), so they are passed to :meth:`render` as
+        ``user_values`` (constants). No Excel is read on this path
+        unless the project config itself references tables.
+
+        ``output_dir`` wins when given; otherwise the directory part
+        of ``dist`` is used (relative → under ``project_dir``);
+        otherwise the engine default (``Результат``) applies.
+        The file name part of ``dist`` is informational in Phase 1
+        (naming stays with the project config/auto-naming).
+
+        Raises:
+            ValueError: ``filling`` is not a dict, or required
+                ``template``/``fields`` are missing or malformed.
+                (``ValueError``, not ``GenerationError``: ``renderer``
+                cannot import ``docxforge.generate`` — circular
+                import — so ``generate.py`` wraps this into
+                ``GenerationError`` at its own boundary.)
+
+        Returns:
+            List of created file paths (as returned by :meth:`render`).
+        """
+        from .errors import (
+            FILLING_FIELDS_NOT_OBJECT,
+            FILLING_NOT_OBJECT,
+            FILLING_NO_FIELDS,
+            FILLING_NO_TEMPLATE,
+            message_for_code,
+        )
+        if not isinstance(filling, dict):
+            raise ValueError(message_for_code(FILLING_NOT_OBJECT))
+        template = filling.get('template')
+        if not isinstance(template, str) or not template.strip():
+            raise ValueError(message_for_code(FILLING_NO_TEMPLATE))
+        if 'fields' not in filling:
+            raise ValueError(message_for_code(FILLING_NO_FIELDS))
+        fields = filling.get('fields')
+        if not isinstance(fields, dict):
+            raise ValueError(message_for_code(FILLING_FIELDS_NOT_OBJECT))
+        user_values = {
+            str(key): ('' if value is None else value
+                       if isinstance(value, str) else str(value))
+            for key, value in fields.items()
+        }
+        if output_dir is None:
+            dist = filling.get('dist')
+            if isinstance(dist, str) and dist.strip():
+                dist_dir = os.path.dirname(dist.strip())
+                if dist_dir:
+                    output_dir = (dist_dir if os.path.isabs(dist_dir)
+                                  else os.path.join(self.project_dir, dist_dir))
+        logger.info("Rendering '%s' from Filling JSON (%d fields)",
+                    template, len(user_values))
+        return self.render(template, user_values, output_dir=output_dir)

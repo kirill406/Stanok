@@ -1,6 +1,6 @@
 # SPEC.md — 003-json (слой JSON-данных)
 
-Status: draft. Branch: `spec-003` (создать от `main`).
+Status: done. Branch: `spec-003` (merged to `main`).
 
 ## Goal
 Ввести явный JSON-слой данных между Excel и рендером: движок читает таблицы

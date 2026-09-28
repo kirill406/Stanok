@@ -41,6 +41,7 @@
 - Renderer uses XML-run merge (preserves formatting), not text replacement
 - Nested project generation (Employee → Projects) lives in `generate.py`, details in `docs/nested-projects.md`
 - Project configs are per-project `<name>.docxforge` (no fixed name): migrate to `~/.docxforge` on open, resolve folder-first via `resolve_project_file()` — details in `docs/project-configs.md`
+- JSON data layer: Filling JSON → `render_from_json()`, Excel → JSON via `engine/data_formatting.py`, PJ validation in `schema` — details in `docs/json-layer.md`, fixtures in `tests/json/`
 
 ## Testing
 - Unit tests in `tests/` mirroring `docxforge/engine/` modules

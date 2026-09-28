@@ -901,7 +901,7 @@ class TestCreateProjectsE2EPhase7:
         assert len(subdirs) == 2
         for sub in subdirs:
             pdir = os.path.join(projects_dir, sub)
-            assert os.path.isfile(os.path.join(pdir, 'проект.docxforge'))
+            assert os.path.isfile(os.path.join(pdir, sub + '.docxforge'))
             assert os.path.isfile(os.path.join(pdir, 'Шаблоны', 'contract.docx'))
 
     def test_generated_project_config_transformed(self, tmp_path):
@@ -916,7 +916,7 @@ class TestCreateProjectsE2EPhase7:
         seen_clients = set()
         for sub in sorted(os.listdir(projects_dir)):
             cfg = Project.from_file(
-                os.path.join(projects_dir, sub, 'проект.docxforge')
+                os.path.join(projects_dir, sub, sub + '.docxforge')
             ).templates['contract.docx']
             assert cfg.fields['client_name'].type == FieldType.CONSTANT
             seen_clients.add(cfg.fields['client_name'].value)
@@ -1016,7 +1016,8 @@ class TestCreateProjectsE2EPhase7:
             for entry in settings['projects']:
                 pdir = os.path.join(emp_dir, entry['folder'])
                 # Project structure per SPEC
-                assert os.path.isfile(os.path.join(pdir, 'проект.docxforge'))
+                assert os.path.isfile(
+                    os.path.join(pdir, entry['folder'] + '.docxforge'))
                 assert os.path.isdir(os.path.join(pdir, 'Данные'))
                 assert os.path.isdir(os.path.join(pdir, 'Шаблоны'))
                 assert os.path.isdir(os.path.join(pdir, 'Результат'))
@@ -1026,7 +1027,9 @@ class TestCreateProjectsE2EPhase7:
 
                 # Config transformation
                 cfg = Project.from_file(
-                    os.path.join(pdir, 'проект.docxforge')).templates['contract.docx']
+                    os.path.join(
+                        pdir, entry['folder'] + '.docxforge')
+                ).templates['contract.docx']
                 assert cfg.fields['employee'].type == FieldType.CONSTANT
                 assert cfg.fields['project_name'].type == FieldType.CONSTANT
                 assert cfg.fields['doc_number'].type == FieldType.COUNTER

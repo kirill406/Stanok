@@ -105,10 +105,10 @@ STRINGS = {
     'msg_composite_invalid_path': 'Шаблон пути: запрещены «..», «\\», «:», «*», «?», «"», «<», «>», «|»',
 
     # Generated-project template fields (B1 «Генерируемые проекты»).
-    # The checked fields define the per-project файл `проект.docxforge`
+    # The checked fields define the per-project config file
     # template used when creating projects from this template.
     'fill_generated_fields_section': 'Поля шаблона для генерируемых проектов',
-    'fill_generated_fields_hint': 'Отмеченные поля войдут в файл проект.docxforge генерируемых проектов. Отмечены все (или полей нет) — войдут все поля.',
+    'fill_generated_fields_hint': 'Отмеченные поля войдут в файл конфигурации генерируемых проектов. Отмечены все (или полей нет) — войдут все поля.',
     'fill_generated_fields_empty': 'Нет полей в шаблоне',
 
     # Messages
@@ -136,7 +136,7 @@ STRINGS = {
     'dlg_select_dirs': 'Выберите папки проектов',
     'main_add_many_btn': 'Добавить несколько проектов',
     'main_added_many': 'Добавлено проектов: {count}',
-    'main_added_many_skipped': 'Добавлено проектов: {count}\nПропущено без проект.docxforge: {skipped}',
+    'main_added_many_skipped': 'Добавлено проектов: {count}\nПропущено (нет файла конфигурации): {skipped}',
     'msg_table_field_missing': 'Поле {{{{ {name} }}}}: укажите файл и столбец',
 
     # Field labels

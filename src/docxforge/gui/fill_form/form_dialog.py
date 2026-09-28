@@ -65,7 +65,7 @@ class FillForm(FieldRowsMixin, AdvancedSectionMixin, BatchSectionMixin, ConfigIO
         self.template_path = os.path.join(project_dir, '\u0428\u0430\u0431\u043b\u043e\u043d\u044b', template_rel_path)
         self.data_reader = DataReader()
         self.renderer = Renderer(project_dir, self.data_reader)
-        # B3 guards: a corrupt проект.docxforge (JSONDecodeError) or a broken
+        # B3 guards: a corrupt project config (JSONDecodeError) or a broken
         # template (BadZipFile) must show an error dialog instead of escaping
         # the constructor as an unhandled traceback.
         try:

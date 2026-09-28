@@ -8,6 +8,10 @@ from pathlib import Path
 
 import pytest
 
+# Same headless default as the root conftest (matters when tests/ is used
+# as rootdir on its own).
+os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
+
 
 @pytest.fixture(autouse=True)
 def _isolate_home_snapshots(tmp_path, monkeypatch):
@@ -17,12 +21,12 @@ def _isolate_home_snapshots(tmp_path, monkeypatch):
     not passed — this fixture swaps it for a per-test tmp dir, and tmp_path
     cleanup removes all generated ``проект.docxforge`` files automatically.
     """
-    import docxforge.generate as gen_module
+    import docxforge.engine.schema as schema_module
 
     fake_home = tmp_path / 'fake_docxforge_home'
     fake_home.mkdir(exist_ok=True)
     monkeypatch.setattr(
-        gen_module, 'get_docxforge_home', lambda: str(fake_home))
+        schema_module, 'get_docxforge_home', lambda: str(fake_home))
 
 
 @pytest.fixture

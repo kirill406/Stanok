@@ -13,6 +13,15 @@ from docxforge.engine.schema import (
     Project, ResumeState, TemplateConfig, FieldMapping, FieldType,
     BatchSourceConfig, RowIterationMode, limit_rows, substitute_placeholders,
     advance_counter_after_creation,
+    sanitize_folder_name as _sanitize_folder_name,
+    default_project_file,
+    get_docxforge_home,
+    get_home_dir,
+    is_project_folder,
+    migrate_project_configs_to_home,
+    resolve_project_file,
+    unique_home_project_file,
+    unique_project_file_in_folder,
 )
 from docxforge.engine.data_reader import DataReader
 from docxforge.engine.errors import (
@@ -114,9 +123,10 @@ def generate_project(
     num_docs: Optional[int] = None,
     output_dir: Optional[str] = None,
 ) -> List[str]:
-    project_file = os.path.join(project_path, 'проект.docxforge')
-    if not os.path.exists(project_file):
-        raise GenerationError(f'Project file not found: {project_file}')
+    project_file = resolve_project_file(project_path)
+    if project_file is None or not os.path.exists(project_file):
+        raise GenerationError(
+            f'Project file not found: {project_path}')
 
     project = Project.from_file(project_file)
     if not project.templates:
@@ -202,9 +212,9 @@ def create_projects_from_template(
             home_dir=home_dir,
         )
 
-    project_file = os.path.join(project_path, 'проект.docxforge')
-    if not os.path.exists(project_file):
-        raise GenerationError(f'Project file not found: {project_file}')
+    project_file = resolve_project_file(project_path)
+    if project_file is None or not os.path.exists(project_file):
+        raise GenerationError(f'Project file not found: {project_path}')
 
     project = Project.from_file(project_file)
     if not project.templates:
@@ -291,7 +301,8 @@ def create_projects_from_template(
                 template_config, row_data, primary_source_config.file,
                 include_fields=template_config.generated_project_fields)
 
-            new_project_file = os.path.join(project_subdir, 'проект.docxforge')
+            new_project_file = unique_project_file_in_folder(
+                project_subdir, folder_name)
             new_project = Project(version=2)
             new_project.templates[template_name] = new_config
             try:
@@ -325,14 +336,6 @@ def create_projects_from_template(
             except OSError as e:
                 raise GenerationError(
                     f'Failed to copy data folder: {e}') from e
-
-            # B1: Home snapshot + prefilled documents — only after the
-            # project folder is fully assembled (template + data + config).
-            try:
-                save_project_snapshot_to_home(
-                    folder_name, new_project, home_dir=home_dir)
-            except Exception as e:
-                logger.warning('Home snapshot for %r skipped: %s', folder_name, e)
 
             _render_prefilled_project_docs(project_subdir, template_name)
 
@@ -400,7 +403,7 @@ def _build_project_config(
             compatibility; row_data already holds the resolved row values).
         include_fields: B1 subset from the FillForm section «Поля шаблона для
             генерируемых проектов». Non-empty → only these fields enter the
-            generated проект.docxforge; empty/None → all fields (back-compat).
+            generated per-project config; empty/None → all fields (back-compat).
 
     Returns:
         New TemplateConfig with transformed fields and CONSTANT batch sources.
@@ -492,7 +495,7 @@ def _copy_template_files(src_template: str, dst_templates_dir: str) -> None:
 # ---------------------------------------------------------------------------
 # Phase 4: nested project file operations (used by Phase 3 grouping core).
 # Layout per SPEC: <project>/данные/ + <project>/шаблоны/ + <project>/результат/
-#                  + <project>/проект.docxforge ; settings live in employee dir.
+#                  + <project>/<name>.docxforge ; settings live in employee dir.
 # ---------------------------------------------------------------------------
 
 #: Accepted source data-folder spellings (existing projects use capital).
@@ -501,7 +504,6 @@ DATA_DIR_CANDIDATES = ('Данные', 'данные')
 NESTED_DATA_DIR = 'данные'
 NESTED_TEMPLATES_DIR = 'шаблоны'
 NESTED_RESULT_DIR = 'результат'
-NESTED_PROJECT_FILE = 'проект.docxforge'
 EMPLOYEE_SETTINGS_FILE = 'docxforge_settings.json'
 
 
@@ -644,10 +646,10 @@ def write_nested_project_config(
     new_config: TemplateConfig,
     version: int = 2,
 ) -> str:
-    """Write `проект.docxforge` for a nested project. Returns file path."""
+    """Write the per-project config for a nested project. Returns file path."""
     new_project = Project(version=version)
     new_project.templates[template_name] = new_config
-    config_path = os.path.join(dst_project_dir, NESTED_PROJECT_FILE)
+    config_path = default_project_file(dst_project_dir)
     try:
         new_project.to_file(config_path)
     except (PermissionError, OSError) as e:
@@ -698,7 +700,7 @@ def setup_nested_project_files(
 ) -> Dict[str, str]:
     """Per-project file assembly for the Phase 3 nested loop.
 
-    Creates <project>/{данные/,шаблоны/,результат/,проект.docxforge}.
+    Creates <project>/{данные/,шаблоны/,результат/,<name>.docxforge}.
     Rolls back (removes dst dir) on any failure. Returns dict of created paths.
     """
     os.makedirs(dst_project_dir, exist_ok=True)
@@ -719,26 +721,6 @@ def setup_nested_project_files(
         'result_dir': result_dir,
         'config': config_path,
     }
-
-
-_INVALID_FOLDER_CHARS = '<>:"/\\|?*'
-
-
-def _sanitize_folder_name(name: Optional[str]) -> str:
-    """Make a filesystem-safe folder name from a resolved value.
-
-    Replaces Windows-unsafe characters and control characters with '_',
-    strips trailing dots/spaces and truncates to 100 characters.
-    Returns '' when nothing usable is left (caller applies N-fallback).
-    """
-    if name is None:
-        return ''
-    text = ''.join('_' if (ch in _INVALID_FOLDER_CHARS or ord(ch) < 32) else ch
-                   for ch in str(name).strip())
-    text = text.strip().rstrip('.')
-    if len(text) > 100:
-        text = text[:100].rstrip('.').strip()
-    return text
 
 
 def _unique_folder_name(base: str, used: set, parent_dir: str) -> str:
@@ -780,8 +762,8 @@ def create_nested_employee_projects(
     and creates ``Projects/<employee>/<project>/`` folders. Each employee folder
     gets a ``docxforge_settings.json`` listing its projects; each project folder
     gets a full copy of ``Данные/``, the template in ``Шаблоны/``, an empty
-    ``Результат/`` and a ``проект.docxforge`` (TABLE fields frozen to row values
-    as CONSTANT, COUNTER reset, batch sources forced to CONSTANT).
+    ``Результат/`` and a per-project ``<name>.docxforge`` (TABLE fields frozen
+    to row values as CONSTANT, COUNTER reset, batch sources forced to CONSTANT).
 
     Folder parts are obtained via the Phase 2 helper ``parse_composite_template``:
     for a composite template the employee/project parts resolve each folder;
@@ -800,7 +782,7 @@ def create_nested_employee_projects(
     routing in ``create_projects_from_template`` can pass it positionally.
 
     Args:
-        project_path: Source project directory (with проект.docxforge).
+        project_path: Source project directory (with its config file).
         template_name: Template filename (relative to Шаблоны/).
         folder_name_template: Composite template, e.g. "{{employee}}/{{project_name}}".
         max_projects: Cap on the TOTAL number of projects (None or <= 0 = all).
@@ -815,9 +797,9 @@ def create_nested_employee_projects(
             employee/project column, empty data, or filesystem failure
             (created directories are rolled back first).
     """
-    project_file = os.path.join(project_path, 'проект.docxforge')
-    if not os.path.exists(project_file):
-        raise GenerationError(f'Project file not found: {project_file}')
+    project_file = resolve_project_file(project_path)
+    if project_file is None or not os.path.exists(project_file):
+        raise GenerationError(f'Project file not found: {project_path}')
 
     project = Project.from_file(project_file)
     if not project.templates:
@@ -992,13 +974,8 @@ def create_nested_employee_projects(
                     bsc.continue_from_last = False
                 new_project = Project(version=2)
                 new_project.templates[template_name] = new_config
-                new_project.to_file(os.path.join(project_dir, 'проект.docxforge'))
-
-                try:
-                    save_project_snapshot_to_home(
-                        project_folder, new_project, home_dir=home_dir)
-                except Exception as e:
-                    logger.warning('Home snapshot for %r skipped: %s', project_folder, e)
+                new_project.to_file(unique_project_file_in_folder(
+                    project_dir, project_folder))
 
                 _render_prefilled_project_docs(project_dir, template_name)
 
@@ -1033,66 +1010,6 @@ def create_nested_employee_projects(
         advance_counter_after_creation(template_config.resume, project_count)
         project.to_file(project_file)
     return projects_dir, employee_counter, project_count
-
-
-# ---------------------------------------------------------------------------
-# B1 (002-stabilization): Home snapshots + prefilled documents.
-# Each generated project additionally leaves a `<project>.docxforge` snapshot
-# named after the project itself in the user's Home directory, and is born
-# with its documents already rendered (TABLE fields were frozen to row
-# values as CONSTANT, so a plain render resolves everything).
-# ---------------------------------------------------------------------------
-
-def get_home_dir() -> str:
-    """Return the user's Home directory (B1 snapshot location)."""
-    return os.path.expanduser('~')
-
-
-def get_docxforge_home() -> str:
-    """Return ``~/.docxforge`` (snapshots, logs, settings), creating it."""
-    path = os.path.join(get_home_dir(), '.docxforge')
-    os.makedirs(path, exist_ok=True)
-    return path
-
-
-def unique_home_project_file(
-    project_name: str,
-    home_dir: Optional[str] = None,
-) -> str:
-    """Return a non-existing ``<project_name>.docxforge`` path.
-
-    Snapshots live in ``~/.docxforge`` (next to logs and settings), not in
-    plain Home. On name collision the file being created is renamed
-    (``name (1)``, ``name (2)``, …) while the existing file is left
-    untouched — the same rule as B5 output files.
-
-    """
-    base_dir = home_dir or get_docxforge_home()
-    safe = _sanitize_folder_name(project_name) or 'project'
-    candidate = os.path.join(base_dir, safe + '.docxforge')
-    if not os.path.exists(candidate):
-        return candidate
-    root, ext = os.path.splitext(candidate)
-    index = 1
-    while True:
-        renamed = '%s (%d)%s' % (root, index, ext)
-        if not os.path.exists(renamed):
-            logger.info('Home snapshot %r exists; using %r instead',
-                        candidate, renamed)
-            return renamed
-        index += 1
-
-
-def save_project_snapshot_to_home(
-    project_name: str,
-    project: 'Project',
-    home_dir: Optional[str] = None,
-) -> str:
-    """Write a ``<project_name>.docxforge`` snapshot to ``~/.docxforge``."""
-    path = unique_home_project_file(project_name, home_dir)
-    project.to_file(path)
-    logger.info('Wrote home snapshot: %s', path)
-    return path
 
 
 def _render_prefilled_project_docs(

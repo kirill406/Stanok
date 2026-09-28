@@ -16,7 +16,13 @@ from PyQt5.QtGui import QFont, QIcon
 from docxforge.gui.project_window import ProjectWindow
 from docxforge.gui.strings import STRINGS
 from docxforge.engine.schema import create_project, Project
-from docxforge.generate import generate_project, GenerationError
+from docxforge.generate import (
+    generate_project,
+    GenerationError,
+    is_project_folder,
+    migrate_project_configs_to_home,
+    resolve_project_file,
+)
 from docxforge.gui.worker import GenerateWorker, project_job
 
 logger = logging.getLogger(__name__)
@@ -162,6 +168,15 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(550, 500)
         self.resize(700, 600)
         self.recent_projects = self._load_recent()
+        # Migrate per-project configs of recent folders into ~/.docxforge
+        # (generated projects carry <name>.docxforge next to Данные/).
+        for recent in list(self.recent_projects):
+            if os.path.isdir(recent):
+                try:
+                    migrate_project_configs_to_home(recent)
+                except Exception:
+                    logger.debug('Config migration skipped for %r', recent,
+                                 exc_info=True)
         self._batch_worker = None
         self._batch_progress = None
         self._build_ui()
@@ -408,8 +423,7 @@ class MainWindow(QMainWindow):
             return
         added, skipped = 0, []
         for path in dirs:
-            project_file = os.path.join(path, 'проект.docxforge')
-            if os.path.isfile(project_file):
+            if is_project_folder(path):
                 self._add_recent(path)
                 added += 1
             else:
@@ -440,6 +454,10 @@ class MainWindow(QMainWindow):
                                  'Папка проекта не найдена. Возможно, она была перемещена.')
 
     def _open_project_at(self, path):
+        try:
+            migrate_project_configs_to_home(path)
+        except Exception:
+            logger.debug('Config migration skipped for %r', path, exc_info=True)
         self.project_window = ProjectWindow(path, self)
         self.project_window.show()
         self.hide()
@@ -474,7 +492,7 @@ class MainWindow(QMainWindow):
     def generate_for_project(self, project_path: str, num_docs: int):
         """Generate documents for a project using the first template found."""
         # Find the first configured template
-        project_file = os.path.join(project_path, 'проект.docxforge')
+        project_file = resolve_project_file(project_path)
         template_name = ''
         try:
             project = Project.from_file(project_file)

@@ -144,7 +144,7 @@ def test_002_unique_home_project_file_collision_renames_new(tmp_path):
 
 
 def test_002_flat_home_snapshots_named_after_project(tmp_path):
-    """Flat creation leaves `<project>.docxforge` snapshots in Home."""
+    """Creation writes `<folder>.docxforge` in folder; open migrates to Home."""
     source_dir = _make_flat_source(str(tmp_path))
     home = str(tmp_path / 'home')
     os.makedirs(home, exist_ok=True)
@@ -155,38 +155,48 @@ def test_002_flat_home_snapshots_named_after_project(tmp_path):
         d for d in os.listdir(projects_dir)
         if os.path.isdir(os.path.join(projects_dir, d)))
     assert len(folders) == 3
+    assert os.listdir(home) == []
     for folder in folders:
-        snap = os.path.join(home, folder + '.docxforge')
-        assert os.path.isfile(snap), snap
-        snap_project = Project.from_file(snap)
-        assert 'contract.docx' in snap_project.templates
-        live = Project.from_file(
+        folder_file = os.path.join(projects_dir, folder, folder + '.docxforge')
+        assert os.path.isfile(folder_file), folder_file
+        assert not os.path.exists(
             os.path.join(projects_dir, folder, 'проект.docxforge'))
+        live = Project.from_file(folder_file)
+        assert 'contract.docx' in live.templates
+        migrated = gen_module.migrate_project_configs_to_home(
+            os.path.join(projects_dir, folder), home)
+        assert migrated == [os.path.join(home, folder + '.docxforge')]
+        assert not os.path.exists(folder_file)
+        snap_project = Project.from_file(migrated[0])
         assert (snap_project.templates['contract.docx'].fields['client_name'].value
                 == live.templates['contract.docx'].fields['client_name'].value)
 
 
 def test_002_flat_home_snapshot_collision_keeps_existing(tmp_path):
-    """Pre-existing Home file keeps its bytes; new snapshot gets (1)."""
+    """Pre-existing Home file keeps bytes; migrated copy gets (1)."""
     source_dir = _make_flat_source(str(tmp_path))
     home = str(tmp_path / 'home')
     os.makedirs(home, exist_ok=True)
     preoccupied = os.path.join(home, 'ООО Альфа.docxforge')
     with open(preoccupied, 'wb') as f:
         f.write(b'SENTINEL-BYTES')
-    gen_module.create_projects_from_template(
+    projects_dir, _count = gen_module.create_projects_from_template(
         source_dir, 'contract.docx', '{{client_name}}',
         max_projects=1, home_dir=home)
+    folder = os.listdir(projects_dir)[0]
+    migrated = gen_module.migrate_project_configs_to_home(
+        os.path.join(projects_dir, folder), home)
     with open(preoccupied, 'rb') as f:
         assert f.read() == b'SENTINEL-BYTES'
     renamed = os.path.join(home, 'ООО Альфа (1).docxforge')
+    assert migrated == [renamed]
     assert os.path.isfile(renamed)
     snap_project = Project.from_file(renamed)
     assert 'contract.docx' in snap_project.templates
 
 
 def test_002_nested_home_snapshots_named_after_project(tmp_path):
-    """Nested creation leaves `<project>.docxforge` snapshots in Home."""
+    """Nested creation writes named configs; open migrates them to Home."""
     source_dir = _make_nested_source(str(tmp_path))
     home = str(tmp_path / 'home')
     os.makedirs(home, exist_ok=True)
@@ -195,6 +205,18 @@ def test_002_nested_home_snapshots_named_after_project(tmp_path):
             source_dir, 'contract.docx', '{{employee}}/{{project_name}}',
             home_dir=home))
     assert (n_employees, n_projects) == (2, 2)
+    assert os.listdir(home) == []
+    for emp in sorted(os.listdir(projects_dir)):
+        emp_dir = os.path.join(projects_dir, emp)
+        if not os.path.isdir(emp_dir):
+            continue
+        for proj in sorted(os.listdir(emp_dir)):
+            pdir = os.path.join(emp_dir, proj)
+            if not os.path.isdir(pdir):
+                continue
+            assert os.path.isfile(os.path.join(pdir, proj + '.docxforge'))
+            migrated = gen_module.migrate_project_configs_to_home(pdir, home)
+            assert migrated == [os.path.join(home, proj + '.docxforge')]
     snapshots = sorted(
         f for f in os.listdir(home) if f.endswith('.docxforge'))
     assert snapshots == ['Dogovor_001.docxforge', 'Dogovor_002.docxforge']
@@ -222,7 +244,7 @@ def test_002_flat_generated_projects_prefilled(tmp_path):
         assert '{{' not in text and '}}' not in text, text
         assert 'ORG_VALUE' in text
         cfg = Project.from_file(
-            os.path.join(projects_dir, folder, 'проект.docxforge')
+            gen_module.resolve_project_file(os.path.join(projects_dir, folder))
         ).templates['contract.docx']
         client = cfg.fields['client_name'].value
         assert client in text
@@ -323,7 +345,7 @@ def test_002_flat_creation_applies_stored_subset(tmp_path):
     assert count == 3
     for folder in sorted(os.listdir(projects_dir)):
         cfg = Project.from_file(
-            os.path.join(projects_dir, folder, 'проект.docxforge')
+            gen_module.resolve_project_file(os.path.join(projects_dir, folder))
         ).templates['contract.docx']
         assert set(cfg.fields) == {'client_name'}
         assert cfg.fields['client_name'].type == FieldType.CONSTANT

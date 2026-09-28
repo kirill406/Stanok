@@ -8,8 +8,9 @@ from docxforge.engine.schema import Project, TemplateConfig
 
 
 def _load_project(project_dir: str) -> Project:
-    pf = os.path.join(project_dir, 'проект.docxforge')
-    if not os.path.exists(pf):
+    from docxforge.generate import resolve_project_file
+    pf = resolve_project_file(project_dir)
+    if not pf or not os.path.exists(pf):
         # Runtime error (exit 1): errors go to stderr, results stay on stdout.
         print('Ошибка: проект не найден в %s' % project_dir, file=sys.stderr)
         print('Создайте проект: python cli.py create %s' % project_dir,

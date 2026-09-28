@@ -11,6 +11,7 @@ from .schema import (
     Project, TemplateConfig, FieldMapping, CycleMapping,
     AggregationMapping, FieldType, AggregationFunction,
     BatchSourceConfig, RowIterationMode, ResumeState,
+    default_project_file, resolve_project_file,
 )
 from .data_reader import DataReader
 from .render_loop import (
@@ -27,7 +28,10 @@ class Renderer:
         self._template_path_cache = {}
 
     def load_project(self):
-        project_file = os.path.join(self.project_dir, 'проект.docxforge')
+        project_file = resolve_project_file(self.project_dir)
+        if project_file is None:
+            project_file = default_project_file(self.project_dir)
+        self.project_file = project_file
         self.project = Project.from_file(project_file) if os.path.exists(project_file) else Project()
 
     def save_project(self):
@@ -36,7 +40,8 @@ class Renderer:
     def _atomic_write_project(self):
         """Atomically write project file via the shared schema helper."""
         from .schema import atomic_write_json
-        project_file = os.path.join(self.project_dir, 'проект.docxforge')
+        project_file = getattr(self, 'project_file',
+                               default_project_file(self.project_dir))
         data = self.project._to_dict()
         atomic_write_json(project_file, data, backup_ext='.bak')
 

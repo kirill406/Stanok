@@ -74,7 +74,7 @@ class ConfigCollectorMixin:
         config.create_projects = self.chk_create_projects.isChecked()
         config.folder_name_template = self.edit_folder_name_template.text().strip() or None
         # B1 «Поля шаблона для генерируемых проектов»: checked names define
-        # the generated проект.docxforge template. All checked (or no boxes)
+        # the generated per-project config template. All checked (or no boxes)
         # means "all fields" and is stored as [] (back-compat, clean files).
         checks = getattr(self, 'generated_field_checks', {}) or {}
         all_names = list(self.field_widgets.keys())

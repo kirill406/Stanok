@@ -1,6 +1,6 @@
 # SPEC.md — 002-stabilization (доводка продукта)
 
-Status: draft. Branch: `spec-002`.
+Status: done. Branch: `spec-002` (merged to `main`).
 
 ## Goal
 Довести «Станок» до стабильного состояния: предсказуемое создание

@@ -40,6 +40,7 @@
 - Schema (`engine/schema.py`) = single source of truth for .docxforge config
 - Renderer uses XML-run merge (preserves formatting), not text replacement
 - Nested project generation (Employee → Projects) lives in `generate.py`, details in `docs/nested-projects.md`
+- Project configs are per-project `<name>.docxforge` (no fixed name): migrate to `~/.docxforge` on open, resolve folder-first via `resolve_project_file()` — details in `docs/project-configs.md`
 
 ## Testing
 - Unit tests in `tests/` mirroring `docxforge/engine/` modules

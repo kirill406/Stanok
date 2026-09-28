@@ -9,17 +9,17 @@ Strangler: только новый модуль рядом, старый пут�
 
 ## Подпункты
 
-- [ ] 1. Каркас `src/docxforge/engine/data_formatting.py`: `value_to_str`
+- [x] 1. Каркас `src/docxforge/engine/data_formatting.py`: `value_to_str`
   (нативные типы ячеек `int`/`float`/`bool`/`None` → `str`, битые ячейки → `''`)
   + `read_table_rows` поверх `DataReader` (missing/corrupt файл → `[]`, warning).
-- [ ] 2. `resolve_source_row` (+ обёртка под `BatchSourceConfig`/`ResumeState`):
+- [x] 2. `resolve_source_row` (+ обёртка под `BatchSourceConfig`/`ResumeState`):
   режимы `constant` (первая строка / lookup), `sequential` (исчерпание → `None`),
   `circular` (по кругу), `start_offset` из resume.
-- [ ] 3. `resolve_fields(field_mappings, row, ...)` → `{name: value}` для
+- [x] 3. `resolve_fields(field_mappings, row, ...)` → `{name: value}` для
   Filling JSON: типы `constant`/`table`/`counter`/`today`/`image`, без плейсхолдеров.
-- [ ] 4. `advance_resume(resume, created)`: математика B6
+- [x] 4. `advance_resume(resume, created)`: математика B6
   (`last = last + created`, `continue_from_last=False` → база 0, `created <= 0` — no-op).
-- [ ] 5. Тесты `tests/test_003_data_formatting.py`: типы, режимы строк,
+- [x] 5. Тесты `tests/test_003_data_formatting.py`: типы, режимы строк,
   счётчики, resume, битые ячейки. Полный `pytest tests/ -q` зелёный.
 
 ## Acceptance Phase 2

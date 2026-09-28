@@ -1,0 +1,19 @@
+{
+  "version": 2,
+  "template_path": "/c/User/inf/договор 1.docx",
+  "dist_path": "/c/User/inf/результат/Абрмов/Иванова5.docx",
+  "fields": [
+        {
+          "name": "организация",
+          "value": "ООО Ромашка"
+        },
+        {
+          "name": "должность_поставщика",
+          "value": "директор"
+        },
+        {
+          "name": "doc_number",
+          "value": "5"
+        }
+      ]
+}

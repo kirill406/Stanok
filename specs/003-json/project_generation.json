@@ -1,0 +1,103 @@
+{
+  "version": 2,
+  "project_name": "имя_проекта",
+  "templates_new": [
+    {
+      "name": "договор 1.docx",
+      "path": "/c/User/inf/договор 1.docx",
+      "fields": [
+        {
+          "name": "организация",
+          "type": "constant",
+          "value": "{{ организация }}"
+        },
+        {
+          "name": "должность_поставщика",
+          "type": "constant",
+          "value": "{{ должность_поставщика }}"
+        },
+        {
+          "name": "doc_number",
+          "type": "number",
+          "value": "{{ doc_number }}"
+        }
+      ],
+      "batch": {
+        "sources": [
+          {
+            "name": "инфа.xlsx",
+            "file": "инфа.xlsx",
+            "path": "/c/User/inf/инфа.xlsx",
+            "mode": "constant",
+            "continue_from_last": false
+          },
+          {
+            "name": "клиенты.xlsx",
+            "file": "клиенты.xlsx",
+            "path": "/c/User/inf/клиенты.xlsx",
+            "mode": "constant",
+            "continue_from_last": false
+          }
+        ],
+          "filename_template": "/c/User/inf/результат/{{ фио_клиента }}/{{ фио_поставщика }}{{ doc_number }}.docx"
+      },
+      "resume": {
+        "last_counter_value": 0,
+        "sources": {},
+        "continue_from_last": false
+      }
+    }
+  ],
+  "templates": {
+    "договор 1.docx": {
+      "fields": {
+        "организация": {
+          "type": "constant",
+          "value": "{{ организация }}"
+        },
+        "должность_поставщика": {
+          "type": "constant",
+          "value": "{{ должность_поставщика }}"
+        },
+        "адрес_клиента": {
+          "type": "constant",
+          "value": "{{ адрес_клиента }}"
+        },
+        "doc_number": {
+          "type": "constant",
+          "value": "{{ doc_number }}"
+        }
+      },
+      "batch": {
+        "sources": {
+          "инфа.xlsx": {
+            "file": "инфа.xlsx",
+            "mode": "constant",
+            "continue_from_last": false
+          },
+          "клиенты.xlsx": {
+            "file": "клиенты.xlsx",
+            "mode": "constant",
+            "continue_from_last": false
+          },
+          "сотрудники.xlsx": {
+            "file": "сотрудники.xlsx",
+            "mode": "constant",
+            "continue_from_last": false
+          },
+          "спецификация.xlsx": {
+            "file": "спецификация.xlsx",
+            "mode": "constant",
+            "continue_from_last": false
+          }
+        },
+        "filename_template": "{{ фио_клиента }}{{ фио_поставщика }}"
+      },
+      "resume": {
+        "last_counter_value": 0,
+        "sources": {},
+        "continue_from_last": false
+      }
+    }
+  }
+}

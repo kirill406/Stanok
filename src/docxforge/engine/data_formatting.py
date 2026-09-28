@@ -9,16 +9,22 @@ here.
 """
 
 import logging
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from docxforge.engine.data_reader import DataReader
+from docxforge.engine.formatting import format_counter, format_today
 from docxforge.engine.schema import (
     BatchSourceConfig,
+    FieldMapping,
+    FieldType,
     ResumeState,
     RowIterationMode,
 )
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_TODAY_FORMAT = 'dd.MM.yyyy'
 
 
 def value_to_str(value: Any) -> str:
@@ -146,3 +152,48 @@ def resolve_source_row_for_config(rows: List[Dict[str, Any]],
         lookup_column=config.lookup_column,
         lookup_value=config.lookup_value,
     )
+
+
+def resolve_fields(field_mappings: Dict[str, FieldMapping],
+                   row: Optional[Dict[str, Any]] = None,
+                   doc_index: int = 0,
+                   counter_base: int = 0,
+                   now: Optional[datetime] = None) -> Dict[str, str]:
+    """Resolve field mappings to ``{name: value}`` for one Filling JSON.
+
+    Every value is a resolved string — no placeholders remain:
+
+    - ``constant``: the configured value (or ``''``).
+    - ``table``: ``value_to_str(row[column])``; missing row/column → ``''``.
+    - ``counter``: ``format_counter(start + counter_base + doc_index)``,
+      where ``counter_base`` is the resume offset (``last_counter_value``
+      when continuing, else ``0``).
+    - ``today``: ``format_today(format or 'dd.MM.yyyy', now)``.
+    - ``image``: the configured image path (stored as a string, not text).
+    - Unknown type: skipped with a warning.
+    """
+    if now is None:
+        now = datetime.now()
+    base = max(0, int(counter_base)) + max(0, int(doc_index))
+    resolved: Dict[str, str] = {}
+    for name, fm in (field_mappings or {}).items():
+        if fm.type == FieldType.CONSTANT:
+            resolved[name] = value_to_str(fm.value) if fm.value is not None else ''
+        elif fm.type == FieldType.TABLE:
+            if row is not None and fm.column is not None and fm.column in row:
+                resolved[name] = value_to_str(row.get(fm.column, ''))
+            else:
+                resolved[name] = ''
+                logger.warning(
+                    "No data for field '%s' (table '%s', column '%s'); "
+                    "using empty string", name, fm.file, fm.column)
+        elif fm.type == FieldType.COUNTER:
+            resolved[name] = format_counter(fm.start + base, fm.format)
+        elif fm.type == FieldType.TODAY:
+            resolved[name] = format_today(fm.format or DEFAULT_TODAY_FORMAT, now)
+        elif fm.type == FieldType.IMAGE:
+            resolved[name] = value_to_str(fm.value) if fm.value is not None else ''
+        else:
+            logger.warning("Unknown field type %r for field '%s'; skipped",
+                           getattr(fm.type, 'value', fm.type), name)
+    return resolved

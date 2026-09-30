@@ -59,8 +59,11 @@ def _migrate_settings(legacy_path: str, new_path: str) -> bool:
         os.remove(legacy_path)
         logger.info('Migrated settings %s -> %s', legacy_path, new_path)
         return True
+    except (OSError, ValueError) as e:
+        logger.debug(f'Could not migrate settings: {e}', exc_info=True)
+        return False
     except Exception as e:
-        logger.exception(f'Could not migrate settings: {e}')
+        logger.debug(f'Could not migrate settings: {e}', exc_info=True)
         return False
 
 
@@ -71,8 +74,10 @@ def get_settings_path():
     try:
         if _migrate_settings(_legacy_settings_path(), new_path):
             return new_path
+    except (OSError, ValueError) as e:
+        logger.debug(f'Settings path resolution failed: {e}', exc_info=True)
     except Exception as e:
-        logger.exception(f'Settings path resolution failed: {e}')
+        logger.debug(f'Settings path resolution failed: {e}', exc_info=True)
     return _legacy_settings_path()
 
 SETTINGS_FILE = get_settings_path()
@@ -175,7 +180,7 @@ class MainWindow(QMainWindow):
                 try:
                     migrate_project_configs_to_home(recent)
                 except Exception as e:
-                    logger.exception(f'Config migration skipped for {recent!r}: {e}')
+                    logger.debug(f'Config migration skipped for {recent!r}: {e}', exc_info=True)
         self._batch_worker = None
         self._batch_progress = None
         self._build_ui()
@@ -362,8 +367,10 @@ class MainWindow(QMainWindow):
                 with open(SETTINGS_FILE, 'r', encoding='utf-8') as f:
                     data = json.load(f)
                     return data.get('doc_counts', {}).get(path, 1)
+        except (OSError, ValueError) as e:
+            logger.debug(f'Could not read doc count from settings: {e}', exc_info=True)
         except Exception as e:
-            logger.exception(f'Could not read doc count from settings: {e}')
+            logger.debug(f'Could not read doc count from settings: {e}', exc_info=True)
         return 1
 
     def _get_last_template(self, path: str) -> str:
@@ -372,8 +379,10 @@ class MainWindow(QMainWindow):
                 with open(SETTINGS_FILE, 'r', encoding='utf-8') as f:
                     data = json.load(f)
                     return data.get('last_templates', {}).get(path, '')
+        except (OSError, ValueError) as e:
+            logger.debug(f'Could not read last template from settings: {e}', exc_info=True)
         except Exception as e:
-            logger.exception(f'Could not read last template from settings: {e}')
+            logger.debug(f'Could not read last template from settings: {e}', exc_info=True)
         return ''
 
     def _set_last_doc_count(self, path: str, count: int):
@@ -387,8 +396,10 @@ class MainWindow(QMainWindow):
             data['recent_projects'] = self.recent_projects
             with open(SETTINGS_FILE, 'w', encoding='utf-8') as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
+        except (OSError, ValueError) as e:
+            logger.debug(f'Could not write doc count to settings: {e}', exc_info=True)
         except Exception as e:
-            logger.exception(f'Could not write doc count to settings: {e}')
+            logger.debug(f'Could not write doc count to settings: {e}', exc_info=True)
 
     def _set_last_template(self, path: str, template_name: str):
         try:
@@ -401,8 +412,10 @@ class MainWindow(QMainWindow):
             data['recent_projects'] = self.recent_projects
             with open(SETTINGS_FILE, 'w', encoding='utf-8') as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
+        except (OSError, ValueError) as e:
+            logger.debug(f'Could not write last template to settings: {e}', exc_info=True)
         except Exception as e:
-            logger.exception(f'Could not write last template to settings: {e}')
+            logger.debug(f'Could not write last template to settings: {e}', exc_info=True)
 
     def _create_project(self):
         path = QFileDialog.getExistingDirectory(self, 'Выберите папку для проекта',
@@ -456,7 +469,7 @@ class MainWindow(QMainWindow):
         try:
             migrate_project_configs_to_home(path)
         except Exception as e:
-            logger.exception(f'Config migration skipped for {path!r}: {e}')
+            logger.debug(f'Config migration skipped for {path!r}: {e}', exc_info=True)
         self.project_window = ProjectWindow(path, self)
         self.project_window.show()
         self.hide()
@@ -470,8 +483,10 @@ class MainWindow(QMainWindow):
                         # Old format compatibility
                         return data
                     return data.get('recent_projects', [])
+        except (OSError, ValueError) as e:
+            logger.debug(f'Could not read recent projects from settings: {e}', exc_info=True)
         except Exception as e:
-            logger.exception(f'Could not read recent projects from settings: {e}')
+            logger.debug(f'Could not read recent projects from settings: {e}', exc_info=True)
         return []
 
     def _save_recent(self):
@@ -485,8 +500,10 @@ class MainWindow(QMainWindow):
                         data['last_templates'] = existing.get('last_templates', {})
             with open(SETTINGS_FILE, 'w', encoding='utf-8') as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
+        except (OSError, ValueError) as e:
+            logger.debug(f'Could not write recent projects to settings: {e}', exc_info=True)
         except Exception as e:
-            logger.exception(f'Could not write recent projects to settings: {e}')
+            logger.debug(f'Could not write recent projects to settings: {e}', exc_info=True)
 
     def generate_for_project(self, project_path: str, num_docs: int):
         """Generate documents for a project using the first template found."""
@@ -497,8 +514,10 @@ class MainWindow(QMainWindow):
             project = Project.from_file(project_file)
             if project.templates:
                 template_name = next(iter(project.templates.keys()))
+        except (OSError, ValueError) as e:
+            logger.debug(f'Could not read project file {project_file}: {e}', exc_info=True)
         except Exception as e:
-            logger.exception(f'Could not read project file {project_file}: {e}')
+            logger.debug(f'Could not read project file {project_file}: {e}', exc_info=True)
         
         progress = QProgressDialog('Генерация...', None, 0, num_docs, self)
         progress.setWindowTitle('Создание документов')
@@ -520,6 +539,7 @@ class MainWindow(QMainWindow):
             self._add_recent(project_path, template_name)  # Move to top with template name
 
         except GenerationError as e:
+            logger.exception(f'Generation failed for {project_path}: {e}')
             progress.close()
             QMessageBox.warning(self, 'Ошибка', str(e))
         except Exception as e:

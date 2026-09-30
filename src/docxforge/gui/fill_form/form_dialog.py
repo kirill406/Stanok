@@ -3,7 +3,9 @@
 
 import os
 import re
+import zipfile
 import logging
+from json import JSONDecodeError
 from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
                               QLabel, QComboBox, QLineEdit, QScrollArea,
                               QWidget, QGroupBox, QCheckBox, QFrame,
@@ -70,6 +72,11 @@ class FillForm(FieldRowsMixin, AdvancedSectionMixin, BatchSectionMixin, ConfigIO
         # the constructor as an unhandled traceback.
         try:
             self.renderer.load_project()
+        except JSONDecodeError as e:
+            logging.getLogger(__name__).exception(f'Failed to load project file, corrupt JSON: {e}')
+            QMessageBox.critical(parent, STRINGS['msg_error'],
+                                 STRINGS['msg_project_load_error'].format(error=e))
+            raise FillFormOpenError('project load failed: %s' % e) from e
         except Exception as e:
             logging.getLogger(__name__).exception(f'Failed to load project file: {e}')
             QMessageBox.critical(parent, STRINGS['msg_error'],
@@ -78,6 +85,11 @@ class FillForm(FieldRowsMixin, AdvancedSectionMixin, BatchSectionMixin, ConfigIO
 
         try:
             self.scan_result = scan_template(self.template_path)
+        except zipfile.BadZipFile as e:
+            logging.getLogger(__name__).exception(f'Failed to scan template {self.template_path}, bad zip: {e}')
+            QMessageBox.critical(parent, STRINGS['msg_error'],
+                                 STRINGS['msg_template_load_error'].format(error=e))
+            raise FillFormOpenError('template scan failed: %s' % e) from e
         except Exception as e:
             logging.getLogger(__name__).exception(f'Failed to scan template {self.template_path}: {e}')
             QMessageBox.critical(parent, STRINGS['msg_error'],
@@ -132,6 +144,9 @@ class FillForm(FieldRowsMixin, AdvancedSectionMixin, BatchSectionMixin, ConfigIO
             if os.path.exists(path):
                 try:
                     self.columns_cache[filename] = self.data_reader.get_columns(path)
+                except (KeyError, ValueError) as e:
+                    logging.getLogger(__name__).exception(f"Error getting columns from {filename}: {e}")
+                    self.columns_cache[filename] = []
                 except Exception as e:
                     logging.getLogger(__name__).exception(f"Error getting columns from {filename}: {e}")
                     self.columns_cache[filename] = []

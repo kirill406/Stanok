@@ -37,8 +37,11 @@ def compute_aggregation(agg: AggregationMapping,
         if result == int(result):
             return str(int(result))
         return '{:.2f}'.format(result).replace('.', ',')
+    except (ArithmeticError, TypeError, ValueError) as e:
+        logger.warning(f'Aggregation {agg.function} failed: {e}', exc_info=True)
+        return '0'
     except Exception as e:
-        logger.exception(f'Aggregation {agg.function} failed: {e}')
+        logger.warning(f'Aggregation {agg.function} failed: {e}', exc_info=True)
         return '0'
 
 

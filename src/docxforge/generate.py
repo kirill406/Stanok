@@ -306,6 +306,11 @@ def create_projects_from_template(
             new_project.templates[template_name] = new_config
             try:
                 new_project.to_file(new_project_file)
+            except OSError as e:
+                logger.exception(
+                    f'Failed to write project config {new_project_file}: {e}')
+                raise GenerationError(
+                    f'Failed to write project config: {e}') from e
             except Exception as e:
                 logger.exception(
                     f'Failed to write project config {new_project_file}: {e}')
@@ -314,6 +319,11 @@ def create_projects_from_template(
 
             try:
                 _copy_template_files(template_full, templates_subdir)
+            except OSError as e:
+                logger.exception(
+                    f'Failed to copy template files to {templates_subdir}: {e}')
+                raise GenerationError(
+                    f'Failed to copy template files: {e}') from e
             except Exception as e:
                 logger.exception(
                     f'Failed to copy template files to {templates_subdir}: {e}')
@@ -639,7 +649,7 @@ def _rollback_created(paths: List[str]) -> None:
         try:
             shutil.rmtree(path, ignore_errors=True)
         except Exception as e:
-            logger.exception(f'Rollback failed for {path}: {e}')
+            logger.warning(f'Rollback failed for {path}: {e}', exc_info=True)
 
 
 def create_nested_employee_projects(
@@ -935,7 +945,7 @@ def _render_prefilled_project_docs(
         logger.info('Prefilled %d document(s) in %s', len(outputs), project_dir)
         return outputs
     except Exception as e:
-        logger.exception(f'Prefill render skipped for {project_dir}: {e}')
+        logger.warning(f'Prefill render skipped for {project_dir}: {e}', exc_info=True)
         return []
 
 

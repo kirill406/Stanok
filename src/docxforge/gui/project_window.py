@@ -255,6 +255,11 @@ class ProjectWindow(QMainWindow):
         try:
             os.remove(full_path)
             logger.info(f"Deleted template: {rel_path}")
+        except OSError as e:
+            logger.exception(f"Failed to delete template {rel_path}: {e}")
+            QMessageBox.critical(self, STRINGS['msg_error'], 
+                                 'Не удалось удалить шаблон: %s' % str(e))
+            return
         except Exception as e:
             logger.exception(f"Failed to delete template {rel_path}: {e}")
             QMessageBox.critical(self, STRINGS['msg_error'], 

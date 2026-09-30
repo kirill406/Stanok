@@ -3,9 +3,11 @@
 
 import logging
 import os
+import zipfile
 from datetime import date, datetime, time
 from typing import Any, Dict, List
 import openpyxl
+from openpyxl.utils.exceptions import InvalidFileException
 
 from docxforge.engine.schema import BatchSourceConfig, RowIterationMode
 
@@ -59,6 +61,9 @@ class DataReader:
             wb = openpyxl.load_workbook(path, data_only=True)
         except PermissionError as e:
             logger.error(f"Permission denied reading {path}: {e}")
+            return []
+        except (zipfile.BadZipFile, InvalidFileException) as e:
+            logger.error(f"Error reading {path} (unreadable file): {e}", exc_info=True)
             return []
         except Exception as e:
             logger.exception(f"Error reading {path}: {e}")
@@ -125,6 +130,9 @@ class DataReader:
             wb = openpyxl.load_workbook(path, data_only=True)
         except PermissionError as e:
             logger.error(f"Permission denied reading {path}: {e}")
+            return []
+        except (zipfile.BadZipFile, InvalidFileException) as e:
+            logger.error(f"Error reading {path} (unreadable file): {e}", exc_info=True)
             return []
         except Exception as e:
             logger.exception(f"Error reading {path}: {e}")

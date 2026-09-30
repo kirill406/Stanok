@@ -9,6 +9,7 @@ from docxforge.engine.schema import (
     TemplateConfig, FieldMapping, FieldType, CycleMapping, AggregationMapping,
     AggregationFunction, BatchSourceConfig, RowIterationMode, ResumeState,
 )
+from docxforge.generate import GenerationError
 from .constants import FIELD_TYPES_ENUM
 from ..strings import STRINGS
 
@@ -233,8 +234,17 @@ class ConfigIOMixin:
                     output_dir=os.path.join(self.project_dir, 'Результат'),
                     max_docs=total_docs,
                 )
+            except FileNotFoundError as e:
+                logging.getLogger(__name__).exception(
+                    f'Render failed, template gone {self.template_rel_path}: {e}')
+                progress.close()
+                QMessageBox.warning(
+                    self, STRINGS['msg_error'],
+                    STRINGS['msg_render_error'].format(error=e))
+                return
             except Exception as e:
-                logging.getLogger(__name__).exception(f'Render failed: {e}')
+                logging.getLogger(__name__).exception(
+                    f'Render failed for {self.template_rel_path}: {e}')
                 progress.close()
                 QMessageBox.warning(
                     self, STRINGS['msg_error'],
@@ -272,6 +282,10 @@ class ConfigIOMixin:
         # cancelling the dialog below leaves no trace (M12).
         try:
             total_rows = self._count_primary_rows(config)
+        except ValueError as e:
+            logger.exception(f'Failed to count batch rows: {e}')
+            QMessageBox.warning(self, STRINGS['msg_error'], str(e))
+            return
         except Exception as e:
             logger.exception(f'Failed to count batch rows: {e}')
             QMessageBox.warning(self, STRINGS['msg_error'], str(e))
@@ -314,6 +328,21 @@ class ConfigIOMixin:
             result = create_projects_from_template(
                 self.project_dir, self.template_rel_path,
                 config.folder_name_template, max_projects=chosen)
+        except GenerationError as e:
+            logger.exception(f'Create projects failed: {e}')
+            if snapshot is not None:
+                try:
+                    with open(project_file, 'wb') as f:
+                        f.write(snapshot)
+                    self.renderer.load_project()
+                except OSError as restore_error:
+                    logger.exception(
+                        f'Failed to restore config snapshot {project_file}: {restore_error}')
+                except Exception as restore_error:
+                    logger.exception(
+                        f'Failed to restore config snapshot {project_file}: {restore_error}')
+            QMessageBox.warning(self, STRINGS['msg_error'], str(e))
+            return
         except Exception as e:
             logger.exception(f'Create projects failed: {e}')
             if snapshot is not None:
@@ -321,9 +350,12 @@ class ConfigIOMixin:
                     with open(project_file, 'wb') as f:
                         f.write(snapshot)
                     self.renderer.load_project()
+                except OSError as restore_error:
+                    logger.exception(
+                        f'Failed to restore config snapshot {project_file}: {restore_error}')
                 except Exception as restore_error:
                     logger.exception(
-                        f'Failed to restore config snapshot: {restore_error}')
+                        f'Failed to restore config snapshot {project_file}: {restore_error}')
             QMessageBox.warning(self, STRINGS['msg_error'], str(e))
             return
 

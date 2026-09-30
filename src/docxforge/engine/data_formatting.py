@@ -53,9 +53,15 @@ def value_to_str(value: Any) -> str:
         return value.strip()
     try:
         return str(value)
+    except (TypeError, ValueError) as e:
+        logger.warning(
+            f'Broken cell value {type(value).__name__} coerced to empty string: {e}',
+            exc_info=True)
+        return ''
     except Exception as e:
-        logger.exception(
-            f'Broken cell value coerced to empty string: {e}')
+        logger.warning(
+            f'Broken cell value {type(value).__name__} coerced to empty string: {e}',
+            exc_info=True)
         return ''
 
 

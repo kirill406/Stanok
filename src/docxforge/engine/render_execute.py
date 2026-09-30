@@ -13,16 +13,11 @@ logger = logging.getLogger(__name__)
 from .schema import (
     TemplateConfig, FieldType, BatchSourceConfig, RowIterationMode, ResumeState,
 )
-from .errors import (
-    EMPTY_SEQUENTIAL,
-    TABLE_EXHAUSTED,
-    message_for_code,
-)
 from .render_loop import (
     scan_raw_placeholders, process_xml,
     write_output_doc, update_resume_state,
 )
-from .data_formatting import resolve_document_fields
+from .data_formatting import build_fillings
 
 
 def execute_render(renderer, template_rel_path: str,
@@ -71,8 +66,6 @@ def execute_render(renderer, template_rel_path: str,
     with zipfile.ZipFile(template_path, 'r') as zf:
         zdata = {name: zf.read(name) for name in zf.namelist()}
 
-    zdata_orig = {name: data for name, data in zdata.items()}
-
     all_raw_phs = scan_raw_placeholders(zdata)
 
     total_docs = renderer._compute_total_docs(config, batch_configs, resume_compute)
@@ -84,30 +77,7 @@ def execute_render(renderer, template_rel_path: str,
     if total_docs is None or total_docs <= 0:
         total_docs = 1
 
-    # Pre-read all table data
-    all_table_data = {}
-    for fn, fm in config.fields.items():
-        if fm.type == FieldType.TABLE and fm.file and fm.file not in all_table_data:
-            all_table_data[fm.file] = renderer._read_table_data(fm.file)
-    for source_file in batch_configs:
-        if source_file not in all_table_data:
-            all_table_data[source_file] = renderer._read_table_data(source_file)
-
-    cycle_data = {}
-    for cycle in config.cycles:
-        if cycle.table not in all_table_data:
-            cycle_data[cycle.table] = renderer._read_table_data(cycle.table)
-        else:
-            cycle_data[cycle.table] = all_table_data[cycle.table]
-
-    # Also load tables referenced by aggregations
-    for agg in config.aggregations.values():
-        if agg.table not in cycle_data:
-            if agg.table not in all_table_data:
-                cycle_data[agg.table] = renderer._read_table_data(agg.table)
-            else:
-                cycle_data[agg.table] = all_table_data[agg.table]
-
+    # 003-json: reads happen once inside build_fillings (data layer).
     batch_primary = None
     if batch_table:
         batch_primary = batch_table
@@ -117,71 +87,24 @@ def execute_render(renderer, template_rel_path: str,
                 batch_primary = name
                 break
 
-    warnings = []
-    outputs = []
-    doc_index = 0
+    # 003-json: the single filling mechanism. Batch iteration is materialized
+    # into Filling JSON by the data layer; rendering below is pure.
+    fillings, cycle_data = build_fillings(
+        renderer.data_reader, renderer.project_dir, config, batch_configs,
+        resume_compute, user_values, total_docs, all_raw_phs,
+        now_factory=datetime.now)
+    if total_docs and not fillings:
+        logger.error(
+            'No documents rendered: SEQUENTIAL batch source has '
+            'no data rows for the first document.')
 
-    while doc_index < total_docs:
-        zdata = {name: data for name, data in zdata_orig.items()}
-        now = datetime.now()
-
-        per_source_rows: Dict[str, Optional[Dict[str, str]]] = {}
-        stopped = False
-        for source_file, bsc in batch_configs.items():
-            rows = all_table_data.get(source_file, [])
-            row = renderer._resolve_row_for_source(
-                source_file, doc_index, batch_configs, resume_compute, rows)
-            if row is None and bsc.mode == RowIterationMode.SEQUENTIAL:
-                if doc_index == 0:
-                    warnings.append(
-                        message_for_code(EMPTY_SEQUENTIAL, source=source_file))
-                stopped = True
-                break
-            per_source_rows[source_file] = row
-
-        if not stopped:
-            for source_file, bsc in batch_configs.items():
-                if bsc.mode == RowIterationMode.SEQUENTIAL:
-                    rows = all_table_data.get(source_file, [])
-                    start_offset = 0
-                    if resume_compute and resume_compute.continue_from_last:
-                        start_offset = resume_compute.sources.get(source_file, 0)
-                    if start_offset + doc_index >= len(rows):
-                        stopped = True
-                        if doc_index == 0:
-                            warnings.append(
-                                message_for_code(
-                                    TABLE_EXHAUSTED, source=source_file,
-                                    rows=len(rows), start=start_offset))
-
-        if stopped:
-            # Never render a garbage document: a SEQUENTIAL source with no
-            # data for doc_index means there is nothing to render (on the
-            # first document the whole run is empty).
-            for message in warnings:
-                logger.warning(message)
-            if doc_index == 0:
-                logger.error(
-                    'No documents rendered: SEQUENTIAL batch source has '
-                    'no data rows for the first document.')
-            break
-
-        effective, image_paths = resolve_document_fields(
-            config, all_raw_phs, doc_index, per_source_rows,
-            all_table_data, cycle_data, resume_compute, now, user_values)
-
-        zdata = process_xml(zdata, config, cycle_data, effective,
-                           image_paths=image_paths,
-                           project_dir=renderer.project_dir)
-
-        out_path = write_output_doc(
-            zdata, output_dir, template_rel_path, doc_index, total_docs, batch_primary,
-            filename_template=config.filename_template,
-            directory_template=config.directory_template,
-            effective_values=effective)
-
-        outputs.append(out_path)
-        doc_index += 1
+    outputs = execute_render_fillings(
+        renderer, template_rel_path, fillings, output_dir,
+        filename_template=config.filename_template,
+        directory_template=config.directory_template,
+        batch_primary=batch_primary, total_docs=total_docs,
+        cycles=config.cycles, cycle_data=cycle_data)
+    doc_index = len(outputs)
 
     if resume:
         update_resume_state(resume, resume_compute, config, batch_configs, doc_index)
@@ -191,5 +114,62 @@ def execute_render(renderer, template_rel_path: str,
             config.resume.sources = resume.sources
             config.resume.continue_from_last = resume.continue_from_last
 
+    return outputs
+
+
+def render_effective(renderer, template_rel_path: str,
+                     effective: Dict[str, str],
+                     image_paths: Optional[Dict[str, str]] = None,
+                     output_dir: str = None,
+                     filename_template: Optional[str] = None,
+                     directory_template: Optional[str] = None,
+                     doc_index: int = 0,
+                     total_docs: int = 1,
+                     batch_primary: Optional[str] = None,
+                     cycles=(), cycle_data=None) -> str:
+    """Render ONE document from resolved data (the single filling mechanism).
+
+    No config reads, no Excel, no row selection: ``effective`` is the final
+    ``{field: value}`` mapping (a Filling JSON's ``fields``), ``image_paths``
+    its ``images``. Only XML substitution and file writing happen here.
+    """
+    template_path = renderer.get_template_path(template_rel_path)
+    if output_dir is None:
+        output_dir = os.path.join(renderer.project_dir, 'Результат')
+    os.makedirs(output_dir, exist_ok=True)
+
+    with zipfile.ZipFile(template_path, 'r') as zf:
+        zdata = {name: zf.read(name) for name in zf.namelist()}
+
+    zdata = process_xml(zdata, cycles, cycle_data or {}, effective,
+                        image_paths=image_paths or {},
+                        project_dir=renderer.project_dir)
+    return write_output_doc(
+        zdata, output_dir, template_rel_path, doc_index, total_docs,
+        batch_primary, filename_template=filename_template,
+        directory_template=directory_template,
+        effective_values=effective)
+
+
+def execute_render_fillings(renderer, template_rel_path: str,
+                            fillings: list,
+                            output_dir: str = None,
+                            filename_template: Optional[str] = None,
+                            directory_template: Optional[str] = None,
+                            batch_primary: Optional[str] = None,
+                            total_docs: Optional[int] = None,
+                            cycles=(), cycle_data=None) -> List[str]:
+    """Render one document per Filling JSON (pure iteration, no reads)."""
+    if total_docs is None:
+        total_docs = len(fillings)
+    outputs = []
+    for doc_index, filling in enumerate(fillings):
+        outputs.append(render_effective(
+            renderer, template_rel_path, filling.get('fields', {}),
+            image_paths=filling.get('images') or {},
+            output_dir=output_dir, filename_template=filename_template,
+            directory_template=directory_template, doc_index=doc_index,
+            total_docs=total_docs, batch_primary=batch_primary,
+            cycles=cycles, cycle_data=cycle_data))
     return outputs
 

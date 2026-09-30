@@ -102,19 +102,21 @@ def resolve_folder_name_template(
 
     return result
 
-def process_xml(zdata: dict, config: TemplateConfig,
+def process_xml(zdata: dict, cycles,
                 cycle_data: Dict[str, List[Dict[str, str]]],
                 effective: Dict[str, str],
                 image_paths: Dict[str, str] = None,
                 project_dir: str = None) -> dict:
-    """Process all XML parts: expand cycles, replace placeholders, insert images."""
+    """Process all XML parts: expand cycles, replace placeholders, insert images.
+    Takes cycle definitions + data (not the whole config): the pure tail of
+    the single filling mechanism."""
     if image_paths is None:
         image_paths = {}
 
     doc_xml = etree.fromstring(zdata['word/document.xml'])
     body = doc_xml.find(W_NS + 'body')
 
-    for cycle in config.cycles:
+    for cycle in cycles:
         data = cycle_data.get(cycle.table, [])
         for tbl in body.findall('.//' + W_NS + 'tbl'):
             expand_table_cycle(tbl, cycle, data, effective)

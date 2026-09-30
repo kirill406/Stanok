@@ -114,7 +114,7 @@ class TestRendererSubdirTemplate:
             assert len(outputs) == 1
 
     def test_missing_data_file_returns_empty(self):
-        """_read_table_data with non-existent file returns []."""
+        """Missing data file renders with placeholder untouched (no crash)."""
         with tempfile.TemporaryDirectory() as tmp:
             _make_dirs(tmp)
             doc = Document()

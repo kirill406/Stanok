@@ -16,7 +16,10 @@ import openpyxl
 import pytest
 
 from docxforge.engine.data_reader import DataReader, _coerce_cell
-from docxforge.engine.data_formatting import resolve_document_fields
+from docxforge.engine.data_formatting import (
+    resolve_document_fields,
+    resolve_legacy_source_row,
+)
 from docxforge.engine.renderer import Renderer
 from docxforge.engine.schema import (
     BatchSourceConfig, FieldMapping, FieldType, RowIterationMode,
@@ -125,8 +128,8 @@ class TestM7NoRowsZeroFallback:
             rows = [{'id': 'aaa', 'name': 'Ann'}]
             with caplog.at_level(logging.WARNING,
                                  logger='docxforge.engine.renderer'):
-                assert renderer._resolve_constant_row(
-                    'd.xlsx', {'d.xlsx': bsc}, rows) is None
+                assert resolve_legacy_source_row(
+                    rows, bsc, 'd.xlsx', 0) is None
             assert any('zzz' in (r.getMessage() or '')
                        for r in caplog.records)
 
@@ -137,5 +140,5 @@ class TestM7NoRowsZeroFallback:
                                     mode=RowIterationMode.CONSTANT,
                                     lookup_column='id', lookup_value='aaa')
             rows = [{'id': 'aaa', 'name': 'Ann'}]
-            assert renderer._resolve_constant_row(
-                'd.xlsx', {'d.xlsx': bsc}, rows) == rows[0]
+            assert resolve_legacy_source_row(
+                rows, bsc, 'd.xlsx', 0) == rows[0]

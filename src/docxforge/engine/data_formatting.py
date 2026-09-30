@@ -9,11 +9,17 @@ generation loop and all callers consume it from here.
 """
 
 import logging
+import os
 import re
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from docxforge.engine.data_reader import DataReader
+from docxforge.engine.errors import (
+    EMPTY_SEQUENTIAL,
+    TABLE_EXHAUSTED,
+    message_for_code,
+)
 from docxforge.engine.formatting import (
     compute_aggregation,
     format_counter,
@@ -359,3 +365,168 @@ def advance_resume(resume: ResumeState, created: int) -> int:
     base = resume.last_counter_value if resume.continue_from_last else 0
     resume.last_counter_value = base + int(created)
     return resume.last_counter_value
+
+
+def read_project_table(data_reader: DataReader, project_dir: str,
+                       table_file: str) -> List[Dict[str, Any]]:
+    """Read ``Данные/<table_file>`` of a project (verbatim legacy read).
+
+    Missing file → ``[]`` silently; corrupt content → whatever
+    ``DataReader.read_excel`` yields (``[]`` + its own error log).
+    """
+    path = os.path.join(project_dir, 'Данные', table_file)
+    if os.path.exists(path):
+        return data_reader.read_excel(path)
+    return []
+
+
+def resolve_legacy_source_row(
+        all_rows: Optional[List[Dict[str, Any]]],
+        bsc,
+        source_file: str,
+        doc_index: int,
+        resume=None) -> Optional[Dict[str, Any]]:
+    """Select one row with the exact legacy loop semantics (verbatim move).
+
+    ``bsc`` is a ``BatchSourceConfig`` or None (no config → first row).
+    CONSTANT honours lookup with the M7 miss warning; SEQUENTIAL exhausts
+    to None; CIRCULAR wraps; unknown mode selects nothing (M7).
+    """
+    if not all_rows:
+        return None
+
+    if not bsc:
+        return all_rows[0]
+
+    if bsc.mode == RowIterationMode.CONSTANT:
+        if bsc.lookup_column and bsc.lookup_value:
+            for row in all_rows:
+                if str(row.get(bsc.lookup_column, '')).strip() == bsc.lookup_value.strip():
+                    return row
+            # M7: lookup miss is missing data, not rows[0].
+            logger.warning(
+                "Lookup '%s=%s' missed in '%s'; no row selected",
+                bsc.lookup_column, bsc.lookup_value, source_file)
+            return None
+        return all_rows[0]
+
+    start_offset = 0
+    if resume and resume.continue_from_last:
+        start_offset = resume.sources.get(source_file, 0)
+
+    effective_i = start_offset + doc_index
+
+    if bsc.mode == RowIterationMode.SEQUENTIAL:
+        if effective_i < len(all_rows):
+            return all_rows[effective_i]
+        else:
+            return None
+
+    if bsc.mode == RowIterationMode.CIRCULAR:
+        return all_rows[effective_i % len(all_rows)]
+
+    # M7: unknown iteration mode selects no row (was rows[0]).
+    logger.warning("Unknown batch mode %r for '%s'; no row selected",
+                   bsc.mode, source_file)
+    return None
+
+
+def build_fillings(data_reader: DataReader,
+                   project_dir: str,
+                   config: TemplateConfig,
+                   batch_configs: dict,
+                   resume_compute: ResumeState,
+                   user_values: dict,
+                   total_docs: int,
+                   all_raw_phs: list,
+                   now_factory=None) -> tuple:
+    """Replicate the legacy batch iteration, emitting Filling JSON dicts.
+
+    Reads every table once, then per document selects source rows
+    (SEQUENTIAL exhaustion stops the run — never a garbage document),
+    resolves ``(effective, image_paths)`` and returns one
+    ``{"fields": ..., "images": ...}`` per document. Warning texts and
+    stop rules are verbatim legacy (EMPTY_SEQUENTIAL/TABLE_EXHAUSTED).
+    Returns ``(fillings, cycle_data)`` — cycle tables are read once here
+    and travel with the run (needed by table-cycle expansion downstream).
+
+    ``now_factory`` supplies per-document time (default ``datetime.now``);
+    callers pass their own (mockable) clock.
+    """
+    all_table_data = {}
+    for _fn, fm in config.fields.items():
+        if fm.type == FieldType.TABLE and fm.file and fm.file not in all_table_data:
+            all_table_data[fm.file] = read_project_table(
+                data_reader, project_dir, fm.file)
+    for source_file in batch_configs:
+        if source_file not in all_table_data:
+            all_table_data[source_file] = read_project_table(
+                data_reader, project_dir, source_file)
+
+    cycle_data = {}
+    for cycle in config.cycles:
+        if cycle.table not in all_table_data:
+            cycle_data[cycle.table] = read_project_table(
+                data_reader, project_dir, cycle.table)
+        else:
+            cycle_data[cycle.table] = all_table_data[cycle.table]
+
+    # Also load tables referenced by aggregations
+    for agg in config.aggregations.values():
+        if agg.table not in cycle_data:
+            if agg.table not in all_table_data:
+                cycle_data[agg.table] = read_project_table(
+                    data_reader, project_dir, agg.table)
+            else:
+                cycle_data[agg.table] = all_table_data[agg.table]
+
+    fillings = []
+    doc_index = 0
+    clock = now_factory or datetime.now
+    while doc_index < total_docs:
+        now = clock()
+        per_source_rows: Dict[str, Optional[Dict[str, str]]] = {}
+        stopped = False
+        for source_file, bsc in batch_configs.items():
+            rows = all_table_data.get(source_file, [])
+            row = resolve_legacy_source_row(
+                rows, bsc, source_file, doc_index, resume_compute)
+            if row is None and bsc.mode == RowIterationMode.SEQUENTIAL:
+                if doc_index == 0:
+                    logger.warning(message_for_code(
+                        EMPTY_SEQUENTIAL, source=source_file))
+                stopped = True
+                break
+            per_source_rows[source_file] = row
+
+        if not stopped:
+            for source_file, bsc in batch_configs.items():
+                if bsc.mode == RowIterationMode.SEQUENTIAL:
+                    rows = all_table_data.get(source_file, [])
+                    start_offset = 0
+                    if resume_compute and resume_compute.continue_from_last:
+                        start_offset = resume_compute.sources.get(source_file, 0)
+                    if start_offset + doc_index >= len(rows):
+                        stopped = True
+                        if doc_index == 0:
+                            logger.warning(message_for_code(
+                                TABLE_EXHAUSTED, source=source_file,
+                                rows=len(rows), start=start_offset))
+
+        if stopped:
+            # Never render a garbage document: a SEQUENTIAL source with no
+            # data for doc_index means there is nothing to render (on the
+            # first document the whole run is empty).
+            if doc_index == 0:
+                logger.error(
+                    'No documents rendered: SEQUENTIAL batch source has '
+                    'no data rows for the first document.')
+            break
+
+        effective, image_paths = resolve_document_fields(
+            config, all_raw_phs, doc_index, per_source_rows,
+            all_table_data, cycle_data, resume_compute, now, user_values)
+        fillings.append({'fields': effective, 'images': image_paths})
+        doc_index += 1
+
+    return fillings, cycle_data

@@ -14,14 +14,15 @@ Graduated from `specs/003-json/` (Status: done). Примеры: `specs/003-json
 - `Renderer.render_from_json(filling)` — рендер без Excel (валидация,
   `ValueError`; `generate` оборачивает в `GenerationError`).
 - `engine/data_formatting.py` — Excel → JSON: `value_to_str`,
-  `read_table_rows`, `resolve_source_row*`, `resolve_fields`, `advance_resume`.
+  `read_table_rows`/`read_project_table`, `resolve_source_row*`,
+  `resolve_legacy_source_row`, `resolve_fields`, `resolve_document_fields`,
+  `advance_resume`, `build_fillings` (материализация пакетной итерации).
+- Единственный путь заполнения: `build_fillings` → `execute_render_fillings`
+  → `render_effective` → `process_xml`. Старый цикл, `_read_table_data`,
+  `_resolve_row_for_source`, wrapper `resolve_field_values` — удалены;
+  `render()` — фасад с той же сигнатурой поверх fillings.
 - `schema.validate_project_json` / `normalize_project_json` — схема PJ
-  (`number`→`counter`, `templates_new`→словарь, абсолютные→basename).
-- Префилл создания (flat/nested) идёт через `resolve_fields` +
-  `render_from_json`. Резолвер основного цикла — `resolve_document_fields()`
-  здесь же (перенесён из `render_loop` бит-в-бит: linked-таблицы, legacy,
-  M7, агрегации, image-пути); обёртка в `render_loop` удалена, все вызовы
-  идут напрямую в `data_formatting`. Коэрсия цикла — plain `str()` (legacy M6); strip/int-fix только
+  (`number`→`counter`, `templates_new`→словарь, абсолютные→basename). Коэрсия цикла — plain `str()` (legacy M6); strip/int-fix только
   в `value_to_str` для новых путей.
 
 ## Тесты

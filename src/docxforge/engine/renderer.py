@@ -64,73 +64,6 @@ class Renderer:
         self._template_path_cache[template_name] = direct
         return direct
 
-    def _read_table_data(self, table_file: str) -> List[Dict[str, str]]:
-        path = os.path.join(self.project_dir, 'Данные', table_file)
-        if os.path.exists(path):
-            return self.data_reader.read_excel(path)
-        return []
-
-    def _resolve_constant_row(self, table_file: str,
-                               batch_configs: Optional[Dict[str, BatchSourceConfig]] = None,
-                               all_rows: Optional[List[Dict[str, str]]] = None) -> Optional[Dict[str, str]]:
-        """Resolve the row for a CONSTANT-mode source (lookup by column value)."""
-        if not batch_configs:
-            return None
-        bsc = batch_configs.get(table_file)
-        if not bsc or bsc.mode != RowIterationMode.CONSTANT:
-            return None
-        if all_rows is None:
-            all_rows = self._read_table_data(table_file)
-        if not all_rows:
-            return None
-        if bsc.lookup_column and bsc.lookup_value:
-            for row in all_rows:
-                if str(row.get(bsc.lookup_column, '')).strip() == bsc.lookup_value.strip():
-                    return row
-            # M7: lookup miss is missing data, not rows[0].
-            logger.warning(
-                "Lookup '%s=%s' missed in '%s'; no row selected",
-                bsc.lookup_column, bsc.lookup_value, table_file)
-            return None
-        return all_rows[0]
-
-    def _resolve_row_for_source(self, source_file: str, doc_index: int,
-                                 batch_configs: Dict[str, BatchSourceConfig],
-                                 resume: Optional[ResumeState] = None,
-                                 all_rows: Optional[List[Dict[str, str]]] = None) -> Optional[Dict[str, str]]:
-        """Resolve the data row for a given source at a given document index."""
-        if all_rows is None:
-            all_rows = self._read_table_data(source_file)
-        if not all_rows:
-            return None
-
-        bsc = batch_configs.get(source_file)
-        if not bsc:
-            return all_rows[0]
-
-        if bsc.mode == RowIterationMode.CONSTANT:
-            return self._resolve_constant_row(source_file, batch_configs, all_rows)
-
-        start_offset = 0
-        if resume and resume.continue_from_last:
-            start_offset = resume.sources.get(source_file, 0)
-
-        effective_i = start_offset + doc_index
-
-        if bsc.mode == RowIterationMode.SEQUENTIAL:
-            if effective_i < len(all_rows):
-                return all_rows[effective_i]
-            else:
-                return None
-
-        if bsc.mode == RowIterationMode.CIRCULAR:
-            return all_rows[effective_i % len(all_rows)]
-
-        # M7: unknown iteration mode selects no row (was rows[0]).
-        logger.warning("Unknown batch mode %r for '%s'; no row selected",
-                       bsc.mode, source_file)
-        return None
-
     def count_source_rows(self, source_file: str) -> int:
         """Return the number of data rows in a batch source file (M3).
 
@@ -138,7 +71,9 @@ class Renderer:
         count, auto-info) and by :meth:`_compute_total_docs`, so the three
         previously duplicated counters cannot drift apart.
         """
-        return len(self._read_table_data(source_file))
+        from .data_formatting import read_project_table
+        return len(read_project_table(
+            self.data_reader, self.project_dir, source_file))
 
     def _compute_total_docs(self, config: TemplateConfig,
                             batch_configs: Dict[str, BatchSourceConfig],
@@ -185,19 +120,18 @@ class Renderer:
 
     def render_from_json(self, filling: dict,
                          output_dir: str = None) -> List[str]:
-        """Render a document from Filling JSON (003-json, Phase 1).
+        """Render a document from Filling JSON (003-json single mechanism).
 
         ``filling`` is resolved data of a single document:
         ``{"template": "name.docx", "dist": "out/file.docx",
-        "fields": {name: value}}`` — values are already resolved
-        (no placeholders), so they are passed to :meth:`render` as
-        ``user_values`` (constants). No Excel is read on this path
-        unless the project config itself references tables.
+        "fields": {name: value}, "images": {name: path}}`` — values are
+        already resolved (no placeholders). Pure path: no config reads,
+        no Excel, no row selection — straight to ``execute_render_fillings``.
 
         ``output_dir`` wins when given; otherwise the directory part
         of ``dist`` is used (relative → under ``project_dir``);
         otherwise the engine default (``Результат``) applies.
-        The file name part of ``dist`` is informational in Phase 1
+        The file name part of ``dist`` is informational
         (naming stays with the project config/auto-naming).
 
         Raises:
@@ -206,10 +140,10 @@ class Renderer:
                 (``ValueError``, not ``GenerationError``: ``renderer``
                 cannot import ``docxforge.generate`` — circular
                 import — so ``generate.py`` wraps this into
-                ``GenerationError`` at its own boundary.)
+                ``GenerationError`` at its own boundary).
 
         Returns:
-            List of created file paths (as returned by :meth:`render`).
+            List of created file paths.
         """
         from .errors import (
             FILLING_FIELDS_NOT_OBJECT,
@@ -218,6 +152,7 @@ class Renderer:
             FILLING_NO_TEMPLATE,
             message_for_code,
         )
+        from .render_execute import execute_render_fillings
         if not isinstance(filling, dict):
             raise ValueError(message_for_code(FILLING_NOT_OBJECT))
         template = filling.get('template')
@@ -233,6 +168,9 @@ class Renderer:
                        if isinstance(value, str) else str(value))
             for key, value in fields.items()
         }
+        images = filling.get('images') or {}
+        if not isinstance(images, dict):
+            raise ValueError(message_for_code(FILLING_FIELDS_NOT_OBJECT))
         if output_dir is None:
             dist = filling.get('dist')
             if isinstance(dist, str) and dist.strip():
@@ -242,4 +180,6 @@ class Renderer:
                                   else os.path.join(self.project_dir, dist_dir))
         logger.info("Rendering '%s' from Filling JSON (%d fields)",
                     template, len(user_values))
-        return self.render(template, user_values, output_dir=output_dir)
+        return execute_render_fillings(
+            self, template, [{'fields': user_values, 'images': images}],
+            output_dir=output_dir)

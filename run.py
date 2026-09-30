@@ -21,5 +21,5 @@ if __name__ == '__main__':
     try:
         run()
     except Exception as e:
-        logging.exception("Fatal error in Станок")
+        logging.exception(f"Fatal error in Станок: {e}")
         sys.exit(1)

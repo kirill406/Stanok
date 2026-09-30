@@ -234,7 +234,7 @@ class ConfigIOMixin:
                     max_docs=total_docs,
                 )
             except Exception as e:
-                logging.getLogger(__name__).error('Render failed: %s', e)
+                logging.getLogger(__name__).exception(f'Render failed: {e}')
                 progress.close()
                 QMessageBox.warning(
                     self, STRINGS['msg_error'],
@@ -273,7 +273,7 @@ class ConfigIOMixin:
         try:
             total_rows = self._count_primary_rows(config)
         except Exception as e:
-            logger.error('Failed to count batch rows: %s', e)
+            logger.exception(f'Failed to count batch rows: {e}')
             QMessageBox.warning(self, STRINGS['msg_error'], str(e))
             return
         if total_rows < 1:
@@ -315,15 +315,15 @@ class ConfigIOMixin:
                 self.project_dir, self.template_rel_path,
                 config.folder_name_template, max_projects=chosen)
         except Exception as e:
-            logger.error('Create projects failed: %s', e)
+            logger.exception(f'Create projects failed: {e}')
             if snapshot is not None:
                 try:
                     with open(project_file, 'wb') as f:
                         f.write(snapshot)
                     self.renderer.load_project()
                 except Exception as restore_error:
-                    logger.error('Failed to restore config snapshot: %s',
-                                 restore_error)
+                    logger.exception(
+                        f'Failed to restore config snapshot: {restore_error}')
             QMessageBox.warning(self, STRINGS['msg_error'], str(e))
             return
 

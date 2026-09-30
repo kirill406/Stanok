@@ -165,6 +165,7 @@ def generate_project(
     except EngineError as e:
         raise GenerationError(str(e), code=getattr(e, 'code', None)) from e
     except Exception as e:
+        logger.exception(f'Generation failed for {project_path}: {e}')
         raise GenerationError(f'Generation failed: {e}') from e
 
     if not outputs:
@@ -306,12 +307,16 @@ def create_projects_from_template(
             try:
                 new_project.to_file(new_project_file)
             except Exception as e:
+                logger.exception(
+                    f'Failed to write project config {new_project_file}: {e}')
                 raise GenerationError(
                     f'Failed to write project config: {e}') from e
 
             try:
                 _copy_template_files(template_full, templates_subdir)
             except Exception as e:
+                logger.exception(
+                    f'Failed to copy template files to {templates_subdir}: {e}')
                 raise GenerationError(
                     f'Failed to copy template files: {e}') from e
 
@@ -344,6 +349,7 @@ def create_projects_from_template(
         raise
     except Exception as e:
         _rollback_created(created_paths)
+        logger.exception(f'Failed to create projects in {projects_dir}: {e}')
         raise GenerationError(f'Failed to create projects: {e}') from e
 
     if created_count > 0:
@@ -633,7 +639,7 @@ def _rollback_created(paths: List[str]) -> None:
         try:
             shutil.rmtree(path, ignore_errors=True)
         except Exception as e:
-            logger.warning(f'Rollback failed for {path}: {e}')
+            logger.exception(f'Rollback failed for {path}: {e}')
 
 
 def create_nested_employee_projects(
@@ -890,6 +896,7 @@ def create_nested_employee_projects(
                 json.dump(settings, f, ensure_ascii=False, indent=2)
     except Exception as e:
         _rollback_created(created_paths)
+        logger.exception(f'Failed to create nested projects in {projects_dir}: {e}')
         raise GenerationError(f'Failed to create nested projects: {e}') from e
 
     logger.info(
@@ -928,7 +935,7 @@ def _render_prefilled_project_docs(
         logger.info('Prefilled %d document(s) in %s', len(outputs), project_dir)
         return outputs
     except Exception as e:
-        logger.warning('Prefill render skipped for %s: %s', project_dir, e)
+        logger.exception(f'Prefill render skipped for {project_dir}: {e}')
         return []
 
 

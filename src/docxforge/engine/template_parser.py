@@ -56,7 +56,7 @@ def scan_template(docx_path: str) -> Dict[str, Any]:
                                         (ph.strip(), '{{ ' + ph + ' }}', name))
                                 all_text_parts.append(merged)
                     except Exception as e:
-                        logger.warning(f'Skipping unparsable header/footer part {name}: {e}')
+                        logger.exception(f'Skipping unparsable header/footer part {name}: {e}')
 
     full_text = '\n'.join(all_text_parts)
     raw_placeholders = re.findall(r'\{\{(.+?)\}\}', full_text)

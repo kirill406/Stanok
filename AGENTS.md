@@ -28,6 +28,7 @@
 ## Prohibitions (AI Must Never)
 - Never Commit `.env` or any file with real credentials — blocked by pre-commit hook
 - Never Use `print()` for logging — use Python `logging` module
+- Every `except Exception as e` must call `logging.exception(f'<what+context>: {e}')` with a description that identifies the cause
 - Never Modify `docxforge/gui/` without understanding Qt event loop — ask first
 - Never Skip tests before push — pre-commit runs `pytest tests/ -q` automatically
 - Never Add new env var without updating `.env.example` (empty value)

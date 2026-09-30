@@ -38,7 +38,7 @@ def compute_aggregation(agg: AggregationMapping,
             return str(int(result))
         return '{:.2f}'.format(result).replace('.', ',')
     except Exception as e:
-        logger.warning(f'Aggregation {agg.function} failed: {e}')
+        logger.exception(f'Aggregation {agg.function} failed: {e}')
         return '0'
 
 

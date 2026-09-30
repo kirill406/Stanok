@@ -61,7 +61,7 @@ class DataReader:
             logger.error(f"Permission denied reading {path}: {e}")
             return []
         except Exception as e:
-            logger.error(f"Error reading {path}: {e}")
+            logger.exception(f"Error reading {path}: {e}")
             return []
 
         if sheet_name:
@@ -127,7 +127,7 @@ class DataReader:
             logger.error(f"Permission denied reading {path}: {e}")
             return []
         except Exception as e:
-            logger.error(f"Error reading {path}: {e}")
+            logger.exception(f"Error reading {path}: {e}")
             return []
 
         if sheet_name:

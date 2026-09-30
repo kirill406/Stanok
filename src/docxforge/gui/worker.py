@@ -51,7 +51,7 @@ class GenerateWorker(QThread):
             try:
                 results.append((label, job(), None))
             except Exception as e:  # noqa: BLE001 (report, don't crash)
-                logger.error('Background job %r failed: %s', label, e)
+                logger.exception(f'Background job {label!r} failed: {e}')
                 results.append((label, None, str(e)))
         self.done.emit(results)
 

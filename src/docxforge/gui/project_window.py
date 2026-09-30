@@ -205,7 +205,7 @@ class ProjectWindow(QMainWindow):
             logger.error('FillForm failed to open for %s', rel_path)
             return
         except Exception as e:
-            logger.error('FillForm failed to open for %s: %s', rel_path, e)
+            logger.exception(f'FillForm failed to open for {rel_path}: {e}')
             QMessageBox.warning(self, STRINGS['msg_error'],
                                 STRINGS['msg_template_load_error'].format(error=e))
             return
@@ -256,7 +256,7 @@ class ProjectWindow(QMainWindow):
             os.remove(full_path)
             logger.info(f"Deleted template: {rel_path}")
         except Exception as e:
-            logger.error(f"Failed to delete template {rel_path}: {e}")
+            logger.exception(f"Failed to delete template {rel_path}: {e}")
             QMessageBox.critical(self, STRINGS['msg_error'], 
                                  'Не удалось удалить шаблон: %s' % str(e))
             return

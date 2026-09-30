@@ -35,7 +35,7 @@ def atomic_write_json(path: str, data: dict, backup_ext: Optional[str] = None) -
         try:
             os.replace(path, path + backup_ext)
         except Exception as e:
-            logger.warning('Could not back up %s: %s', path, e)
+            logger.exception(f'Could not back up {path}: {e}')
     os.replace(tmp_file, path)
     try:
         dir_name = os.path.dirname(os.path.abspath(path)) or '.'
@@ -45,7 +45,7 @@ def atomic_write_json(path: str, data: dict, backup_ext: Optional[str] = None) -
         finally:
             os.close(fd)
     except Exception as e:
-        logger.debug('Could not fsync directory for %s: %s', path, e)
+        logger.exception(f'Could not fsync directory for {path}: {e}')
     return path
 
 
@@ -809,7 +809,7 @@ def _is_absolute_path(value: Any) -> bool:
         if os.path.isabs(value):
             return True
     except Exception as e:
-        logger.debug('Absolute-path check failed for %r: %s', value, e)
+        logger.exception(f'Absolute-path check failed for {value!r}: {e}')
     return False
 
 

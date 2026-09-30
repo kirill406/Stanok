@@ -54,8 +54,8 @@ def value_to_str(value: Any) -> str:
     try:
         return str(value)
     except Exception as e:
-        logger.warning('Broken cell value %r coerced to empty string: %s',
-                       type(value).__name__, e)
+        logger.exception(
+            f'Broken cell value coerced to empty string: {e}')
         return ''
 
 

@@ -71,7 +71,7 @@ class FillForm(FieldRowsMixin, AdvancedSectionMixin, BatchSectionMixin, ConfigIO
         try:
             self.renderer.load_project()
         except Exception as e:
-            logging.getLogger(__name__).error('Failed to load project file: %s', e)
+            logging.getLogger(__name__).exception(f'Failed to load project file: {e}')
             QMessageBox.critical(parent, STRINGS['msg_error'],
                                  STRINGS['msg_project_load_error'].format(error=e))
             raise FillFormOpenError('project load failed: %s' % e) from e
@@ -79,7 +79,7 @@ class FillForm(FieldRowsMixin, AdvancedSectionMixin, BatchSectionMixin, ConfigIO
         try:
             self.scan_result = scan_template(self.template_path)
         except Exception as e:
-            logging.getLogger(__name__).error('Failed to scan template %s: %s', self.template_path, e)
+            logging.getLogger(__name__).exception(f'Failed to scan template {self.template_path}: {e}')
             QMessageBox.critical(parent, STRINGS['msg_error'],
                                  STRINGS['msg_template_load_error'].format(error=e))
             raise FillFormOpenError('template scan failed: %s' % e) from e
@@ -133,7 +133,7 @@ class FillForm(FieldRowsMixin, AdvancedSectionMixin, BatchSectionMixin, ConfigIO
                 try:
                     self.columns_cache[filename] = self.data_reader.get_columns(path)
                 except Exception as e:
-                    logging.getLogger(__name__).error(f"Error getting columns from {filename}: {e}")
+                    logging.getLogger(__name__).exception(f"Error getting columns from {filename}: {e}")
                     self.columns_cache[filename] = []
             else:
                 self.columns_cache[filename] = []

@@ -46,6 +46,21 @@ def test_project_json_example_round_trip_clean():
     assert validate_project_json(normalize_project_json(data)) == []
 
 
+def test_project_json_example_legacy_input_normalized():
+    """Array + absolute paths + number + project_name → canonical dict."""
+    data = _load_example()
+    assert validate_project_json(data) == []
+    norm = normalize_project_json(data)
+    assert validate_project_json(norm) == []
+    assert norm.get('project_name') == 'имя_проекта'
+    assert 'templates_new' not in norm
+    tpl = norm['templates']['договор 1.docx']
+    # Clash: dict version wins, array entry (with number/abs paths) dropped.
+    assert tpl['fields']['doc_number']['type'] == 'constant'
+    assert tpl['batch']['filename_template'] == \
+        '{{ фио_клиента }}{{ фио_поставщика }}'
+
+
 # --- error classes --------------------------------------------------------
 
 

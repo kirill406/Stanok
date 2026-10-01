@@ -5,6 +5,9 @@ Graduated from `specs/003-json/` (Status: done). Примеры: `specs/003-json
 ## Три типа
 - **Project JSON** (`<имя>.docxforge`): конфиг — шаблоны → поля (маппинг),
   пакетные источники, `resume`. Схема-словарь, пути относительные.
+  Legacy-вход (массив `templates_new`, абсолютные пути, `number`,
+  `project_name`) принимается и нормализуется: массив→словарь,
+  абсолютные→basename, `number`→`counter`, `project_name` сохраняется.
 - **Filling JSON**: разрешённые данные одного документа
   (`{"template", "dist", "fields": {name: value}}`, только значения).
 - **Application JSON** (`~/.docxforge/docxforge_settings.json`): недавние

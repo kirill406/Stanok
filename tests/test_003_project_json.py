@@ -55,10 +55,14 @@ def test_project_json_example_legacy_input_normalized():
     assert norm.get('project_name') == 'имя_проекта'
     assert 'templates_new' not in norm
     tpl = norm['templates']['договор 1.docx']
-    # Clash: dict version wins, array entry (with number/abs paths) dropped.
+    # Dict version keeps its fields as-is.
     assert tpl['fields']['doc_number']['type'] == 'constant'
     assert tpl['batch']['filename_template'] == \
         '{{ фио_клиента }}{{ фио_поставщика }}'
+    # Array version normalizes alongside: number→counter, abs→basename.
+    tpl2 = norm['templates']['договор 2.docx']
+    assert tpl2['fields']['doc_number']['type'] == 'counter'
+    assert tpl2['batch']['sources']['клиенты.xlsx']['file'] == 'клиенты.xlsx'
 
 
 # --- error classes --------------------------------------------------------

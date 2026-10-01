@@ -60,6 +60,7 @@
 - Before coding: read PLAN.md, pick next unchecked item, create SPEC.md for it.
 - After implementation: update PLAN.md (check off), update SPEC.md if scope changed.
 - Both files live in project root or `specs/` — commit them.
+- Subagent phase plans (`PLAN_PhaseN.md`, `PLAN_003_PhaseN.md`) live in the spec folder (`specs/NNN-slug/`), not in repo root or worker folders — the orchestrator collects them on assembly.
 
 ## Workflow
 - Before working: `git pull`

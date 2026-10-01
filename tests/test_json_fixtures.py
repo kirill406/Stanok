@@ -77,14 +77,23 @@ def test_json_fixture_case(tmp_path, case):
 
 @pytest.mark.parametrize('case', _pj_case_dirs())
 def test_json_pj_excel_to_filling(case):
-    """PJ + Excel → Filling JSON equals expected_filling.json."""
+    """PJ + Excel → Filling JSON equals expected_filling.json (unified path)."""
+    from datetime import datetime
+
     from docxforge.engine.data_formatting import (
         read_table_rows,
-        resolve_fields,
+        resolve_document_fields,
         resolve_source_row,
     )
     from docxforge.engine.data_reader import DataReader
-    from docxforge.engine.schema import FieldMapping, FieldType
+    from docxforge.engine.schema import (
+        BatchSourceConfig,
+        FieldMapping,
+        FieldType,
+        ResumeState,
+        RowIterationMode,
+        TemplateConfig,
+    )
 
     case_dir = os.path.join(FIXTURES_ROOT, case)
     with open(os.path.join(case_dir, 'project.json'), encoding='utf-8') as f:
@@ -99,9 +108,20 @@ def test_json_pj_excel_to_filling(case):
         mappings[name] = FieldMapping(
             type=ftype, file=spec.get('file'), column=spec.get('column'),
             value=spec.get('value'))
+    source_file = pj['source']['file']
+    mode = RowIterationMode(pj['source'].get('mode', 'sequential'))
+    config = TemplateConfig(
+        fields=mappings,
+        batch_sources={source_file: BatchSourceConfig(
+            file=source_file, mode=mode)})
 
     reader = DataReader()
     rows = read_table_rows(
-        reader, os.path.join(case_dir, pj['source']['file']))
-    row = resolve_source_row(rows, pj['source'].get('mode', 'sequential'), 0)
-    assert resolve_fields(mappings, row=row, doc_index=0) == expected['fields']
+        reader, os.path.join(case_dir, source_file))
+    row = resolve_source_row(rows, mode, 0)
+    per_source = {source_file: row}
+    all_tables = {source_file: rows}
+    effective, _images = resolve_document_fields(
+        config, [], 0, per_source, all_tables, {},
+        ResumeState(continue_from_last=True), datetime.now(), {})
+    assert effective == expected['fields']

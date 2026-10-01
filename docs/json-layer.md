@@ -13,10 +13,13 @@ Graduated from `specs/003-json/` (Status: done). Примеры: `specs/003-json
 ## Границы (engine, без Qt)
 - `Renderer.render_from_json(filling)` — рендер без Excel (валидация,
   `ValueError`; `generate` оборачивает в `GenerationError`).
-- `engine/data_formatting.py` — Excel → JSON: `value_to_str`,
-  `read_table_rows`/`read_project_table`, `resolve_source_row*`,
-  `resolve_legacy_source_row`, `resolve_fields`, `resolve_document_fields`,
-  `advance_resume`, `build_fillings` (материализация пакетной итерации).
+- `engine/data_formatting.py` — Excel → JSON: `read_table_rows` /
+  `read_project_table`, единый выбор строк (`_select_row` + адаптеры
+  `resolve_source_row` / `resolve_legacy_source_row` /
+  `resolve_source_row_for_config`), `resolve_document_fields`,
+  `build_fillings`, `scan_project_template`. Упрощённые дубликаты
+  (`resolve_fields`, `value_to_str`, `advance_resume`) удалены вместе
+  с их тестами: семантика одна — полная (linked, legacy, M7).
 - Единственный путь заполнения: `build_fillings` → `execute_render_fillings`
   → `render_effective` → `process_xml`. Старый цикл, `_read_table_data`,
   `_resolve_row_for_source`, wrapper `resolve_field_values` — удалены;

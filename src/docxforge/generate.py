@@ -351,7 +351,7 @@ def create_projects_from_template(
                     f'Failed to copy data folder: {e}') from e
 
             _render_prefilled_project_docs(
-                project_subdir, template_name, new_config.fields, row_data)
+                project_subdir, template_name, new_config)
 
             created_count += 1
     except GenerationError:
@@ -883,7 +883,7 @@ def create_nested_employee_projects(
                     project_dir, project_folder))
 
                 _render_prefilled_project_docs(
-                    project_dir, template_name, new_config.fields, row)
+                    project_dir, template_name, new_config)
 
                 stamp = datetime.now().isoformat(timespec='seconds')
                 settings_projects.append({
@@ -922,23 +922,50 @@ def create_nested_employee_projects(
 def _render_prefilled_project_docs(
     project_dir: str,
     template_name: str,
-    field_mappings=None,
-    row=None,
+    new_config=None,
 ) -> List[str]:
     """Render prefilled documents into a generated project's ``Результат/``.
 
-    003-json path: fields are resolved to Filling JSON via data_formatting
-    and rendered with ``render_from_json`` (no Excel read inside render).
-    Best-effort: failures are logged with a warning and never abort project
-    creation (the project folder + config already exist at this point).
+    Single-mechanism path: full legacy semantics (linked tables,
+    aggregations, counters) resolved from the generated project's own data
+    via ``resolve_document_fields``, rendered as Filling JSON with
+    ``render_from_json``. Best-effort: failures are logged with a warning
+    and never abort project creation.
     """
     try:
-        from docxforge.engine.data_formatting import resolve_fields
-        fields = resolve_fields(field_mappings or {}, row=row, doc_index=0)
-        renderer = Renderer(project_dir, DataReader())
+        from docxforge.engine.data_formatting import (
+            read_project_table,
+            resolve_document_fields,
+            resolve_legacy_source_row,
+            scan_project_template,
+        )
+        from docxforge.engine.renderer import Renderer
+        from docxforge.engine.schema import ResumeState
+
+        config = new_config
+        reader = DataReader()
+        batch = config.batch_sources or {}
+        files = {fm.file for fm in config.fields.values()
+                 if fm.type == FieldType.TABLE and fm.file} | set(batch)
+        all_tables = {f: read_project_table(reader, project_dir, f)
+                      for f in files}
+        resume_compute = config.resume or ResumeState(continue_from_last=True)
+        per_source = {}
+        for sf, bsc in batch.items():
+            per_source[sf] = resolve_legacy_source_row(
+                all_tables.get(sf, []), bsc, sf, 0, resume_compute)
+        cycle_data = {}
+        for cycle in config.cycles:
+            cycle_data[cycle.table] = all_tables.get(cycle.table, [])
+        all_raw_phs = scan_project_template(project_dir, template_name)
+        effective, image_paths = resolve_document_fields(
+            config, all_raw_phs, 0, per_source, all_tables, cycle_data,
+            resume_compute, datetime.now(), {})
+        renderer = Renderer(project_dir, reader)
         renderer.load_project()
         outputs = renderer.render_from_json(
-            {'template': template_name, 'fields': fields},
+            {'template': template_name, 'fields': effective,
+             'images': image_paths},
             output_dir=os.path.join(project_dir, 'Результат'),
         )
         renderer.save_project()

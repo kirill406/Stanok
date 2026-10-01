@@ -27,7 +27,6 @@ from docxforge.engine.formatting import (
 )
 from docxforge.engine.schema import (
     BatchSourceConfig,
-    FieldMapping,
     FieldType,
     ResumeState,
     RowIterationMode,
@@ -35,40 +34,6 @@ from docxforge.engine.schema import (
 )
 
 logger = logging.getLogger(__name__)
-
-DEFAULT_TODAY_FORMAT = 'dd.MM.yyyy'
-
-
-def value_to_str(value: Any) -> str:
-    """Coerce one native Excel cell value to a Filling JSON string.
-
-    Contract: ``None`` → ``''``; ``bool``/``int`` → ``str()``;
-    integral ``float`` → ``int`` first (``10000.0`` → ``'10000'``);
-    ``str`` → stripped; anything else → best-effort ``str()``.
-    Broken cells (``str()`` raising) → ``''`` with a warning, never raise.
-    """
-    if value is None:
-        return ''
-    if isinstance(value, bool):
-        return str(value)
-    if isinstance(value, int):
-        return str(value)
-    if isinstance(value, float):
-        return str(int(value)) if value.is_integer() else str(value)
-    if isinstance(value, str):
-        return value.strip()
-    try:
-        return str(value)
-    except (TypeError, ValueError) as e:
-        logger.warning(
-            f'Broken cell value {type(value).__name__} coerced to empty string: {e}',
-            exc_info=True)
-        return ''
-    except Exception as e:
-        logger.warning(
-            f'Broken cell value {type(value).__name__} coerced to empty string: {e}',
-            exc_info=True)
-        return ''
 
 
 def read_table_rows(data_reader: DataReader, path: str,
@@ -87,52 +52,32 @@ def read_table_rows(data_reader: DataReader, path: str,
         return []
 
 
-def resolve_source_row(rows: List[Dict[str, Any]],
-                       mode: Any,
-                       doc_index: int = 0,
-                       start_offset: int = 0,
-                       lookup_column: Optional[str] = None,
-                       lookup_value: Optional[str] = None) -> Optional[Dict[str, Any]]:
-    """Select one row for a document index according to the row mode.
+def _select_row(rows: List[Dict[str, Any]],
+                mode_value: RowIterationMode,
+                doc_index: int,
+                start_offset: int,
+                lookup_column: Optional[str],
+                lookup_value: Optional[str],
+                source_file: str) -> Optional[Dict[str, Any]]:
+    """Shared row-selection core (single implementation).
 
-    Mirrors the legacy ``Renderer._resolve_row_for_source`` selection
-    semantics without touching it:
-
-    - ``constant``: single lookup row — first row by default, or the row
-      whose ``lookup_column`` equals ``lookup_value`` (miss → ``None``).
-    - ``sequential``: ``rows[start_offset + doc_index]`` in order,
-      exhausted → ``None`` (render must stop, never garbage).
-    - ``circular``: ``rows[(start_offset + doc_index) % len(rows)]``.
-    - Empty ``rows`` or unknown mode → ``None`` (with a warning).
-
-    Args:
-        rows: table rows with native cell types (see :func:`read_table_rows`).
-        mode: ``RowIterationMode`` or its string value.
-        doc_index: 0-based index of the document being resolved.
-        start_offset: resume offset (0-based first row for this run).
-        lookup_column: column to search (constant mode only).
-        lookup_value: value to find in ``lookup_column`` (constant mode only).
+    CONSTANT honors lookup with the M7 miss warning; SEQUENTIAL exhausts
+    to None; CIRCULAR wraps. Empty rows → None.
     """
     if not rows:
         return None
-    try:
-        mode_value = RowIterationMode(mode.value if isinstance(mode, RowIterationMode) else mode)
-    except ValueError:
-        logger.warning("Unknown batch mode %r; no row selected", mode)
-        return None
-
     if mode_value == RowIterationMode.CONSTANT:
         if lookup_column and lookup_value is not None:
             wanted = str(lookup_value).strip()
             for row in rows:
                 if str(row.get(lookup_column, '')).strip() == wanted:
                     return row
-            logger.warning("Lookup '%s=%s' missed; no row selected",
-                           lookup_column, lookup_value)
+            logger.warning("Lookup '%s=%s' missed in '%s'; no row selected",
+                           lookup_column, lookup_value, source_file)
             return None
         return rows[0]
 
-    offset = max(0, int(start_offset)) + max(0, int(doc_index))
+    offset = start_offset + doc_index
 
     if mode_value == RowIterationMode.SEQUENTIAL:
         if offset < len(rows):
@@ -142,8 +87,32 @@ def resolve_source_row(rows: List[Dict[str, Any]],
     if mode_value == RowIterationMode.CIRCULAR:
         return rows[offset % len(rows)]
 
-    logger.warning("Unknown batch mode %r; no row selected", mode)
+    logger.warning("Unknown batch mode %r for '%s'; no row selected",
+                   mode_value, source_file)
     return None
+
+
+def resolve_source_row(rows: List[Dict[str, Any]],
+                       mode: Any,
+                       doc_index: int = 0,
+                       start_offset: int = 0,
+                       lookup_column: Optional[str] = None,
+                       lookup_value: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Select one row for a document index according to the row mode.
+
+    Thin validated adapter over the shared core: mode parsing (string or
+    enum, unknown → None), non-negative index/offset guards.
+    """
+    if not rows:
+        return None
+    try:
+        mode_value = RowIterationMode(mode.value if isinstance(mode, RowIterationMode) else mode)
+    except ValueError:
+        logger.warning("Unknown batch mode %r; no row selected", mode)
+        return None
+    return _select_row(rows, mode_value, max(0, int(doc_index)),
+                       max(0, int(start_offset)), lookup_column,
+                       lookup_value, '')
 
 
 def resolve_source_row_for_config(rows: List[Dict[str, Any]],
@@ -170,51 +139,6 @@ def resolve_source_row_for_config(rows: List[Dict[str, Any]],
         lookup_column=config.lookup_column,
         lookup_value=config.lookup_value,
     )
-
-
-def resolve_fields(field_mappings: Dict[str, FieldMapping],
-                   row: Optional[Dict[str, Any]] = None,
-                   doc_index: int = 0,
-                   counter_base: int = 0,
-                   now: Optional[datetime] = None) -> Dict[str, str]:
-    """Resolve field mappings to ``{name: value}`` for one Filling JSON.
-
-    Every value is a resolved string — no placeholders remain:
-
-    - ``constant``: the configured value (or ``''``).
-    - ``table``: ``value_to_str(row[column])``; missing row/column → ``''``.
-    - ``counter``: ``format_counter(start + counter_base + doc_index)``,
-      where ``counter_base`` is the resume offset (``last_counter_value``
-      when continuing, else ``0``).
-    - ``today``: ``format_today(format or 'dd.MM.yyyy', now)``.
-    - ``image``: the configured image path (stored as a string, not text).
-    - Unknown type: skipped with a warning.
-    """
-    if now is None:
-        now = datetime.now()
-    base = max(0, int(counter_base)) + max(0, int(doc_index))
-    resolved: Dict[str, str] = {}
-    for name, fm in (field_mappings or {}).items():
-        if fm.type == FieldType.CONSTANT:
-            resolved[name] = value_to_str(fm.value) if fm.value is not None else ''
-        elif fm.type == FieldType.TABLE:
-            if row is not None and fm.column is not None and fm.column in row:
-                resolved[name] = value_to_str(row.get(fm.column, ''))
-            else:
-                resolved[name] = ''
-                logger.warning(
-                    "No data for field '%s' (table '%s', column '%s'); "
-                    "using empty string", name, fm.file, fm.column)
-        elif fm.type == FieldType.COUNTER:
-            resolved[name] = format_counter(fm.start + base, fm.format)
-        elif fm.type == FieldType.TODAY:
-            resolved[name] = format_today(fm.format or DEFAULT_TODAY_FORMAT, now)
-        elif fm.type == FieldType.IMAGE:
-            resolved[name] = value_to_str(fm.value) if fm.value is not None else ''
-        else:
-            logger.warning("Unknown field type %r for field '%s'; skipped",
-                           getattr(fm.type, 'value', fm.type), name)
-    return resolved
 
 
 def resolve_document_fields(
@@ -351,20 +275,20 @@ def resolve_document_fields(
     return effective, image_paths
 
 
-def advance_resume(resume: ResumeState, created: int) -> int:
-    """Advance the resume counter after documents were created (B6 math).
+def scan_project_template(project_dir: str, template_name: str) -> list:
+    """Raw ``{{...}}`` placeholders of a project's template (for today-raw).
 
-    Same rule as the legacy generation loop: ``last = last + created``
-    when continuing from the last row, otherwise ``last = 0 + created``.
-    ``created <= 0`` is a no-op. Only the counter moves; per-source row
-    offsets are owned by the generation loop, not this boundary.
-    Mutates ``resume`` in place and returns the new ``last_counter_value``.
+    Keeps template scanning inside the data layer so callers (prefill)
+    never touch XML helpers directly.
     """
-    if created <= 0:
-        return resume.last_counter_value
-    base = resume.last_counter_value if resume.continue_from_last else 0
-    resume.last_counter_value = base + int(created)
-    return resume.last_counter_value
+    import zipfile as _zipfile
+
+    from docxforge.engine.render_loop import scan_raw_placeholders
+
+    template_path = os.path.join(project_dir, 'Шаблоны', template_name)
+    with _zipfile.ZipFile(template_path, 'r') as zf:
+        zdata = {name: zf.read(name) for name in zf.namelist()}
+    return scan_raw_placeholders(zdata)
 
 
 def read_project_table(data_reader: DataReader, project_dir: str,
@@ -386,49 +310,27 @@ def resolve_legacy_source_row(
         source_file: str,
         doc_index: int,
         resume=None) -> Optional[Dict[str, Any]]:
-    """Select one row with the exact legacy loop semantics (verbatim move).
+    """Select one row with legacy loop semantics (adapter over shared core).
 
-    ``bsc`` is a ``BatchSourceConfig`` or None (no config → first row).
-    CONSTANT honours lookup with the M7 miss warning; SEQUENTIAL exhausts
-    to None; CIRCULAR wraps; unknown mode selects nothing (M7).
+    ``bsc`` is a ``BatchSourceConfig`` or None (no config → first row);
+    the resume offset comes from ``resume.sources`` exactly like the old
+    loop (raw value, no coercion guards — validated configs carry ints).
     """
     if not all_rows:
         return None
-
     if not bsc:
         return all_rows[0]
-
-    if bsc.mode == RowIterationMode.CONSTANT:
-        if bsc.lookup_column and bsc.lookup_value:
-            for row in all_rows:
-                if str(row.get(bsc.lookup_column, '')).strip() == bsc.lookup_value.strip():
-                    return row
-            # M7: lookup miss is missing data, not rows[0].
-            logger.warning(
-                "Lookup '%s=%s' missed in '%s'; no row selected",
-                bsc.lookup_column, bsc.lookup_value, source_file)
-            return None
-        return all_rows[0]
-
     start_offset = 0
     if resume and resume.continue_from_last:
         start_offset = resume.sources.get(source_file, 0)
-
-    effective_i = start_offset + doc_index
-
-    if bsc.mode == RowIterationMode.SEQUENTIAL:
-        if effective_i < len(all_rows):
-            return all_rows[effective_i]
-        else:
-            return None
-
-    if bsc.mode == RowIterationMode.CIRCULAR:
-        return all_rows[effective_i % len(all_rows)]
-
-    # M7: unknown iteration mode selects no row (was rows[0]).
-    logger.warning("Unknown batch mode %r for '%s'; no row selected",
-                   bsc.mode, source_file)
-    return None
+    try:
+        mode_value = RowIterationMode(bsc.mode.value if isinstance(bsc.mode, RowIterationMode) else bsc.mode)
+    except ValueError:
+        logger.warning("Unknown batch mode %r for '%s'; no row selected",
+                       bsc.mode, source_file)
+        return None
+    return _select_row(all_rows, mode_value, doc_index, start_offset,
+                       bsc.lookup_column, bsc.lookup_value, source_file)
 
 
 def build_fillings(data_reader: DataReader,

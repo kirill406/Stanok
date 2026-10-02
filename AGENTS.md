@@ -1,83 +1,76 @@
-# AGENTS.md — FirstAgent (docxforge)
+# AGENTS.md — stanok
 
 ## Commands
-- Install: `uv sync` (needs network once for `uv lock`)
-- Run GUI: `python run.py`
+- Install: `uv sync`
+- Run (dev): `python run.py` or `PYTHONPATH=src python -m stanok`
+- Installed script: `.venv/Scripts/stanok` (after `uv sync`)
+- Install git hooks: `scripts/install-hooks.bat` (pre-commit: trufflehog3 + pytest)
 - Test (fast): `python -m pytest tests/ -q`
 - Test (verbose): `python -m pytest tests/ -v`
-- Coverage: `python -m pytest --cov=docxforge.engine --cov-report=term-missing tests/`
-- Smoke test: `python tests/smoke_engine.py`
-- Install git hooks: `scripts/install-hooks.bat`
 
 ## Stack
-- Python 3.13
-- Core: docxforge.engine (schema, parser, renderer, data_reader)
-- GUI: PyQt5 (docxforge.gui)
-- CLI: click (cli.py)
-- Testing: pytest
-- Pre-commit: pytest + trufflehog3 (auto on commit)
+- Python 3.13 (`requires-python == 3.13.*`, pinned via `.python-version`, gitignored)
+- Package: `src/stanok/` (`app.main` — entry logic, `__main__` — `python -m`)
+- Entry: `run.py` in root (thin wrapper, also used by PyInstaller)
+- GUI (planned): PyQt5 — implies GPL distribution, see License
+- License: GPL-3.0-or-later (`LICENSE`, SPDX headers in source files)
+- Testing: pytest (suite not yet written, `tests/` is empty)
 
 ## Structure
-- `src/docxforge/engine/` — core business logic (pure Python, no Qt)
-- `src/docxforge/gui/` — PyQt5 desktop UI (depends on engine)
-- `cli.py` — CLI adapter over engine
-- `tests/` — pytest suite mirroring engine modules
-- `scripts/` — automation (hook installer, pre-commit)
+- `run.py` — dev/PyInstaller entry: puts `src/` on `sys.path`, calls `stanok.app:main`
+- `src/stanok/__init__.py` — version + docstring only, no side effects on import
+- `src/stanok/app.py` — application bootstrap (`main()`)
+- `src/stanok/__main__.py` — `python -m stanok` support
+- `specs/spec.md` — general spec: FR/NFR, C4, contracts (source of truth)
+- `specs/SUMMARY.md` — spec workflow regulation (Active/Done)
+- `CHANGELOG.md` — Keep a Changelog, `[Unreleased]` section
+- `docs/` — design notes and decisions (empty for now)
+- `tests/` — pytest suite (empty for now)
 
 ## Prohibitions (AI Must Never)
-- Never Commit `.env` or any file with real credentials — blocked by pre-commit hook
+- Never Commit `.env` or any file with real credentials
 - Never Use `print()` for logging — use Python `logging` module
 - Every `except Exception as e` must log with the original level + `exc_info=True` in an f-string with cause-identifying context: `logger.warning/debug/error(f'<what+context>: {e}', exc_info=True)`; catch the specific expected error first, then the generic `Exception`, logging both
-- Never Modify `docxforge/gui/` without understanding Qt event loop — ask first
-- Never Skip tests before push — pre-commit runs `pytest tests/ -q` automatically
+- Never Put executable logic or heavy imports (Qt) in `__init__.py` — bootstrap lives in `app.py`
+- Never Skip tests before push once `tests/` exists
 - Never Add new env var without updating `.env.example` (empty value)
-- Never Hardcode Russian strings
+- Never Hardcode Russian strings in UI code — keep them reviewable in one place
+- Never Change license headers or `LICENSE` without explicit user approval
 
 ## Architecture Decisions
-- Layered: CLI/GUI → engine (Dependency Inversion via imports)
-- Engine is pure Python, zero external UI deps — testable in isolation
-- GUI imports engine, never vice versa
-- Schema (`engine/schema.py`) = single source of truth for .docxforge config
-- Renderer uses XML-run merge (preserves formatting), not text replacement
-- Nested project generation (Employee → Projects) lives in `generate.py`, details in `docs/nested-projects.md`
-- Project configs are per-project `<name>.docxforge` (no fixed name): migrate to `~/.docxforge` on open, resolve folder-first via `resolve_project_file()` — details in `docs/project-configs.md`
-- JSON data layer: Filling JSON → `render_from_json()`, Excel → JSON via `engine/data_formatting.py`, PJ validation in `schema` — details in `docs/json-layer.md`, fixtures in `tests/json/`
+- Thin entry: `run.py` contains no logic, only `sys.path` setup + `main()` call
+- Package import is side-effect free (`import stanok` must not start anything)
+- Planned split: engine (pure Python, no Qt, testable in isolation) vs GUI (depends on engine, never vice versa)
+- License is GPL-3.0-or-later: distributing the exe requires providing Corresponding Source (public GitHub repo satisfies this)
 
 ## Testing
-- Unit tests in `tests/` mirroring `docxforge/engine/` modules
-- Engine coverage target: 85%+ (currently ~86%)
-- GUI: manual testing, QTest optional
-- GUI tests run headless (conftest forces QT_QPA_PLATFORM=offscreen); skip them with `pytest -m "not gui"`
+- Test naming: `test_<module>_<scenario>_<expectation>`
 - Every new engine feature → add test in `tests/`
 - Bug fix → regression test
-- Test naming: `test_<module>_<scenario>_<expectation>`
-- Run fast loop: `pytest tests/ -q` (pre-commit does this)
+- GUI tests (when GUI lands): headless via `QT_QPA_PLATFORM=offscreen`
+- Run fast loop: `pytest tests/ -q`
 
-## Planning & Specs (PLAN.md / SPEC.md)
-- **PLAN.md** — high-level task list with checkboxes. One file per feature/epic.
-- **SPEC.md** — detailed specification for a single task (requirements, acceptance criteria, edge cases).
-- Before coding: read PLAN.md, pick next unchecked item, create SPEC.md for it.
-- After implementation: update PLAN.md (check off), update SPEC.md if scope changed.
-- Both files live in project root or `specs/` — commit them.
-- Subagent phase plans (`PLAN_PhaseN.md`, `PLAN_003_PhaseN.md`) live in the spec folder (`specs/NNN-slug/`), not in repo root or worker folders — the orchestrator collects them on assembly.
+## Planning & Specs (specs/SUMMARY.md is the regulation)
+- Feature specs live in `specs/NNN-slug/`: `spec.md` (what/why) + `plan.md` (how) + optional `tasks.md` (steps)
+- Before coding: read `specs/spec.md` and `specs/SUMMARY.md`, pick next Active item
+- After done: move spec to Done with one-sentence summary, update `CHANGELOG.md [Unreleased]`, put lasting knowledge into `docs/` + `AGENTS.md`
 
 ## Workflow
 - Before working: `git pull`
-- **Each plan item = new git branch**: `git checkout -b feat/<plan-item-slug>` before starting work
 - Branch naming: `feat/<short-desc>`, `fix/<issue-desc>`, `chore/<task>`
 - Commit messages: short, imperative, Russian allowed (e.g., "Добавить батч-режим в форму заполнения")
-- Pre-commit hook runs automatically: `pytest tests/ -q` + `trufflehog3`
-- If hook false-positive: ask user
-- Push: `git push -u origin <branch-name>` after successful commit
-- Build exe with flags (Станок.spec is gitignored, not in repo): `pyinstaller --onefile --windowed --name Станок --paths src --add-data "src/docxforge/gui/icon.png;docxforge/gui" --icon src/docxforge/gui/icon.ico run.py`; never omit --paths/--add-data/--icon (broken exe)
-- Open PR: one logical change per PR, link to PLAN.md item
+- Push: `git push -u origin <branch-name>` after successful commit (or directly to `main` for solo trivial changes if user asks)
+- Pre-commit hook runs automatically: trufflehog3 secrets scan (excludes `venv/`, `uv.lock`) + `pytest tests/ -q` when tests exist; never commit with `--no-verify` without asking
+- Build exe (when GUI lands; `Станок.spec` is gitignored, not in repo): `pyinstaller --onefile --windowed --name stanok --paths src run.py`
+- Open PR: one logical change per PR, link to spec item
 - Squash merge to main after review
 - Separate refactoring from features into different commits/branches
 
 ## User Interaction
 - All user-facing messages: Russian (GUI, CLI output, logs)
 - Code comments/docstrings: English preferred, Russian allowed
-- `.docxforge` project files: JSON, contain runtime state (consider gitignore in user projects)
+- This file, plans and specs: Russian allowed
 
-## Detailed Docs (read on demand)
-- Design docs: `docs/ideas/`
+## License
+- GPL-3.0-or-later: `LICENSE` + SPDX headers (`Copyright (C) 2026 Kirill Borovoy`)
+- GUI will use PyQt5 (GPL): exe distribution stays compliant via open sources

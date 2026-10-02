@@ -1,0 +1,27 @@
+#!/bin/sh
+# pre-commit hook: trufflehog3 secrets scan + pytest (if tests exist).
+# Install: scripts/install-hooks.bat
+REPO_ROOT="$(git rev-parse --show-toplevel)" || exit 1
+cd "$REPO_ROOT" || exit 1
+FAIL=0
+
+if [ -x .venv/Scripts/trufflehog3.exe ]; then
+  OUT="$(.venv/Scripts/trufflehog3 --no-history . --exclude venv uv.lock)"
+  if printf '%s' "$OUT" | grep -q "Reason:"; then
+    printf '%s\n' "$OUT"
+    echo "pre-commit FAILED: possible secrets found (excludes: venv, uv.lock)"
+    FAIL=1
+  else
+    echo "pre-commit: secrets scan clean"
+  fi
+else
+  echo "pre-commit: trufflehog3 missing, skipping scan (run 'uv sync')"
+fi
+
+if ls tests/test_*.py >/dev/null 2>&1; then
+  .venv/Scripts/python -m pytest tests/ -q || FAIL=1
+else
+  echo "pre-commit: no tests, skipping pytest"
+fi
+
+exit $FAIL

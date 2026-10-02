@@ -36,6 +36,7 @@ docs/           # документация: заметки и проектные
 specs/          # spec.md — общая спека; SUMMARY.md — регламент и статус спеков
 src/stanok/     # исходники: app.main — запуск, __main__ — python -m
 tests/          # pytest: юнит-тесты движка и фикстуры (пока пусто)
+scripts/        # pre-commit хук (trufflehog3+pytest), install-hooks.bat
 CHANGELOG.md    # журнал изменений (Keep a Changelog)
 run.py          # вход для разработки и PyInstaller: подключает src/, зовёт main
 ```

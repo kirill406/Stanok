@@ -1,0 +1,43 @@
+# === Environment ===
+.env
+.env.local
+.env.*.local
+
+# === Python ===
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+dist/
+build/
+
+# === IDE/OS ===
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# === Logs ===
+*.log
+
+# === Runtime leftovers ===
+*.bak
+*.tmp
+
+# === Test/coverage artifacts ===
+.coverage
+htmlcov/
+.pytest_cache/
+
+# === Project data (user data, not tracked) ===
+tests/test_project/
+
+# === Build artifacts ===
+*.spec
+docxforge_settings.json
+
+# === Temp fix scripts ===
+_fix_*.py
+# .bash_tmp/ - Temporary bash-generated files
+.bash_tmp/

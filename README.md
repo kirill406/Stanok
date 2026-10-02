@@ -1,8 +1,13 @@
 # Станок — генератор документов из шаблонов
 
->Десктопное приложение: заполняет .docx-шаблоны данными из Excel.
+> Десктопное приложение: заполняет docx-документы данными из Excel по docx шаблонам.
 
 **Статус:** Draft.
+
+## Требования
+
+- Python 3.13 (`requires-python == 3.13.*`)
+- [uv](https://docs.astral.sh/uv/) для управления окружением
 
 ## Проблема, которую решает проект
 
@@ -12,13 +17,13 @@
 ## Быстрый старт
 
 ```powershell
-git clone <repo-url>
-cd SecondStanok
+git clone https://github.com/kirill406/Stanok.git
+cd Stanok
 uv sync
 python run.py
 ```
 
-## Структура (план)
+## Структура
 
 ```
 src/          # исходники
@@ -35,11 +40,7 @@ run.py
 
 - `specs/spec.md` — общая: FR/NFR, C4, контракты
 
-## FAQ
-
-**Q: Где правда, если README и спеки расходятся?**
-A: В спеках (`specs/`).
-
 ## License
 
-MIT
+GPL-3.0-or-later — см. `LICENSE`. Код открыт: распространение exe обязывает
+предоставлять исходники (Corresponding Source, раздел 6 GPL).

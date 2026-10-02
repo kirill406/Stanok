@@ -10,7 +10,7 @@
 - Install git hooks: `scripts/install-hooks.bat`
 
 ## Stack
-- Python 3.12+
+- Python 3.13
 - Core: docxforge.engine (schema, parser, renderer, data_reader)
 - GUI: PyQt5 (docxforge.gui)
 - CLI: click (cli.py)

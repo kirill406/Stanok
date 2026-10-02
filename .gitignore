@@ -8,6 +8,7 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 .venv/
+.python-version
 dist/
 build/
 
@@ -30,12 +31,9 @@ build/
 htmlcov/
 .pytest_cache/
 
-# === Project data (user data, not tracked) ===
-tests/test_project/
-
 # === Build artifacts ===
 *.spec
-docxforge_settings.json
+*.json
 
 # === Temp fix scripts ===
 _fix_*.py

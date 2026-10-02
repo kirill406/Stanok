@@ -33,9 +33,10 @@ python run.py
 
 ```
 docs/           # документация: заметки и проектные решения (пока пусто)
-specs/          # спецификации (см. далее): FR/NFR, C4, контракты
+specs/          # spec.md — общая спека; SUMMARY.md — регламент и статус спеков
 src/stanok/     # исходники: app.main — запуск, __main__ — python -m
 tests/          # pytest: юнит-тесты движка и фикстуры (пока пусто)
+CHANGELOG.md    # журнал изменений (Keep a Changelog)
 run.py          # вход для разработки и PyInstaller: подключает src/, зовёт main
 ```
 

@@ -58,9 +58,9 @@
 - Thin entry: `run.py` contains no logic, only `sys.path` setup + `main()` call
 - Package import is side-effect free (`import stanok` must not start anything)
 - Planned split: engine (pure Python, no Qt, testable in isolation) vs GUI (depends on engine, never vice versa)
-- Layers (gui/cli → services → engine; see analysis in FirstAgent `docs/rebrending/`):
+- Layers (gui → services → engine; see analysis in FirstAgent `docs/rebrending/`):
   engine knows nothing of Qt, dialogs, Home paths or Excel files directly;
-  GUI/CLI call services only, never engine internals; storage tables/Home
+  GUI calls services only, never engine internals; storage tables/Home
   access lives in `services/storage.py` + `tables/` backends, injected in tests
 - One filling mechanism: Filling JSON → docx is the only template-filling path
   (`build → render_effective`); no parallel legacy loop

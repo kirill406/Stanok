@@ -58,6 +58,7 @@
 - Thin entry: `run.py` contains no logic, only `sys.path` setup + `main()` call
 - Package import is side-effect free (`import stanok` must not start anything)
 - Layers: gui → services → engine (never vice versa, never sideways); one filling mechanism (Filling JSON → docx)
+- Prefer graphics over prose for structures: mermaid diagrams for layers, flows and data pipelines in docs/specs; keep diagrams next to the text they explain
 - License is GPL-3.0-or-later:
   distributing the exe requires providing Corresponding Source (public GitHub repo satisfies this)
 
@@ -97,6 +98,7 @@
 - All user-facing messages: Russian (GUI, logs)
 - Code comments/docstrings: English preferred, Russian allowed
 - This file, plans and specs: Russian allowed
+- Docs in ASD-STE100: short sentences, approved meanings, imperative for steps
 
 ## License
 - GPL-3.0-or-later: `LICENSE` + SPDX headers (`Copyright (C) 2026 Kirill Borovoy`)

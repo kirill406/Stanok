@@ -1,7 +1,6 @@
 # Copyright (C) 2026 Kirill Borovoy
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Table-reading backends: the ONLY place Excel (later csv/…) is read.
+"""Table-reading backends: the ONLY place tables are read (Excel now, csv later).
 
-LAYER CONTRACT: backend functions take explicit file paths and return
-plain rows; Home/project layout knowledge lives in services/storage.
+Full layer contract: docs/architecture.md.
 """

@@ -4,3 +4,8 @@
 
 Full layer contract: docs/architecture.md.
 """
+
+from .protocols import TableReader
+from .excel import ExcelReader, TableReadError
+
+__all__ = ["TableReader", "ExcelReader", "TableReadError"]

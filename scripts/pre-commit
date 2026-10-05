@@ -5,8 +5,9 @@ REPO_ROOT="$(git rev-parse --show-toplevel)" || exit 1
 cd "$REPO_ROOT" || exit 1
 FAIL=0
 
-if [ -x .venv/Scripts/trufflehog3.exe ]; then
-  OUT="$(.venv/Scripts/trufflehog3 --no-history . --exclude venv uv.lock)"
+# Cross-platform trufflehog3 via python -m (works on Windows/Linux/macOS)
+if .venv/Scripts/python -m trufflehog3 --version >/dev/null 2>&1; then
+  OUT="$(.venv/Scripts/python -m trufflehog3 --no-history . --exclude venv uv.lock)"
   if printf '%s' "$OUT" | grep -q "Reason:"; then
     printf '%s\n' "$OUT"
     echo "pre-commit FAILED: possible secrets found (excludes: venv, uv.lock)"

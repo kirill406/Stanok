@@ -6,8 +6,8 @@
 
 ## Требования
 
-- Python 3.13 (`requires-python == 3.13.*`)
-- [uv](https://docs.astral.sh/uv/) для управления окружением
+- Только [uv](https://docs.astral.sh/uv/): Python 3.13 скачивается сам
+  при `uv sync`, ставить Python отдельно не нужно (нужен интернет один раз)
 
 ## Проблема, которую решает проект
 
@@ -18,7 +18,8 @@
 
 - ✅ Один exe без установки, работает офлайн
 - ❌ Не делает: подпись, отправку, PDF, облако, многопользовательность,
-  создание пользовательских проектов
+  автообновление, изображения, статистику, CLI; не позволяет сотруднику
+  генерировать новые проекты из данных
 
 ## Быстрый старт
 
@@ -31,23 +32,39 @@ python run.py
 
 ## Структура
 
-```
-docs/           # документация: заметки и проектные решения (пока пусто)
-specs/          # spec.md — общая спека; SUMMARY.md — регламент и статус спеков
-src/stanok/     # исходники: app.main — запуск, __main__ — python -m
-tests/          # pytest: юнит-тесты движка и фикстуры (пока пусто)
-scripts/        # pre-commit хук (trufflehog3+pytest), install-hooks.bat
-CHANGELOG.md    # журнал изменений (Keep a Changelog)
-run.py          # вход для разработки и PyInstaller: подключает src/, зовёт main
-```
+**docs/** — проектная документация:
+- `architecture.md` — архитектура: слои, модули, форматы, решения (единый источник правды)
+
+**specs/** — спецификации:
+- `spec.md` — общая спека: FR/NFR, C4, контракты
+- `SUMMARY.md` — регламент спеков, статусы Active/Done
+
+**src/stanok/** — исходники (папки и основные файлы):
+- `app.py` — bootstrap приложения: `main()`
+- `__init__.py` — версия пакета (читается из `pyproject.toml`)
+- `__main__.py` — поддержка `python -m stanok`
+- `engine/` — чистый Python: resolve, render, xmlops
+- `services/` — use cases: generate, projects, storage
+- `gui/` — тонкий Qt-адаптер
+- `tables/` — бэкенды чтения таблиц
+
+**tests/** — pytest: юнит-тесты и фикстуры (пока пусто)
+
+**scripts/** — автоматизация:
+- `pre-commit` — git-хук: trufflehog3 + pytest
+- `install-hooks.bat` — установка хука в `.git/hooks/`
+
+Файлы в корне:
+- `run.py` — вход для разработки и PyInstaller: подключает `src/`, зовёт `main`
+- `pyproject.toml` — метаданные, зависимости, console-script `stanok`
+- `uv.lock` — зафиксированные версии зависимостей
+- `AGENTS.md` — правила работы для агентов и разработчиков
+- `CHANGELOG.md` — журнал изменений (Keep a Changelog)
+- `LICENSE` — GPL-3.0-or-later
 
 ## Разработка
 
 Правила — в `AGENTS.md`: Conventional Commits, ветки `feat/...`, багфикс → регрессионный тест, тесты headless.
-
-## Спецификации (источник правды)
-
-- `specs/spec.md` — общая: FR/NFR, C4, контракты
 
 ## License
 

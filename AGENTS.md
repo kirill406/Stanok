@@ -30,7 +30,7 @@
 ## Versioning (Semantic Versioning 2.0.0, https://semver.org/)
 - Format `MAJOR.MINOR.PATCH`: MAJOR — incompatible changes, MINOR — backwards-compatible features, PATCH — bug fixes
 - `0.y.z` (current `0.0.0`): anything may change without MINOR/MAJOR bump discipline; `1.0.0` marks first stable API/GUI contract
-- Single source of truth: `pyproject.toml` version; `src/stanok/__init__.py` `__version__` must match it (check both on every bump)
+- Single source of truth: `pyproject.toml` version only; `src/stanok/__init__.py` reads it from installed metadata (`importlib.metadata`), no manual sync — bump the version in `pyproject.toml` alone
 - Pre-releases as `1.0.0-alpha`, `-beta`, `-rc.1` when testing exe with users before stable
 - Release flow: move `CHANGELOG.md [Unreleased]` entries under new version header with date, bump version in both places, tag `git tag vX.Y.Z`, push tag
 - Never Bump version in feature branches — only in release commits on `main`
@@ -54,11 +54,12 @@
 - Never Hardcode Russian strings in UI code — keep them reviewable in one place
 - Never Change license headers or `LICENSE` without explicit user approval
 
-## Architecture Decisions (details: `docs/architecture.md` — single source of truth)
+## Architecture Decisions (details: [docs/architecture.md](docs/architecture.md) — single source of truth)
 - Thin entry: `run.py` contains no logic, only `sys.path` setup + `main()` call
 - Package import is side-effect free (`import stanok` must not start anything)
 - Layers: gui → services → engine (never vice versa, never sideways); one filling mechanism (Filling JSON → docx)
-- Prefer graphics over prose for structures: mermaid diagrams for layers, flows and data pipelines in docs/specs; keep diagrams next to the text they explain
+- Prefer graphics over prose for structures: mermaid diagrams for layers, flows and data pipelines in docs/specs; 
+  keep diagrams next to the text they explain
 - License is GPL-3.0-or-later:
   distributing the exe requires providing Corresponding Source (public GitHub repo satisfies this)
 

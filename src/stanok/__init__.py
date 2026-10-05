@@ -2,4 +2,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """stanok: generate docx documents from templates and Excel data."""
 
-__version__ = "0.0.0"
+from importlib.metadata import PackageNotFoundError, version
+
+try:
+    # Single source of truth: version lives in pyproject.toml only.
+    __version__ = version("stanok")
+except PackageNotFoundError:  # package not installed (dev without uv sync)
+    __version__ = "0.0.0"

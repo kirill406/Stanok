@@ -2,11 +2,15 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Excel table reading implementation."""
 
+import logging
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
 import openpyxl
+from openpyxl.utils import get_column_letter
+
+logger = logging.getLogger(__name__)
 
 
 class TableReadError(Exception):
@@ -20,20 +24,55 @@ class ExcelReader:
     def read(self, path: Path) -> list[dict[str, Any]]:
         try:
             wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
-            ws = wb.active
-            rows = ws.iter_rows(values_only=True)
-            headers = [str(h).strip() if h is not None else "" for h in next(rows)]
-            result = []
-            for row in rows:
-                if all(v is None or v == "" for v in row):
-                    # Пустая строка — dict с None значениями
-                    result.append({h: None for h in headers})
-                    continue
-                row_dict = {h: self._normalize(v) for h, v in zip(headers, row)}
-                result.append(row_dict)
-            return result
+            try:
+                ws = wb.active
+                rows = ws.iter_rows(values_only=True)
+                headers = self._read_headers(path, next(rows, []))
+                width = len(headers)
+                result = []
+                for row in rows:
+                    cells = list(row[:width]) + [None] * max(0, width - len(row))
+                    if all(v is None or v == "" for v in cells):
+                        # Пустая строка — dict с None значениями
+                        result.append({h: None for h in headers})
+                        continue
+                    result.append({h: self._normalize(v) for h, v in zip(headers, cells)})
+                return result
+            finally:
+                wb.close()
+        except TableReadError:
+            raise
         except Exception as e:
-            raise TableReadError(path, e)
+            logger.error(f"read table {path}: {e}", exc_info=True)
+            raise TableReadError(path, e) from e
+
+    @staticmethod
+    def _read_headers(path: Path, raw_row: tuple) -> list[str]:
+        raw = [str(h).strip() if h is not None else "" for h in raw_row]
+        # Хвостовые пустые колонки — обрезать (обычное дело в живых файлах).
+        last = max((i for i, h in enumerate(raw) if h), default=-1)
+        if last < 0:
+            raise TableReadError(path, ValueError("первая строка пустая: нет заголовков"))
+        headers = raw[: last + 1]
+        # Пустой заголовок в середине — колонку нельзя адресовать.
+        for i, h in enumerate(headers):
+            if not h:
+                raise TableReadError(
+                    path,
+                    ValueError(f"пустой заголовок в колонке {get_column_letter(i + 1)}"),
+                )
+        # Дубли — тихая потеря данных, запрещены.
+        seen, dups = set(), set()
+        for h in headers:
+            if h in seen:
+                dups.add(h)
+            seen.add(h)
+        if dups:
+            raise TableReadError(
+                path,
+                ValueError(f"повторяющиеся заголовки: {', '.join(sorted(dups))}"),
+            )
+        return headers
 
     def _normalize(self, v: Any) -> Any:
         if v is None:

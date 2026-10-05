@@ -5,9 +5,10 @@ REPO_ROOT="$(git rev-parse --show-toplevel)" || exit 1
 cd "$REPO_ROOT" || exit 1
 FAIL=0
 
-# Cross-platform trufflehog3 via python -m (works on Windows/Linux/macOS)
-if .venv/Scripts/python -m trufflehog3 --version >/dev/null 2>&1; then
-  OUT="$(.venv/Scripts/python -m trufflehog3 --no-history . --exclude venv uv.lock)"
+# Cross-platform trufflehog3 via python -m (works on Windows/Linux/macOS).
+# NOTE: module is named truffleHog3 (capital H); `python -m trufflehog3` fails.
+if .venv/Scripts/python -c "import truffleHog3" >/dev/null 2>&1; then
+  OUT="$(.venv/Scripts/python -m truffleHog3 --no-history . --exclude venv uv.lock)"
   if printf '%s' "$OUT" | grep -q "Reason:"; then
     printf '%s\n' "$OUT"
     echo "pre-commit FAILED: possible secrets found (excludes: venv, uv.lock)"
@@ -19,7 +20,7 @@ else
   echo "pre-commit: trufflehog3 missing, skipping scan (run 'uv sync')"
 fi
 
-if ls tests/test_*.py >/dev/null 2>&1; then
+if ls tests/test_*.py >/dev/null 2>&1 || ls tests/*/test_*.py >/dev/null 2>&1; then
   .venv/Scripts/python -m pytest tests/ -q || FAIL=1
 else
   echo "pre-commit: no tests, skipping pytest"

@@ -1,3 +1,5 @@
+# Copyright (C) 2026 Kirill Borovoy
+# SPDX-License-Identifier: GPL-3.0-or-later
 from typing import Protocol, Any
 from pathlib import Path
 

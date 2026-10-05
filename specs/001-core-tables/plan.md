@@ -61,10 +61,14 @@ def read(self, path: Path) -> list[dict[str, Any]]:
         rows = ws.iter_rows(values_only=True)
         headers = [str(h).strip() for h in next(rows)]
         result = []
+        row_num = 1  # заголовок = 1
         for row in rows:
+            row_num += 1
             if all(v is None or v == "" for v in row):
                 continue
-            result.append({h: self._normalize(v) for h, v in zip(headers, row)})
+            row_dict = {h: self._normalize(v) for h, v in zip(headers, row)}
+            row_dict["_row_num"] = row_num
+            result.append(row_dict)
         return result
     except Exception as e:
         raise TableReadError(path, e) from e
@@ -105,10 +109,10 @@ def _normalize(self, v: Any) -> Any:
 ### 3.2 expected.json
 ```json
 [
-  {"text": "А", "integer": 1, "float": 1.5, "date": "2024-01-15", "bool": true, "empty_col": null},
-  {"text": "Б", "integer": 2, "float": 2.7, "date": "2024-02-20", "bool": false, "empty_col": "x"},
-  {"text": "В", "integer": 3, "float": 3.0, "date": "2024-03-10", "bool": true, "empty_col": null},
-  {"text": "Д", "integer": 4, "float": 4.2, "date": "2024-04-05", "bool": false, "empty_col": null}
+  {"_row_num": 2, "text": "А", "integer": 1, "float": 1.5, "date": "2024-01-15", "bool": true, "empty_col": null},
+  {"_row_num": 3, "text": "Б", "integer": 2, "float": 2.7, "date": "2024-02-20", "bool": false, "empty_col": "x"},
+  {"_row_num": 4, "text": "В", "integer": 3, "float": 3.0, "date": "2024-03-10", "bool": true, "empty_col": null},
+  {"_row_num": 6, "text": "Д", "integer": 4, "float": 4.2, "date": "2024-04-05", "bool": false, "empty_col": null}
 ]
 ```
 
@@ -122,10 +126,21 @@ def test_read_basic():
     assert result == expected
 
 def test_skip_empty_rows():
-    ...
+    reader = ExcelReader()
+    result = reader.read(Path("tests/json/001-tables/input.xlsx"))
+    assert len(result) == 4  # 4 data rows, 1 empty skipped
+
+def test_row_num_preserved():
+    reader = ExcelReader()
+    result = reader.read(Path("tests/json/001-tables/input.xlsx"))
+    assert [r["_row_num"] for r in result] == [2, 3, 4, 6]  # row 5 was empty
 
 def test_types_preserved():
-    ...
+    reader = ExcelReader()
+    result = reader.read(Path("tests/json/001-tables/input.xlsx"))
+    assert isinstance(result[0]["integer"], int)
+    assert isinstance(result[0]["float"], float)
+    assert isinstance(result[0]["date"], date)
 
 def test_missing_file_raises():
     with pytest.raises(TableReadError):

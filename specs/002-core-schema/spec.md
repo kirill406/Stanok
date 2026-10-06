@@ -95,13 +95,15 @@ class FillingJSON(BaseModel):
     template: str            # какой шаблон рендерить
     fields: dict[str, Any]   # разрешённые {поле: значение} — уже строки/числа/даты
     images: dict[str, str] = {}  # {поле: путь к файлу} (позже)
-    resume: dict[str, Any] = {}  # мета продолжения: source, last_row
 ```
 
 Правила (FR-10):
 - Рендер принимает **только** валидный FJ; сырые dict'ы из Excel — никогда.
 - Невалидный FJ → `FillingValidationError` с путём к полю
   (`fields.Возраст: expected int`), а не `KeyError` в глубине рендера.
+- Курсор продолжения (resume) в FJ **не хранится**: это состояние прогона,
+  а не данные документа. Живёт в `DataSourceDef.start_row` (PJ) и в отчёте
+  прогона (`GenerateReport.resumed_from`).
 
 ---
 

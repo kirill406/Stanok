@@ -137,7 +137,7 @@ flowchart LR
 ## 4. Контракты интерфейсов
 
 ### 4.1 Файл проекта `<имя>.stanok`
-JSON: шаблоны → поля (constant/table/counter/today/image), пакетные
+JSON: шаблоны → поля (constant/table/counter/today), пакетные
 источники (constant/sequential/circular + resume), шаблоны имён файлов.
 Фиксированного имени файла нет; открытие — через резолвер
 (папка → именованный → Home-копия `~/.stanok`).

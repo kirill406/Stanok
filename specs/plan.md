@@ -60,7 +60,7 @@
 #### 003-core-resolve
 **Спека:** `specs/003-core-resolve/spec.md`
 - `resolve(rows: list[dict], pj: ProjectJSON) -> list[FillingJSON]`
-- Поддержка: constant / table / counter / today / image
+- Поддержка: constant / table / counter / today
 - Режимы строк: sequential / circular / constant
 - Resume: `last_row` в PJ → продолжение с места остановки
 - Тесты: `tests/json/002-counters/`, `003-loops/`, `004-resume/`

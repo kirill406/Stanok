@@ -28,7 +28,7 @@
   словарь шаблонов, относительные пути. Подробно — раздел
   «Файл `<имя>.stanok`» ниже.
 - **FJ** (Filling JSON): разрешённые данные одного документа
-  (`{template, fields, images?}`) — единственный вход рендера.
+  (`{template, fields}`) — единственный вход рендера.
 - **AJ** (`~/.stanok/settings.json`): недавние проекты + настройки,
   без шаблонов и счётчиков.
 - Фикстуры тестов — `tests/json/<кейс>/`: xlsx + docx + filling.json + эталон.
@@ -98,7 +98,7 @@ src/stanok/
 ├── engine/           # чистый Python, ноль Qt/GUI
 │   ├── resolve.py    # строки → Filling JSON: одна семантика
 │   ├── render.py     # Filling JSON → docx: ТОЛЬКО подстановка
-│   └── xmlops.py     # run-merge, циклы, картинки (низкоуровневый XML)
+│   └── xmlops.py     # run-merge, циклы (низкоуровневый XML)
 ├── services/         # use cases, по одному на сценарий
 │   ├── generate.py  # сгенерировать документы
 │   ├── projects.py  # создать/открыть/удалить проект, именованные конфиги

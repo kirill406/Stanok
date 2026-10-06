@@ -30,7 +30,6 @@ class FieldSource(str, Enum):
     TABLE = "table"          # строка таблицы
     COUNTER = "counter"      # счётчик проекта
     TODAY = "today"          # текущая дата
-    IMAGE = "image"          # картинка (путь к файлу)
 
 class FieldDef(BaseModel):
     source: FieldSource
@@ -94,7 +93,6 @@ class FillingJSON(BaseModel):
     version: str
     template: str            # какой шаблон рендерить
     fields: dict[str, Any]   # разрешённые {поле: значение} — уже строки/числа/даты
-    images: dict[str, str] = {}  # {поле: путь к файлу} (позже)
 ```
 
 Правила (FR-10):

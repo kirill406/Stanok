@@ -1,0 +1,11 @@
+{
+  "version": "0.0.0",
+  "templates": {
+    "Договор": {
+      "file": "Шаблоны/Договор.docx",
+      "fields": {
+        "Номер": {"source": "counter", "value": 123}
+      }
+    }
+  }
+}

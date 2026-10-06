@@ -1,0 +1,7 @@
+[
+  {"text": "А", "integer": 1, "float": 1.5, "date": "2024-01-15T00:00:00", "bool": true, "empty_col": null},
+  {"text": "Б", "integer": 2, "float": 2.7, "date": "2024-02-20T00:00:00", "bool": false, "empty_col": "x"},
+  {"text": "В", "integer": 3, "float": 3.0, "date": "2024-03-10T00:00:00", "bool": true, "empty_col": null},
+  {"text": null, "integer": null, "float": null, "date": null, "bool": null, "empty_col": null},
+  {"text": "Д", "integer": 4, "float": 4.2, "date": "2024-04-05T00:00:00", "bool": false, "empty_col": null}
+]

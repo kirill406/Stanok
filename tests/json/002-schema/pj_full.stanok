@@ -1,0 +1,31 @@
+{
+  "version": "0.0.0",
+  "templates": {
+    "Договор": {
+      "file": "Шаблоны/Договор.docx",
+      "fields": {
+        "ФИО": {"source": "table", "value": "ФИО"},
+        "Возраст": {"source": "table", "value": "Возраст"},
+        "Номер": {"source": "counter", "value": "doc_num"},
+        "Дата": {"source": "today", "value": null},
+        "Город": {"source": "constant", "value": "Москва"}
+      }
+    },
+    "Акт": {
+      "file": "Шаблоны/Акт.docx",
+      "fields": {
+        "ФИО": {"source": "table", "value": "ФИО"},
+        "Номер": {"source": "counter", "value": "act_num"}
+      }
+    }
+  },
+  "data_sources": [
+    {"file": "Данные/Сотрудники.xlsx", "mode": "sequential", "start_row": 0},
+    {"file": "Данные/Проекты.xlsx", "mode": "circular", "start_row": 5}
+  ],
+  "counters": {
+    "doc_num": {"last": 42, "format": "plain"},
+    "act_num": {"last": 7, "format": "month"}
+  },
+  "filename_template": "{template} №{Номер}"
+}

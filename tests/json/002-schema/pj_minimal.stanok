@@ -1,0 +1,17 @@
+{
+  "version": "0.0.0",
+  "templates": {
+    "Договор": {
+      "file": "Шаблоны/Договор.docx",
+      "fields": {
+        "ФИО": {"source": "table", "value": "ФИО"},
+        "Номер": {"source": "counter", "value": "doc_num"}
+      }
+    }
+  },
+  "data_sources": [
+    {"file": "Данные/Сотрудники.xlsx", "mode": "sequential", "start_row": 0}
+  ],
+  "counters": {},
+  "filename_template": "{template} ({i})"
+}

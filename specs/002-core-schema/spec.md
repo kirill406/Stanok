@@ -129,6 +129,7 @@ def migrate(data: dict) -> dict       # цепочка миграций к curre
 Ошибки (типизированные, с контекстом для логов):
 - `SchemaError` — базовый класс слоя.
 - `PJValidationError(SchemaError)` — поля `path`, `errors`.
+- `AJValidationError(SchemaError)` — то же для AJ.
 - `FillingValidationError(SchemaError)` — то же для FJ.
 - `FormatTooNewError(SchemaError)` — «обновите программу».
 

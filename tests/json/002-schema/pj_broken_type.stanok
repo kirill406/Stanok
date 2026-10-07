@@ -4,7 +4,7 @@
     "Договор": {
       "file": "Шаблоны/Договор.docx",
       "fields": {
-        "Номер": {"source": "counter", "value": 123}
+        "Номер": {"source": "telepathy", "value": 123}
       }
     }
   }

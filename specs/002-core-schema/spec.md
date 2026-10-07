@@ -83,6 +83,8 @@ class ApplicationJSON(BaseModel):
 - Шаблоны и счётчики живут только в PJ, никогда в AJ.
 - Переименование `<имя>.stanok` в Home вручную — unsupported; рассинхрон
   recent-записи лечится резолвером по папке (см. проблему 10 в архитектуре).
+  Пара `(folder, config)` в `recent` уникальна: повторное открытие двигает
+  запись наверх, а не дублирует.
 
 ---
 
@@ -93,6 +95,7 @@ class FillingJSON(BaseModel):
     version: str
     template: str            # какой шаблон рендерить
     fields: dict[str, Any]   # разрешённые {поле: значение} — уже строки/числа/даты
+    dist: str                # resolved путь результата (filename_template + поля), относительный
 ```
 
 Правила (FR-10):
@@ -101,7 +104,10 @@ class FillingJSON(BaseModel):
   (`fields.Возраст: expected int`), а не `KeyError` в глубине рендера.
 - Курсор продолжения (resume) в FJ **не хранится**: это состояние прогона,
   а не данные документа. Живёт в `DataSourceDef.start_row` (PJ) и в отчёте
-  прогона (`GenerateReport.resumed_from`).
+  прогона (`GenerateReport.resumed_from`). Отдельного флага resume нет:
+  `start_row > 0` уже означает «продолжать».
+- `dist` вычисляет `resolve` (чистая функция, без I/O); `storage` при записи
+  только разрешает коллизии (`(1)`, `(2)`) и пишет атомарно.
 
 ---
 
@@ -158,6 +164,7 @@ def migrate(data: dict) -> dict       # цепочка миграций к curre
 | Старая версия PJ | `migrate()` доводит до текущей, round-trip ок |
 | Версия из будущего | `FormatTooNewError` |
 | AJ с 11 recent | Обрезается до 10 |
+| Дубли `(folder, config)` в recent | Схлопываются, свежий сверху |
 | Импорт engine тянет Qt | Тест границы (действует и здесь) |
 
 ---

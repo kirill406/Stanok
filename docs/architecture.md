@@ -96,14 +96,15 @@ Excel пересекает границу ровно один раз; назад
 src/stanok/
 ├── app.py            # bootstrap: parse args → wire storage → run, без side effects на import
 ├── engine/           # чистый Python, ноль Qt/GUI
-│   ├── resolve.py    # строки → Filling JSON: одна семантика
-│   ├── render.py     # Filling JSON → docx: ТОЛЬКО подстановка
-│   └── xmlops.py     # run-merge, циклы (низкоуровневый XML)
-├── services/         # use cases, по одному на сценарий
-│   ├── generate.py  # сгенерировать документы
-│   ├── projects.py  # создать/открыть/удалить проект, именованные конфиги
-│   └── storage.py   # ProjectStore: файлы, уникальные имена, атомарная запись
-├── gui/              # тонкий Qt: окна → вызовы services, ноль бизнес-логики
+│   ├── schema.py     # PJ/AJ/FJ типы + validate/normalize + миграции
+│   ├── resolve.py    # строки → Filling JSON (планируется)
+│   ├── render.py     # Filling JSON → docx: ТОЛЬКО подстановка (планируется)
+│   └── xmlops.py     # run-merge, циклы, картинки (низкоуровневый XML) (планируется)
+├── services/         # use cases, по одному на сценарий (планируется)
+│   ├── generate.py  # сгенерировать документы (планируется)
+│   ├── projects.py  # создать/открыть/удалить проект, именованные конфиги (планируется)
+│   └── storage.py   # ProjectStore: файлы, уникальные имена, атомарная запись (планируется)
+├── gui/              # тонкий Qt: окна → вызовы services, ноль бизнес-логики (планируется)
 └── tables/           # бэкенды чтения (excel.py сейчас; csv/ — позже)
 ```
 

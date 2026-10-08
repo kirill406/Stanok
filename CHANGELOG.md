@@ -8,7 +8,8 @@
 ### Добавлено
 - `tables`: чтение Excel (`ExcelReader`, протокол `TableReader`, `TableReadError`); валидация заголовков, нормировка строк
 - `engine.schema`: модели PJ/AJ/Filling на pydantic v2, `validate_*`, `normalize`, реестр `MIGRATIONS` + `migrate()`, `FormatTooNewError`
-- Тесты: `tests/tables/`, `tests/engine/test_schema.py` (покрытие движка ~99%)
+- `engine.resolve`: резолв строк Excel + PJ → Filling JSON; режимы sequential/circular/constant; счётчики plain/month; resume; `filename_template` → `dist`
+- Тесты: `tests/tables/`, `tests/engine/test_schema.py`, `tests/engine/test_resolve.py` (покрытие движка ~99%)
 
 ### Исправлено
 

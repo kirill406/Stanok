@@ -43,12 +43,12 @@ python run.py
 - `app.py` — bootstrap приложения: `main()`
 - `__init__.py` — версия пакета (читается из `pyproject.toml`)
 - `__main__.py` — поддержка `python -m stanok`
-- `engine/` — чистый Python: resolve, render, xmlops
-- `services/` — use cases: generate, projects, storage
-- `gui/` — тонкий Qt-адаптер
+- `engine/` — чистый Python: schema, resolve (планируемые: render, xmlops)
+- `services/` — use cases: (планируемые: generate, projects, storage)
+- `gui/` — тонкий Qt-адаптер (планируется)
 - `tables/` — бэкенды чтения таблиц
 
-**tests/** — pytest: юнит-тесты и фикстуры (пока пусто)
+**tests/** — pytest: юнит-тесты движка и таблиц, фикстуры
 
 **scripts/** — автоматизация:
 - `pre-commit` — git-хук: trufflehog3 + pytest

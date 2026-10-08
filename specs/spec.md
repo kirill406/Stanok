@@ -92,10 +92,10 @@ flowchart LR
 ### 3.2 Ключевые компоненты (детали: [docs/architecture.md](../docs/architecture.md))
 | Компонент  | Ответственность                                                          | Технологии    |
 |------------|--------------------------------------------------------------------------|---------------|
-| `engine/`  | типы PJ/AJ/FJ, resolve (строки → Filling JSON), render (FJ → docx, слияние run'ов); чистый Python без Qt | Python |
+| `engine/`  | типы PJ/AJ/FJ, resolve (строки → Filling JSON); планируемые: render (FJ → docx, слияние run'ов), xmlops; чистый Python без Qt | Python |
 | `tables/`  | единственное место чтения таблиц (Excel сейчас, csv позже)               | Python        |
-| `services/`| use cases: generate / projects / migrate / storage; по одной функции на сценарий | Python |
-| `gui/` | тонкий адаптер: окна → вызовы services, ноль бизнес-логики | Python, PyQt5 |
+| `services/`| use cases: generate / projects / migrate / storage; по одной функции на сценарий (планируется) | Python |
+| `gui/` | тонкий адаптер: окна → вызовы services, ноль бизнес-логики (планируется) | Python, PyQt5 |
 | `~/.stanok`| всё состояние пользователя: мигрированные конфиги, лог, настройки        | JSON-файлы    |
 
 > Правило: gui → services → engine (never vice versa, never sideways);

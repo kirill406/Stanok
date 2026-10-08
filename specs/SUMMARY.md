@@ -5,11 +5,12 @@
 
 ## Active
 
-_Пусто._
+- `003-core-resolve` — резолв строк Excel + PJ → Filling JSON; режимы sequential/circular/constant; счётчики; resume.
 
 ## Done
 
-_Пусто._
+- `001-core-tables` — чтение Excel, валидация заголовков, нормировка строк.
+- `002-core-schema` — Pydantic-модели PJ/AJ/FJ, валидация/нормализация/миграции, тесты.
 
 ## Conventions
 

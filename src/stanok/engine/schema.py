@@ -38,8 +38,15 @@ class FormatTooNewError(SchemaError):
         super().__init__(f"Формат версии {version} новее программы — обновите программу")
 
 
+class ResolveError(SchemaError):
+    def __init__(self, path: str, errors: list[str]):
+        self.path = path
+        self.errors = errors
+        super().__init__(f"Resolve failed at {path}: {errors}")
+
+
 class AJValidationError(SchemaError):
-    def __init__(self, path: str, errors: list):
+    def __init__(self, path: str, errors: list[str]):
         self.path = path
         self.errors = errors
         super().__init__(f"AJ validation failed at {path}: {errors}")

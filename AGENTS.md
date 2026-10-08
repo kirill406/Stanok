@@ -94,6 +94,7 @@
 - Open PR: one logical change per PR, link to spec item
 - Squash merge to main after review
 - Separate refactoring from features into different commits/branches
+- **After feature implementation: check docs/ and README.md for consistency with changes; update if needed**
 
 ## User Interaction
 - All user-facing messages: Russian (GUI, logs)

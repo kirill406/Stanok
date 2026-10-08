@@ -59,6 +59,13 @@ class RenderError(SchemaError):
         super().__init__(f"Render failed at {path}: {errors}")
 
 
+class StorageError(SchemaError):
+    def __init__(self, path: str, errors: list[str]):
+        self.path = path
+        self.errors = errors
+        super().__init__(f"Storage failed at {path}: {errors}")
+
+
 def _format_errors(exc: Exception) -> list:
     return [f"{'.'.join(str(p) for p in e['loc'])}: {e['msg']}" for e in exc.errors()]
 
@@ -257,6 +264,8 @@ __all__ = [
     "FillingValidationError",
     "FormatTooNewError",
     "RenderError",
+    "ResolveError",
+    "StorageError",
     "FieldSource",
     "FieldDef",
     "CounterDef",

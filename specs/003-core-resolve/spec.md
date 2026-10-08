@@ -21,13 +21,19 @@
 
 ```python
 # src/stanok/engine/resolve.py
-def resolve_rows(rows: list[dict], pj: ProjectJSON) -> list[FillingJSON]:
+def resolve_rows(
+    rows: list[dict],
+    pj: ProjectJSON,
+    today: date | None = None,
+) -> tuple[list[FillingJSON], dict[str, int]]:
     """Строит Filling JSON для каждой строки данных."""
 ```
 
-- На входе: `rows: list[dict[str, Any]]` — уже валидированные строки от `ExcelReader.read()` (все строки, пустые с `None`).
-- На выходе: `list[FillingJSON]` — готовые к рендеру объекты (включая `dist`).
+- На входе: `rows: list[dict[str, Any]]` — уже валидированные строки от `ExcelReader.read()` (все строки, пустые с `None`); `today` — дата для TODAY/month (по умолчанию `date.today()`, в тестах инжектируется).
+- На выходе: кортеж `(filling, counters)` — готовые к рендеру объекты (включая `dist`) и новое состояние счётчиков `{имя: last}`.
+- Чистая функция: входной PJ **не мутируется**. Персист счётчиков и `start_row` — дело вызывателя (`services` через `storage`).
 - Пустые строки: **не пропускаются**, для них строятся FJ с пустыми `fields` (value = None для table-полей) — рендер решит, что делать (обычно: пропуск или предупреждение).
+- Шаблонов несколько — берётся первый + warning в лог (мультишаблон — позже).
 
 ### 2.2 Контракты источников данных
 
@@ -44,15 +50,16 @@ def resolve_rows(rows: list[dict], pj: ProjectJSON) -> list[FillingJSON]:
 | Режим | Поведение |
 |-------|-----------|
 | `sequential` | По порядку, от `start_row` до конца. После конца — стоп. |
-| `circular` | По порядку, после конца — снова с начала (цикл), пока не сгенерировано N docs (лимит из PJ или CLI). |
-| `constant` | Всегда первая строка данных (индекс `start_row`), повторяется N раз. |
+| `circular` | До FR-18 (лимиты): один круг, как sequential. |
+| `constant` | Первая строка данных (`start_row`), повторяется по числу строк выборки. |
 
 ### 2.4 Продолжение (Resume) — FR-5
 
 - В `DataSourceDef` поле `start_row: int = 0`:
   - `0` — с начала (после заголовка).
   - `> 0` — продолжить с этой строки (0-based относительно первой строки данных).
-- После генерации `start_row` обновляется в PJ (переписывается файл конфига).
+- `resolve` только читает `start_row`; после генерации счётчики и `start_row`
+  персистит вызыватель (`services` через `storage`) — движок PJ не меняет.
 - `resume` не хранится в FJ (см. спеку 002).
 
 ### 2.5 Циклы таблиц в шаблоне (FR-13)

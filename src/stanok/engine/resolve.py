@@ -1,18 +1,19 @@
 # Copyright (C) 2026 Kirill Borovoy
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Resolve: Excel rows + ProjectJSON → list[FillingJSON]."""
+"""Resolve: Excel rows + ProjectJSON → list[FillingJSON]. Pure, no side effects."""
 
-import itertools
 import logging
-from datetime import date, datetime
-from pathlib import Path
+import re
+from datetime import date
 from typing import Any
 
 from .schema import (
-    DataSourceDef,
+    FieldDef,
+    FieldSource,
     FillingJSON,
     ProjectJSON,
     ResolveError,
+    TemplateDef,
 )
 
 logger = logging.getLogger(__name__)
@@ -20,50 +21,42 @@ logger = logging.getLogger(__name__)
 
 def _format_dist(template: str, fields: dict[str, Any], index: int, template_name: str) -> str:
     """Render filename_template with fields + index + template name."""
-    # Build substitution dict
     subs = {**fields, "i": str(index), "template": template_name}
     result = template
     for key, value in subs.items():
         placeholder = f"{{{key}}}"
         if placeholder in result:
             result = result.replace(placeholder, str(value))
-    # Check for unresolved placeholders
-    import re
     unresolved = re.findall(r"\{([^}]+)\}", result)
     if unresolved:
         raise ResolveError("dist", [f"unknown placeholder {{{u}}}" for u in unresolved])
     return result
 
 
-def _normalize_counter_format(value: int, fmt: str, counter_name: str) -> str:
+def _format_counter(value: int, fmt: str, counter_name: str, today: date) -> str:
     """Format counter value according to format."""
-    if fmt == "plain":
-        return str(value)
     if fmt == "month":
-        month_prefix = date.today().strftime("%Y-%m")
         if value > 999:
             raise ResolveError(
                 f"counters.{counter_name}",
                 ["counter overflow: month counter exceeded 999"],
             )
-        return f"{month_prefix}-{value:03d}"
-    # default to plain
+        return f"{today.strftime('%Y-%m')}-{value:03d}"
     return str(value)
 
 
 def _resolve_field(
     row: dict[str, Any],
-    template_name: str,
-    template_def,
-    pj,
-    counters_state: dict[str, int],
     field_name: str,
-    field_def,
+    field_def: FieldDef,
+    pj: ProjectJSON,
+    counters: dict[str, int],
+    today: date,
 ) -> Any:
     """Resolve a single field value based on its source."""
-    if field_def.source == "constant":
+    if field_def.source == FieldSource.CONSTANT:
         return field_def.value
-    elif field_def.source == "table":
+    if field_def.source == FieldSource.TABLE:
         col_name = field_def.value
         if col_name not in row:
             raise ResolveError(
@@ -71,138 +64,114 @@ def _resolve_field(
                 [f"column '{col_name}' not found in data source"],
             )
         return row.get(col_name)
-    elif field_def.source == "counter":
+    if field_def.source == FieldSource.COUNTER:
         counter_name = field_def.value
         if counter_name not in pj.counters:
             raise ResolveError(
                 f"fields.{field_name}",
                 [f"counter '{counter_name}' not defined in project"],
             )
-        # Increment and get value
-        current = counters_state.get(counter_name, 0)
-        new_value = current + 1
-        counters_state[counter_name] = new_value
-        # Update PJ counter (will be persisted later)
-        pj.counters[field_def.value].last = new_value
-        counter_def = pj.counters[field_def.value]
-        return _normalize_counter_format(new_value, counter_def.format, field_def.value)
-    elif field_def.source == "today":
-        return date.today()
-    else:
-        raise ResolveError(
-            f"fields.{field_name}",
-            [f"unknown field source: {field_def.source}"],
+        new_value = counters.get(counter_name, pj.counters[counter_name].last) + 1
+        counters[counter_name] = new_value
+        return _format_counter(
+            new_value, pj.counters[counter_name].format, counter_name, today
         )
+    if field_def.source == FieldSource.TODAY:
+        return today
+    raise ResolveError(
+        f"fields.{field_name}",
+        [f"unknown field source: {field_def.source}"],
+    )
 
 
 def _build_filling_json(
     row: dict[str, Any],
     template_name: str,
-    pj: "ProjectJSON",
-    counters_state: dict[str, int],
+    template_def: TemplateDef,
+    pj: ProjectJSON,
+    counters: dict[str, int],
     doc_index: int,
-) -> "FillingJSON":
+    today: date,
+) -> FillingJSON:
     """Build a single FillingJSON from a row."""
-    if template_name not in pj.templates:
-        raise ResolveError(
-            "template",
-            [f"template '{template_name}' not found in project"],
-        )
-
-    template_def = pj.templates[template_name]
     fields: dict[str, Any] = {}
-
     for field_name, field_def in template_def.fields.items():
         try:
-            value = _resolve_field(
-                row, pj.templates.keys().__iter__().__next__(), template_def, pj,
-                counters_state, field_name, field_def
+            fields[field_name] = _resolve_field(
+                row, field_name, field_def, pj, counters, today
             )
         except ResolveError:
             raise
         except Exception as e:
+            logger.error(f"resolve field {field_name}: {e}", exc_info=True)
             raise ResolveError(f"fields.{field_name}", [str(e)]) from e
-        fields[field_name] = value
-
-    # Build dist
-    dist = _format_dist(
-        pj.filename_template,
-        fields,
-        doc_index,
-        template_name
-    )
 
     return FillingJSON(
         version=pj.version,
         template=template_name,
         fields=fields,
-        dist=dist,
+        dist=_format_dist(pj.filename_template, fields, doc_index, template_name),
     )
+
+
+def _pick_template(pj: ProjectJSON) -> tuple[str, TemplateDef]:
+    if not pj.templates:
+        raise ResolveError("templates", ["no templates defined in project"])
+    names = list(pj.templates)
+    if len(names) > 1:
+        logger.warning("multiple templates, using first: %s", names[0])
+    return names[0], pj.templates[names[0]]
 
 
 def resolve_rows(
     rows: list[dict[str, Any]],
     pj: ProjectJSON,
-) -> list["FillingJSON"]:
-    """Resolve Excel rows + ProjectJSON → list[FillingJSON].
+    today: date | None = None,
+) -> tuple[list[FillingJSON], dict[str, int]]:
+    """Resolve Excel rows + ProjectJSON → (FillingJSON list, new counter state).
+
+    Pure function: input PJ is never mutated. Caller (services) persists
+    counters (`counters_state`) and `start_row` into PJ via storage.
 
     Args:
-        rows: list of dicts from ExcelReader (all rows including empty ones with None values)
-        pj: validated ProjectJSON
+        rows: list of dicts from ExcelReader (including empty rows as Nones).
+        pj: validated ProjectJSON.
+        today: date for TODAY fields / month counters (default: date.today()).
 
     Returns:
-        list of FillingJSON ready for rendering
+        (filling list, counters) — counters map name → new last value.
     """
-    if not pj.templates:
-        raise ResolveError("templates", ["no templates defined in project"])
-
     if not pj.data_sources:
         raise ResolveError("data_sources", ["no data sources defined in project"])
 
-    # Use first data source (MVP: single source)
+    template_name, template_def = _pick_template(pj)
+
+    # MVP: single data source.
     ds = pj.data_sources[0]
+    if len(pj.data_sources) > 1:
+        logger.warning("multiple data sources, using first: %s", ds.file)
     mode = ds.mode
     start_row = max(0, ds.start_row)
 
-    # Initialize counters state from PJ
-    counters_state = {name: counter.last for name, counter in pj.counters.items()}
+    today = today or date.today()
+    counters: dict[str, int] = {n: c.last for n, c in pj.counters.items()}
 
-    # Slice rows according to mode and start_row
     data_rows = rows[start_row:]
     if not data_rows:
-        return []
-
-    results: list[FillingJSON] = []
-    doc_index = 1
+        return [], counters
 
     if mode == "sequential":
-        for row in data_rows:
-            fj = _build_filling_json(row, pj.templates.keys().__iter__().__next__(), pj, {}, 0)
-            fj = _build_filling_json(row, list(pj.templates.keys())[0], pj, {}, 0)
-            # Fix: need to pass correct template name
-            template_name = list(pj.templates.keys())[0]
-            fj = _build_filling_json(row, template_name, pj, counters_state.copy(), len(results) + 1)
-            results.append(fj)
-
+        selected = data_rows
     elif mode == "constant":
-        # Use only the first row, repeat for max_docs (default 1)
-        if not data_rows:
-            return []
-        row = data_rows[0]
-        template_name = list(pj.templates.keys())[0]
-        for i in range(len(rows) - start_row):  # repeat for each logical row
-            fj = _build_filling_json(row, template_name, pj, counters_state.copy(), len(results) + 1)
-            results.append(fj)
-
+        selected = [data_rows[0]] * len(data_rows)
     elif mode == "circular":
-        # Cycle through rows, limit by max_docs (not implemented yet, use total rows * 10 as cap)
-        max_docs = len(rows) * 10  # arbitrary cap
-        for i, row in enumerate(itertools.islice(itertools.cycle(data_rows), max_docs)):
-            template_name = list(pj.templates.keys())[0]
-            fj = _build_filling_json(row, template_name, pj, counters_state.copy(), len(results) + 1)
-            results.append(fj)
-
+        # До FR-18 (max_docs): один круг, как sequential.
+        selected = data_rows
     else:
         raise ResolveError("mode", [f"unknown mode: {mode}"])
 
-    return results
+    results = [
+        _build_filling_json(row, template_name, template_def, pj, counters, i, today)
+        for i, row in enumerate(selected, start=1)
+    ]
+    return results, counters

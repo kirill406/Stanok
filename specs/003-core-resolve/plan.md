@@ -13,7 +13,7 @@
 
 ## 2. Core resolve — построение FillingJSON
 
-- [ ] 2.1 Функция `resolve_rows(rows, pj) -> list[FillingJSON]`
+- [ ] 2.1 Функция `resolve_rows(rows, pj, today=None) -> tuple[list[FillingJSON], dict]` (PJ не мутируется)
 - [ ] 2.2 Внутренняя функция: `build_fj(row, template, pj, counters_state) -> FillingJSON`
   - [ ] CONSTANT: взять `value` из PJ
   - [ ] TABLE: `row.get(column_name)` → если нет колонки → `ResolveError`

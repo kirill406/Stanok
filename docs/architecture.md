@@ -99,7 +99,7 @@ src/stanok/
 │   ├── schema.py     # PJ/AJ/FJ типы + validate/normalize + миграции
 │   ├── resolve.py    # строки → Filling JSON (планируется)
 │   ├── render.py     # Filling JSON → docx: ТОЛЬКО подстановка (планируется)
-│   └── xmlops.py     # run-merge, циклы, картинки (низкоуровневый XML) (планируется)
+│   └── xmlops.py     # run-merge (низкоуровневый XML) (планируется)
 ├── services/         # use cases, по одному на сценарий (планируется)
 │   ├── generate.py  # сгенерировать документы (планируется)
 │   ├── projects.py  # создать/открыть/удалить проект, именованные конфиги (планируется)

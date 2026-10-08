@@ -75,7 +75,7 @@ class RecentItem(BaseModel):
 
 class ApplicationJSON(BaseModel):
     version: str
-    recent: list[RecentItem] = []   # лимит 10, свежие сверху (FR-16)
+    recent: list[RecentItem] = []   # лимит 10, свежие сверху (FR-15)
     settings: dict[str, Any] = {}  # настройки приложения, БЕЗ шаблонов/счётчиков
 ```
 

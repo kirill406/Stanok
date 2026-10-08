@@ -10,22 +10,22 @@
 | ID | Папка | Название | Фаза | Зависит от | FR/NFR |
 |------|-------|----------|------|------------|--------|
 | 001 | `001-core-tables` | Чтение Excel | 1 | — | FR-1, FR-2, FR-7 |
-| 002 | `002-core-schema` | Схемы PJ/AJ/FJ + валидация/миграции | 1 | 001 | FR-8, FR-10, FR-11, FR-12 |
-| 003 | `003-core-resolve` | Resolve: строки + PJ → Filling JSON | 1 | 001, 002 | FR-1, FR-3, FR-4, FR-5, FR-12 |
-| 004 | `004-core-render` | Render: Filling JSON → docx (run-merge) | 1 | 002, 003 | FR-1, FR-12 |
+| 002 | `002-core-schema` | Схемы PJ/AJ/FJ + валидация/миграции | 1 | 001 | FR-8, FR-10, FR-11 |
+| 003 | `003-core-resolve` | Resolve: строки + PJ → Filling JSON | 1 | 001, 002 | FR-1, FR-3, FR-4, FR-5 |
+| 004 | `004-core-render` | Render: Filling JSON → docx (run-merge) | 1 | 002, 003 | FR-1 |
 | 005 | `005-core-storage` | ProjectStore, атомарная запись, Home | 1 | 002 | FR-8, FR-11 |
-| 006 | `006-core-generate` | Оркестрация генерации (end-to-end) | 1 | 003, 004, 005 | FR-1, FR-3, FR-4, FR-10, FR-12 |
+| 006 | `006-core-generate` | Оркестрация генерации (end-to-end) | 1 | 003, 004, 005 | FR-1, FR-3, FR-4, FR-10 |
 | 007 | `007-gui-strings` | Единый модуль строк (NFR-3) | 2 | — | NFR-3 |
-| 008 | `008-gui-main` | Main Window: выбор проекта/шаблонов, запуск | 2 | 006, 007 | FR-1, FR-2, FR-14 |
-| 009 | `009-gui-project` | Project Dialog: create/open/delete | 2 | 005, 007 | FR-13, FR-14, FR-15 |
+| 008 | `008-gui-main` | Main Window: выбор проекта/шаблонов, запуск | 2 | 006, 007 | FR-1, FR-2, FR-13 |
+| 009 | `009-gui-project` | Project Dialog: create/open/delete | 2 | 005, 007 | FR-12, FR-13, FR-14 |
 | 010 | `010-gui-fields` | Field Form: константы, выбор строки таблицы | 2 | 001, 006, 007 | FR-2 |
-| 011 | `011-gui-integration` | App bootstrap + интеграция GUI | 2 | 008, 009, 010 | FR-1, FR-2, FR-14 |
+| 011 | `011-gui-integration` | App bootstrap + интеграция GUI | 2 | 008, 009, 010 | FR-1, FR-2, FR-13 |
 | 012 | `012-batch-resume` | Batch modes + Resume + Filename templates | 3 | 003, 006 | FR-4, FR-5, FR-6 |
 | 013 | `013-multi-excel` | Несколько Excel файлов на проект | 4 | 001, 003 | FR-7 |
-| 014 | `014-project-ops` | Project ops: copy Data/Templates, exclude checkbox | 4 | 005, 009 | FR-13, FR-14, FR-15 |
-| 015 | `015-recent-projects` | Recent projects (AJ) | 5 | 002, 011 | FR-16 |
-| 016 | `016-background-gen` | Фоновая генерация + прогресс + отмена | 5 | 006, 011 | FR-17 |
-| 017 | `017-gen-limits` | Лимиты генерации (max_docs, auto_docs) | 5 | 006 | FR-18 |
+| 014 | `014-project-ops` | Project ops: copy Data/Templates, exclude checkbox | 4 | 005, 009 | FR-12, FR-13, FR-14 |
+| 015 | `015-recent-projects` | Recent projects (AJ) | 5 | 002, 011 | FR-15 |
+| 016 | `016-background-gen` | Фоновая генерация + прогресс + отмена | 5 | 006, 011 | FR-16 |
+| 017 | `017-gen-limits` | Лимиты генерации (max_docs, auto_docs) | 5 | 006 | FR-17 |
 | 018 | `018-nfr-diagnostics` | Логирование, exc_info, диагностика | 5 | все | NFR-5 |
 | 019 | `019-nfr-exe` | PyInstaller build + иконка + add-data | 5 | 011 | NFR-2 |
 
@@ -63,15 +63,13 @@
 - Поддержка: constant / table / counter / today
 - Режимы строк: sequential / circular / constant
 - Resume: `last_row` в PJ → продолжение с места остановки
-- Тесты: `tests/json/002-counters/`, `003-loops/`, `004-resume/`
+- Тесты: `tests/json/002-counters/`, `003-resume/`
 
 #### 004-core-render
 **Спека:** `specs/004-core-render/spec.md`
 - `render(fj: FillingJSON, template_path: Path) -> DocxDocument`
 - Run-merge: сохранение форматирования run'ов
-- Циклы таблиц (FR-12): размножение строк таблицы по данным
-- Изображения (заглушка для P0, реализация в P1)
-- Тесты: побайтовое сравнение с эталоном `expected.docx`
+- Тесты: сравнение с эталоном `expected.docx` по тексту и стилям
 
 #### 005-core-storage
 **Спека:** `specs/005-core-storage/spec.md`
@@ -147,9 +145,9 @@
 
 #### 014-project-ops
 **Спека:** `specs/014-project-ops/spec.md`
-- Копирование `Data/` / `Шаблоны/` при создании проекта (FR-13)
-- Чекбокс «Исключить копирование» (FR-13)
-- Папка без `*.stanok` → понятная ошибка (FR-15)
+- Копирование `Data/` / `Шаблоны/` при создании проекта (FR-12)
+- Чекбокс «Исключить копирование» (FR-12)
+- Папка без `*.stanok` → понятная ошибка (FR-14)
 
 ---
 

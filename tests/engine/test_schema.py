@@ -84,7 +84,7 @@ def test_aj_bad_recent_type():
 
 
 def test_migrate_chain(monkeypatch):
-    monkeypatch.setattr(schema, "current_version", lambda: "0.1.0")
+    monkeypatch.setattr(schema, "_get_package_version", lambda: "0.1.0")
     monkeypatch.setitem(
         schema.MIGRATIONS,
         ("0.0.0", "0.1.0"),
@@ -96,7 +96,7 @@ def test_migrate_chain(monkeypatch):
 
 
 def test_migrate_missing_step(monkeypatch):
-    monkeypatch.setattr(schema, "current_version", lambda: "0.2.0")
+    monkeypatch.setattr(schema, "_get_package_version", lambda: "0.2.0")
     with pytest.raises(FormatTooNewError):
         migrate({"version": "0.0.1"})
 
@@ -160,3 +160,25 @@ def test_normalize_strips_strings():
         "a": "x",
         "n": {"b": ["y", 1]},
     }
+
+
+def test_get_package_version_not_installed(monkeypatch):
+    # Simulate PackageNotFoundError by making pkg_version raise
+    import importlib.metadata
+
+    def raise_not_found(name):
+        raise importlib.metadata.PackageNotFoundError(name)
+
+    monkeypatch.setattr(importlib.metadata, "version", raise_not_found)
+    assert schema._get_package_version() == "0.0.0"
+
+
+def test_migrate_no_version_update(monkeypatch):
+    monkeypatch.setattr(schema, "_get_package_version", lambda: "0.1.0")
+    monkeypatch.setitem(
+        schema.MIGRATIONS,
+        ("0.0.0", "0.1.0"),
+        lambda d: {**d, "version": "0.0.0"},  # doesn't update version
+    )
+    with pytest.raises(schema.SchemaError, match="didn't update version"):
+        migrate({"version": "0.0.0"})

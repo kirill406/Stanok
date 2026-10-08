@@ -5,6 +5,7 @@
 import logging
 from datetime import datetime
 from enum import Enum
+from importlib.metadata import version as pkg_version, PackageNotFoundError
 from pathlib import PurePosixPath
 from typing import Any, Callable
 
@@ -147,15 +148,22 @@ class FillingJSON(_WarnExtra):
         return _check_relative_path(v, "dist") if v else v
 
 
-def current_version() -> str:
-    from stanok import __version__
-
-    return __version__
+def _get_package_version() -> str:
+    """Read package version from installed metadata (no circular import)."""
+    try:
+        return pkg_version("stanok")
+    except PackageNotFoundError:
+        return "0.0.0"
 
 
 def _parse_version(v: str) -> tuple:
     core = v.split("-", 1)[0]
     return tuple(int(p) for p in core.split("."))
+
+
+def current_version() -> str:
+    """Public API: current package version."""
+    return _get_package_version()
 
 
 MIGRATIONS: dict[tuple[str, str], Callable[[dict], dict]] = {}
@@ -164,7 +172,7 @@ MIGRATIONS: dict[tuple[str, str], Callable[[dict], dict]] = {}
 def migrate(data: dict) -> dict:
     """Цепочка миграций к current_version()."""
     version = data.get("version", "0.0.0")
-    target = current_version()
+    target = _get_package_version()
     if _parse_version(version) > _parse_version(target):
         raise FormatTooNewError(version)
     while version != target:
@@ -172,15 +180,20 @@ def migrate(data: dict) -> dict:
         if step is None:
             raise FormatTooNewError(version)
         data = step(dict(data))
-        version = data.get("version", target)
+        new_version = data.get("version", target)
+        if new_version == version:
+            raise SchemaError(f"Migration {version}→{new_version} didn't update version")
+        version = new_version
     return data
 
 
 def normalize(raw: dict) -> dict:
-    """Дефолты/trim до валидации: рекурсивный strip строк."""
+    """Дефолты/trim до валидации: рекурсивный strip строк, tuple→list."""
     if isinstance(raw, dict):
         return {k: normalize(v) for k, v in raw.items()}
     if isinstance(raw, list):
+        return [normalize(v) for v in raw]
+    if isinstance(raw, tuple):
         return [normalize(v) for v in raw]
     if isinstance(raw, str):
         return raw.strip()

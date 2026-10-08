@@ -52,6 +52,13 @@ class AJValidationError(SchemaError):
         super().__init__(f"AJ validation failed at {path}: {errors}")
 
 
+class RenderError(SchemaError):
+    def __init__(self, path: str, errors: list[str]):
+        self.path = path
+        self.errors = errors
+        super().__init__(f"Render failed at {path}: {errors}")
+
+
 def _format_errors(exc: Exception) -> list:
     return [f"{'.'.join(str(p) for p in e['loc'])}: {e['msg']}" for e in exc.errors()]
 
@@ -249,6 +256,7 @@ __all__ = [
     "AJValidationError",
     "FillingValidationError",
     "FormatTooNewError",
+    "RenderError",
     "FieldSource",
     "FieldDef",
     "CounterDef",

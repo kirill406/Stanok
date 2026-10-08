@@ -9,6 +9,7 @@
 - `tables`: чтение Excel (`ExcelReader`, протокол `TableReader`, `TableReadError`); валидация заголовков, нормировка строк
 - `engine.schema`: модели PJ/AJ/Filling на pydantic v2, `validate_*`, `normalize`, реестр `MIGRATIONS` + `migrate()`, `FormatTooNewError`
 - `engine.resolve`: строки + PJ → Filling JSON; режимы sequential/circular/constant; счётчики plain/month; `dist` из filename_template (чистая функция, без мутации PJ)
+- `engine.render` + `xmlops`: Filling → docx; run-merge с сохранением форматирования, `\n` → разрывы, таблицы (включая вложенные); строгий режим (неизвестное поле → `RenderError`)
 - Тесты: `tests/tables/`, `tests/engine/test_schema.py`, `tests/engine/test_resolve.py` (покрытие движка ~99%)
 
 ### Исправлено

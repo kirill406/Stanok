@@ -12,6 +12,7 @@ from .schema import (
     AJValidationError,
     FillingValidationError,
     FormatTooNewError,
+    RenderError,
     ProjectJSON,
     ApplicationJSON,
     FillingJSON,
@@ -28,6 +29,7 @@ __all__ = [
     "AJValidationError",
     "FillingValidationError",
     "FormatTooNewError",
+    "RenderError",
     "ResolveError",
     "ProjectJSON",
     "ApplicationJSON",
@@ -40,5 +42,4 @@ __all__ = [
     "validate_aj",
     "validate_fj",
     "resolve_rows",
-    "ResolveError",
 ]

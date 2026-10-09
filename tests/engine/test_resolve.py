@@ -111,6 +111,12 @@ def test_unknown_dist_placeholder():
         resolve_rows(ROWS[:1], pj, today=TODAY)
 
 
+def test_dist_traversal_wrapped_in_resolve_error():
+    pj = _pj(filename_template="../evil_{i}.docx")
+    with pytest.raises(ResolveError, match="dist"):
+        resolve_rows(ROWS[:1], pj, today=TODAY)
+
+
 def test_no_templates_raises():
     pj = _pj(templates={})
     with pytest.raises(ResolveError, match="no templates"):

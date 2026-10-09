@@ -1,0 +1,107 @@
+# Спецификация: 011-gui-integration — Bootstrap и сквозной прогон GUI
+
+**Статус:** Active
+**Версия:** 0.1.0
+**Фаза:** 2 (GUI)
+**Зависит от:** 008-gui-main, 009-gui-project, 010-gui-fields, 005-core-storage
+**FR:** FR-1, FR-2, FR-13
+**NFR:** NFR-3, NFR-4
+
+---
+
+## 1. Назначение
+
+Собрать окна 1–3 в запускаемое приложение: один общий `ProjectStore` на всё
+дерево окон, тестируемый bootstrap без `exec_()` внутри, сквозной headless-тест
+цепочки «открыть → поля → сгенерировать → docx» и регрессионный тест CLI.
+Новых виджетов нет — только проводка и интеграционные тесты.
+
+---
+
+## 2. Архитектурные решения
+
+### 2.1 Общий store
+
+`_run_gui()` создаёт **один** `ProjectStore` и передаёт в `MainWindow`;
+диалоги получают его же от родителей (уже так). Скрытые дефолты
+`store or ProjectStore()` в конструкторах остаются (удобно тестам),
+но bootstrap-путь их не использует.
+
+### 2.2 Тестируемый bootstrap
+
+```python
+# src/stanok/app.py
+def create_gui(store: ProjectStore | None = None):
+    """QApplication + MainWindow без exec_ (для тестов и встраивания)."""
+    ...
+    return qt_app, window
+
+
+def _run_gui() -> int:
+    _, window = create_gui()  # lazy Qt, как сейчас
+    window.show()
+    return QApplication.instance().exec_()
+```
+
+Qt-импорты остаются ленивыми внутри функций — CLI не тянет PyQt.
+
+### 2.3 Сквозной GUI-тест (offscreen)
+
+`tests/gui/test_integration.py`, фикстура `make_project`:
+
+```
+MainWindow(tmp_store) → ProjectDialog(ref) → FieldsDialog: правим константу,
+Save → ProjectDialog: прогон шаблона (worker, _execute напрямую + один
+реальный поток) → docx в Результат/ + PJ обновлён
+```
+
+Диалоги — настоящие объекты (не моки), `exec_()` не вызывается:
+слоты и `_save()` дёргаются напрямую, потоки — через существующие хелперы.
+
+### 2.4 CLI-регрессия в тестах
+
+`main([folder])` без изменения сигнатуры: тест мокает
+`stanok.services.generate.ProjectStore` на tmp-Home, проверяет код 0
+и docx в `Результат/`. Ручной MVP 006 этим же покрывается автоматически.
+
+---
+
+## 3. Требования к реализации
+
+| ID | Требование | Приоритет |
+|----|------------|-----------|
+| INT-1 | `_run_gui` создаёт один `ProjectStore` → `MainWindow` | Must |
+| INT-2 | `create_gui()` без `exec_`, Qt лениво | Must |
+| INT-3 | Сквозной offscreen-тест окно 1→2→3→docx (настоящие диалоги) | Must |
+| INT-4 | CLI-тест `main([folder])` с мокнутым Home (код 0, docx) | Must |
+| INT-5 | Новых пользовательских строк нет (STRINGS не трогаем) | Must |
+
+---
+
+## 4. Тестирование
+
+Файл: `tests/gui/test_integration.py` (+ добивка `tests/...` при нужде).
+
+| Сценарий | Ожидаемое поведение |
+|----------|---------------------|
+| `create_gui(tmp_store)` | окно создано, заголовок, `exec_` не вызван |
+| Сквозной прогон | константа в PJ, docx с подстановкой, счётчик вырос |
+| CLI `main([folder])` | код 0, docx, миграция в мокнутый Home |
+| CLI на битом проекте | код 1, падения нет |
+
+---
+
+## 5. Критерии приёмки
+
+1. `QT_QPA_PLATFORM=offscreen pytest tests/gui/test_integration.py -v` — зелёные.
+2. `pytest tests/ -q` — все зелёные.
+3. Pre-commit чистый, CHANGELOG — запись об 011.
+
+---
+
+## 6. Риски
+
+| Риск | Митигация |
+|------|-----------|
+| Мок `ProjectStore` в `services.generate` хрупкий | Мокается только в CLI-тесте; путь импорта зафиксирован тестом |
+| Сквозной тест медленный (потоки + docx) | Один сценарий, 2 строки; существующие хелперы ожидания |

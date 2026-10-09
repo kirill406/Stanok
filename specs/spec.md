@@ -94,7 +94,7 @@ flowchart LR
 | `engine/`  | типы PJ/AJ/FJ, resolve (строки → Filling JSON); планируемые: render (FJ → docx, слияние run'ов), xmlops; чистый Python без Qt | Python |
 | `tables/`  | единственное место чтения таблиц (Excel сейчас, csv позже)               | Python        |
 | `services/`| use cases: storage (005), generate (006) — реализованы; планируемые: projects / migrate; по одной функции на сценарий | Python |
-| `gui/` | тонкий адаптер: окна → вызовы services, ноль бизнес-логики (есть `strings.py`; окна — 008+) | Python, PyQt5 |
+| `gui/` | тонкий адаптер: окна → вызовы services, ноль бизнес-логики (есть `strings.py`, окно 1; окна 2,3 — 009/010) | Python, PyQt5 |
 | `~/.stanok`| всё состояние пользователя: мигрированные конфиги, лог, настройки        | JSON-файлы    |
 
 > Правило: gui → services → engine (never vice versa, never sideways);

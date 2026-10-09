@@ -17,8 +17,16 @@ def _has_cyrillic(text: str) -> bool:
 
 
 def test_import_without_qt():
+    source = (SRC_ROOT / "gui" / "strings.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    imports = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            imports.update(a.name.split(".")[0] for a in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            imports.add(node.module.split(".")[0])
+    assert "PyQt5" not in imports
     assert "stanok.gui.strings" in sys.modules
-    assert not any(m == "PyQt5" or m.startswith("PyQt5.") for m in sys.modules)
 
 
 def test_all_keys_non_empty():

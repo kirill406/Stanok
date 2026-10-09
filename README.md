@@ -45,7 +45,7 @@ python run.py
 - `__main__.py` — поддержка `python -m stanok`
 - `engine/` — чистый Python: schema, resolve, render, xmlops
 - `services/` — use cases: storage (ProjectStore), generate (оркестрация); планируемые: projects
-- `gui/` — тонкий Qt-адаптер (есть `strings.py`; окна — в 008+)
+- `gui/` — тонкий Qt-адаптер (`strings.py`, окно 1, worker; окна 2,3 — в 009/010)
 - `tables/` — бэкенды чтения таблиц
 
 **tests/** — pytest: юнит-тесты движка и таблиц, фикстуры

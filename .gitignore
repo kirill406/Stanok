@@ -3,6 +3,9 @@
 .env.local
 .env.*.local
 
+# === Manual demo projects (scripts/make-demo-project.py) ===
+demo/
+
 # === Python ===
 __pycache__/
 *.py[cod]

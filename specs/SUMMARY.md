@@ -5,7 +5,7 @@
 
 ## Active
 
-- `008-gui-main` — главное окно: проект, шаблоны, запуск, прогресс.
+- `009-gui-project` — окно 2: шаблоны проекта, кол-во, прогон по шаблону.
 
 ## Done
 
@@ -16,6 +16,7 @@
 - `005-core-storage` — ProjectStore, атомарная запись, Home, recent.
 - `006-core-generate` — оркестрация генерации: GenerateCommand, отчёт, resume.
 - `007-gui-strings` — STRINGS, миграция 19 литералов, AST-охранник.
+- `008-gui-main` — окно 1: recent, запуск по каждому/все, демо-генератор.
 
 ## Conventions
 

@@ -97,7 +97,7 @@
 #### 007-gui-strings
 **Спека:** `specs/007-gui-strings/spec.md`
 - Единый модуль `gui/strings.py` — все русские строки
-- Использование везде: `from stanok.gui.strings import S`
+- Использование везде: `from stanok.gui.strings import STRINGS`
 
 #### 008-gui-main
 **Спека:** `specs/008-gui-main/spec.md`

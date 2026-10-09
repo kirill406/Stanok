@@ -59,12 +59,8 @@ def main(argv: list[str] | None = None) -> int:
 
 def _run_gui() -> int:
     """Open main window (imports Qt lazily so CLI stays light)."""
-    from PyQt5.QtWidgets import QApplication
-
-    _, window = create_gui()
+    qt_app, window = create_gui()
     window.show()
-    qt_app = QApplication.instance()
-    assert qt_app is not None
     return qt_app.exec_()
 
 
@@ -79,7 +75,7 @@ def create_gui(store=None):
     from .services.storage import ProjectStore
 
     qt_app = QApplication.instance() or QApplication([])
-    window = MainWindow(store=store or ProjectStore())
+    window = MainWindow(store=store if store is not None else ProjectStore())
     return qt_app, window
 
 

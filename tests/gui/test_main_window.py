@@ -121,6 +121,16 @@ def test_settings_stub(qapp, tmp_path, store, monkeypatch):
     win.close()
 
 
+def test_create_stub(qapp, tmp_path, store, monkeypatch):
+    infos = []
+    monkeypatch.setattr(QMessageBox, "information", lambda *a: infos.append(a[-1]))
+    win = MainWindow(store=store)
+    assert win.create_btn.text() == STRINGS.MAIN_CREATE
+    win._on_create()
+    assert infos == [STRINGS.MAIN_CREATE_STUB]
+    win.close()
+
+
 def test_generate_one_end_to_end(qapp, tmp_path, store, monkeypatch):
     infos = []
     monkeypatch.setattr(QMessageBox, "information", lambda *a: infos.append(a[-1]))

@@ -69,6 +69,9 @@ class MainWindow(QMainWindow):
         self.browse_btn = QPushButton(STRINGS.MAIN_BROWSE, group)
         self.browse_btn.clicked.connect(self._on_browse)
         buttons.addWidget(self.browse_btn)
+        self.create_btn = QPushButton(STRINGS.MAIN_CREATE, group)
+        self.create_btn.clicked.connect(self._on_create)
+        buttons.addWidget(self.create_btn)
         self.settings_btn = QPushButton(STRINGS.MAIN_SETTINGS, group)
         self.settings_btn.clicked.connect(self._on_settings)
         buttons.addWidget(self.settings_btn)
@@ -136,6 +139,12 @@ class MainWindow(QMainWindow):
     def _on_settings(self) -> None:
         QMessageBox.information(
             self, STRINGS.MAIN_SETTINGS, STRINGS.MAIN_SETTINGS_STUB
+        )
+
+    def _on_create(self) -> None:
+        """Create-project flow lives in 014; stub for now."""
+        QMessageBox.information(
+            self, STRINGS.MAIN_CREATE, STRINGS.MAIN_CREATE_STUB
         )
 
     # -- generation queue ---------------------------------------------------
@@ -247,6 +256,7 @@ class MainWindow(QMainWindow):
     def _set_busy(self, busy: bool) -> None:
         self.generate_all_btn.setEnabled(not busy)
         self.browse_btn.setEnabled(not busy)
+        self.create_btn.setEnabled(not busy)
 
     def _show_error(self, message: str) -> None:
         QMessageBox.critical(self, STRINGS.MAIN_ERROR_TITLE, message)

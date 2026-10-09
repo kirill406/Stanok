@@ -50,6 +50,8 @@ class STRINGS:
     MAIN_SETTINGS = "Настройки"
     MAIN_SETTINGS_STUB = "Настройки приложения появятся позже"
     MAIN_SUMMARY_TITLE = "Сгенерировать все: итог"
+    MAIN_CREATE = "Создать проект"
+    MAIN_CREATE_STUB = "Создание проекта появится в 014"
     MAIN_PROJECT_TBD = "Окно проекта появится в 009"
     MAIN_STATUS_READY = "Готов"
     MAIN_STATUS_RUNNING = "Генерация... {created} из {total}"

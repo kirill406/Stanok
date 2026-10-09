@@ -52,7 +52,15 @@ class STRINGS:
     MAIN_SUMMARY_TITLE = "Сгенерировать все: итог"
     MAIN_CREATE = "Создать проект"
     MAIN_CREATE_STUB = "Создание проекта появится в 014"
-    MAIN_PROJECT_TBD = "Окно проекта появится в 009"
+
+    # Project dialog (gui/project_dialog.py, window 2)
+    PROJ_TITLE = "Проект: {name}"
+    PROJ_DATA = "Данные: {path}"
+    PROJ_SOURCE = "Источник: {file}"
+    PROJ_TPL_COL = "Шаблон"
+    PROJ_COUNT_COL = "Кол-во"
+    PROJ_RUN = "Сгенерировать"
+    PROJ_FIELDS_TBD = "Окно полей появится в 010"
     MAIN_STATUS_READY = "Готов"
     MAIN_STATUS_RUNNING = "Генерация... {created} из {total}"
     MAIN_PROGRESS_TITLE = "Генерация документов"

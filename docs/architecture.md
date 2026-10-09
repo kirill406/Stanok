@@ -97,11 +97,11 @@ src/stanok/
 ├── app.py            # bootstrap: parse args → wire storage → run, без side effects на import
 ├── engine/           # чистый Python, ноль Qt/GUI
 │   ├── schema.py     # PJ/AJ/FJ типы + validate/normalize + миграции
-│   ├── resolve.py    # строки → Filling JSON (планируется)
-│   ├── render.py     # Filling JSON → docx: ТОЛЬКО подстановка (планируется)
-│   └── xmlops.py     # run-merge (низкоуровневый XML) (планируется)
+│   ├── resolve.py    # строки → Filling JSON
+│   ├── render.py     # Filling JSON → docx: ТОЛЬКО подстановка
+│   └── xmlops.py     # run-merge (низкоуровневый XML)
 ├── services/         # use cases, по одному на сценарий (планируется)
-│   ├── generate.py  # сгенерировать документы (планируется)
+│   ├── generate.py  # сгенерировать документы (006, готово)
 │   ├── projects.py  # создать/открыть/удалить проект, именованные конфиги (планируется)
 │   └── storage.py   # ProjectStore: файлы, уникальные имена, атомарная запись
 ├── gui/              # тонкий Qt: окна → вызовы services, ноль бизнес-логики (планируется)

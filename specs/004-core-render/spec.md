@@ -1,6 +1,6 @@
 # Спецификация: 004-core-render — Filling JSON → docx
 
-**Статус:** Active
+**Статус:** done
 **Версия:** 0.1.0
 **Фаза:** 1 (Core Engine)
 **Зависит от:** 002-core-schema (FillingJSON), 003-core-resolve (поставщик FJ)

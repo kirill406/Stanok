@@ -5,13 +5,16 @@
 
 ## Active
 
-- `003-core-resolve` — резолв строк Excel + PJ → Filling JSON; режимы sequential/circular/constant; счётчики; resume.
+- `007-gui-strings` — единый модуль русских строк, без хардкода.
 
 ## Done
 
 - `001-core-tables` — чтение Excel, валидация заголовков, нормировка строк.
 - `002-core-schema` — Pydantic-модели PJ/AJ/FJ, валидация/нормализация/миграции, тесты.
+- `003-core-resolve` — строки + PJ → Filling JSON, режимы, счётчики.
+- `004-core-render` — Filling JSON → docx, run-merge, строгий режим.
 - `005-core-storage` — ProjectStore, атомарная запись, Home, recent.
+- `006-core-generate` — оркестрация генерации: GenerateCommand, отчёт, resume.
 
 ## Conventions
 

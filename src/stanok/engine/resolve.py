@@ -106,12 +106,18 @@ def _build_filling_json(
             logger.error(f"resolve field {field_name}: {e}", exc_info=True)
             raise ResolveError(f"fields.{field_name}", [str(e)]) from e
 
-    return FillingJSON(
-        version=pj.version,
-        template=template_name,
-        fields=fields,
-        dist=_format_dist(pj.filename_template, fields, doc_index, template_name),
-    )
+    try:
+        return FillingJSON(
+            version=pj.version,
+            template=template_name,
+            fields=fields,
+            dist=_format_dist(pj.filename_template, fields, doc_index, template_name),
+        )
+    except ResolveError:
+        raise
+    except Exception as e:
+        logger.error(f"build filling row {doc_index}: {e}", exc_info=True)
+        raise ResolveError("dist", [str(e)]) from e
 
 
 def _pick_template(pj: ProjectJSON) -> tuple[str, TemplateDef]:

@@ -72,6 +72,18 @@ def test_cell_click_opens_fields_stub(qapp, tmp_path, store, monkeypatch):
     dlg.close()
 
 
+def test_double_run_ignored(qapp, tmp_path, store, monkeypatch):
+    monkeypatch.setattr(QMessageBox, "information", lambda *a: None)
+    folder = make_project(tmp_path / "proj")
+    dlg = ProjectDialog(str(folder), store=store)
+    dlg._on_run_template("Договор")
+    first_worker = dlg._worker
+    dlg._on_run_template("Договор")
+    assert dlg._worker is first_worker
+    _await_run(dlg)
+    dlg.close()
+
+
 def test_broken_template_shows_error(qapp, tmp_path, store, monkeypatch):
     shown = []
     monkeypatch.setattr(QMessageBox, "critical", lambda *a: shown.append(a[-1]))

@@ -11,7 +11,6 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
     QDialog,
     QDialogButtonBox,
-    QHBoxLayout,
     QLabel,
     QMessageBox,
     QProgressDialog,
@@ -41,6 +40,7 @@ class ProjectDialog(QDialog):
         self._project_ref = project_ref
         self._worker: GenerateWorker | None = None
         self._progress_dialog: QProgressDialog | None = None
+        self._running = False
         pj, _ = self._store.resolve_project(project_ref)
         self._pj = pj
         self._template_names = list(pj.templates)
@@ -92,13 +92,18 @@ class ProjectDialog(QDialog):
         try:
             from .fields_dialog import FieldsDialog
         except ImportError:
-            QMessageBox.information(self, STRINGS.PROJ_TITLE.format(name=""), STRINGS.PROJ_FIELDS_TBD)
+            QMessageBox.information(
+                self, STRINGS.PROJ_TITLE.format(name=""), STRINGS.PROJ_FIELDS_TBD
+            )
             return
         dialog = FieldsDialog(self._project_ref, template_name, self._store, self)
         dialog.exec_()
 
     # -- per-template run ----------------------------------------------------
     def _on_run_template(self, template_name: str) -> None:
+        if self._running:
+            return
+        self._running = True
         row = self._template_names.index(template_name)
         spin = self.table.cellWidget(row, 1)
         limit = spin.value()
@@ -129,6 +134,7 @@ class ProjectDialog(QDialog):
             )
 
     def _finish_run(self) -> None:
+        self._running = False
         if self._progress_dialog is not None:
             self._progress_dialog.close()
             self._progress_dialog = None
@@ -141,8 +147,14 @@ class ProjectDialog(QDialog):
             errors=len(report.errors),
             elapsed=f"{report.elapsed:.1f}",
         )
-        QMessageBox.information(self, STRINGS.MAIN_DONE_TITLE, text)
+        if report.errors:
+            details = "\n".join(f"{i}: {msg}" for i, msg in report.errors)
+            QMessageBox.information(
+                self, STRINGS.MAIN_DONE_TITLE, f"{text}\n\n{details}"
+            )
+        else:
+            QMessageBox.information(self, STRINGS.MAIN_DONE_TITLE, text)
 
     def _on_failed(self, message: str) -> None:
         self._finish_run()
-        QMessageBox.critical(self, STRINGS.MAIN_ERROR_TITLE, f"{message}")
+        QMessageBox.critical(self, STRINGS.MAIN_ERROR_TITLE, message)

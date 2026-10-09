@@ -14,15 +14,20 @@ logger = logging.getLogger(__name__)
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI entry: generate docx from project folder (GUI lands later)."""
+    """CLI entry: `stanok <project>` generates; bare `stanok` opens GUI."""
     logging.basicConfig(level=logging.INFO)
     parser = argparse.ArgumentParser(prog="stanok", description=STRINGS.APP_DESCR)
-    parser.add_argument("project_ref", help=STRINGS.APP_REF_HELP)
+    parser.add_argument(
+        "project_ref", nargs="?", default=None, help=STRINGS.APP_REF_HELP
+    )
     parser.add_argument("--template", default=None, help=STRINGS.APP_TEMPLATE_HELP)
     parser.add_argument("--data-source", default=None, help=STRINGS.APP_SOURCE_HELP)
     parser.add_argument("--max-docs", type=int, default=None, help=STRINGS.APP_MAXDOCS_HELP)
     parser.add_argument("--resume", action="store_true", help=STRINGS.APP_RESUME_HELP)
     args = parser.parse_args(argv)
+
+    if args.project_ref is None:
+        return _run_gui()
 
     from .services.generate import GenerateCommand, generate_documents
 
@@ -50,6 +55,18 @@ def main(argv: list[str] | None = None) -> int:
     for path in report.output_paths:
         print(f"  {path}")
     return 0
+
+
+def _run_gui() -> int:
+    """Open main window (imports Qt lazily so CLI stays light)."""
+    from PyQt5.QtWidgets import QApplication
+
+    from .gui.main_window import MainWindow
+
+    qt_app = QApplication.instance() or QApplication([])
+    window = MainWindow()
+    window.show()
+    return qt_app.exec_()
 
 
 if __name__ == "__main__":

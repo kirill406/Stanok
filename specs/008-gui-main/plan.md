@@ -6,7 +6,7 @@
 
 ## Шаг 1: Зависимости
 
-- `pyproject.toml` += `PyQt5>=5.15`, `uv sync` → `uv.lock`.
+- `pyproject.toml` += `PyQt5==5.15.11` (`PyQt5-Qt5==5.15.2` на win32), `uv sync` → `uv.lock`.
 - Проверка: `QT_QPA_PLATFORM=offscreen python -c "import PyQt5.QtWidgets"`.
 
 ## Шаг 2: generate + progress-колбэк (MAIN-8)

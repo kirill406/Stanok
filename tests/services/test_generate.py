@@ -310,3 +310,34 @@ def test_only_empty_rows(tmp_path, store):
     report = generate_documents(GenerateCommand(project_ref=folder), store=store)
     assert report.created == 0
     assert report.skipped == 2
+
+
+def test_progress_callback_cancel(tmp_path, store):
+    folder = make_project(
+        tmp_path / "proj", rows=(("А", 1), ("Б", 2), ("В", 3))
+    )
+    seen = []
+
+    def progress(created, total):
+        seen.append((created, total))
+        return created >= 1
+
+    report = generate_documents(
+        GenerateCommand(project_ref=folder), store=store, progress=progress
+    )
+    assert report.created == 1
+    assert seen[0] == (1, 3)
+    saved = _load_saved(store, "proj")
+    assert saved.data_sources[0].start_row == 3
+
+
+def test_progress_callback_no_cancel(tmp_path, store):
+    folder = make_project(tmp_path / "proj", rows=(("А", 1), ("Б", 2)))
+    calls = []
+    report = generate_documents(
+        GenerateCommand(project_ref=folder),
+        store=store,
+        progress=lambda c, t: calls.append((c, t)) or False,
+    )
+    assert report.created == 2
+    assert calls == [(1, 2), (2, 2)]

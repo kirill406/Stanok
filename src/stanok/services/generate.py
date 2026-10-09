@@ -9,7 +9,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable
 
 from ..engine.render import render
 from ..engine.resolve import resolve_rows
@@ -131,11 +131,14 @@ def generate_documents(
     *,
     store: ProjectStore | None = None,
     today: date | None = None,
+    progress: Callable[[int, int], bool] | None = None,
 ) -> GenerateReport:
     """Run tables → resolve → render → docx pipeline, return report.
 
     Fail-fast (exception out): project/template/data config errors.
     Per-row (collected into report.errors): render/save errors.
+    progress(created, total) is called after each created document;
+    returning True cancels the run (partial report, created files stay).
     """
     started = time.monotonic()
     report = GenerateReport()
@@ -195,6 +198,8 @@ def generate_documents(
 
     out_dir = project_dir / RESULT_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
+    total = len(fillings)
+    cancelled = False
     for (abs_index, _), fj in zip(attempt, fillings):
         try:
             doc = render(fj, template_path)
@@ -204,6 +209,16 @@ def generate_documents(
         except Exception as e:
             logger.warning(f"row {abs_index} failed: {e}", exc_info=True)
             report.errors.append((abs_index, str(e)))
+        if progress is not None:
+            try:
+                if progress(report.created, total):
+                    logger.info(f"generate cancelled after {report.created} docs")
+                    cancelled = True
+                    break
+            except Exception as e:
+                logger.warning(f"progress callback failed: {e}", exc_info=True)
+    if cancelled:
+        logger.info("generate cancelled by user")
 
     if report.created:
         for name in pj.counters:

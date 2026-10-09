@@ -54,14 +54,14 @@ class ExcelReader:
         # Хвостовые пустые колонки — обрезать (обычное дело в живых файлах).
         last = max((i for i, h in enumerate(raw) if h), default=-1)
         if last < 0:
-            raise TableReadError(path, ValueError(STRINGS.TBL_EMPTY_HEADERS))
+            raise TableReadError(path, ValueError(STRINGS.TBL_NO_HEADERS))
         headers = raw[: last + 1]
         # Пустой заголовок в середине — колонку нельзя адресовать.
         for i, h in enumerate(headers):
             if not h:
                 raise TableReadError(
                     path,
-                    ValueError(STRINGS.TBL_EMPTY_HEADER.format(column=get_column_letter(i + 1))),
+                    ValueError(STRINGS.TBL_BLANK_HEADER.format(column=get_column_letter(i + 1))),
                 )
         # Дубли — тихая потеря данных, запрещены.
         seen, dups = set(), set()

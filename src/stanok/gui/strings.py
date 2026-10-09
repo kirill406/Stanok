@@ -33,6 +33,6 @@ class STRINGS:
 
     # Tables (tables/excel.py)
     TBL_READ_FAILED = "Не удалось прочитать таблицу {path}: {cause}"
-    TBL_EMPTY_HEADERS = "первая строка пустая: нет заголовков"
-    TBL_EMPTY_HEADER = "пустой заголовок в колонке {column}"
+    TBL_NO_HEADERS = "первая строка пустая: нет заголовков"
+    TBL_BLANK_HEADER = "пустой заголовок в колонке {column}"
     TBL_DUP_HEADERS = "повторяющиеся заголовки: {headers}"

@@ -98,7 +98,7 @@ def test_empty_header_in_middle_raises(tmp_path):
     path = _make_xlsx(tmp_path / "gap.xlsx", [["a", None, "b"], [1, 2, 3]])
     with pytest.raises(
         TableReadError,
-        match=re.escape(STRINGS.TBL_EMPTY_HEADER.format(column="B")),
+        match=re.escape(STRINGS.TBL_BLANK_HEADER.format(column="B")),
     ):
         ExcelReader().read(path)
 

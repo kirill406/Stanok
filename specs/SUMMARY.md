@@ -5,7 +5,7 @@
 
 ## Active
 
-- `006-core-generate` — оркестрация генерации end-to-end: tables → resolve → render → docx.
+- `007-gui-strings` — единый модуль русских строк, без хардкода.
 
 ## Done
 
@@ -14,6 +14,7 @@
 - `003-core-resolve` — строки + PJ → Filling JSON, режимы, счётчики.
 - `004-core-render` — Filling JSON → docx, run-merge, строгий режим.
 - `005-core-storage` — ProjectStore, атомарная запись, Home, recent.
+- `006-core-generate` — оркестрация генерации: GenerateCommand, отчёт, resume.
 
 ## Conventions
 

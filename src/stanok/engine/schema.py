@@ -11,6 +11,8 @@ from typing import Any, Callable
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from ..gui.strings import STRINGS
+
 logger = logging.getLogger(__name__)
 
 
@@ -35,7 +37,7 @@ class FillingValidationError(SchemaError):
 class FormatTooNewError(SchemaError):
     def __init__(self, version: str):
         self.version = version
-        super().__init__(f"Формат версии {version} новее программы — обновите программу")
+        super().__init__(STRINGS.SCH_FORMAT_TOO_NEW.format(version=version))
 
 
 class ResolveError(SchemaError):
@@ -73,7 +75,7 @@ def _format_errors(exc: Exception) -> list:
 def _check_relative_path(value: str, field: str) -> str:
     pure = PurePosixPath(value.replace("\\", "/"))
     if pure.is_absolute() or ".." in pure.parts:
-        raise ValueError(f"{field}: путь должен быть относительным без '..': {value}")
+        raise ValueError(STRINGS.SCH_DIST_TRAVERSAL.format(field=field, value=value))
     return value
 
 

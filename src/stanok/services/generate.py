@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 from ..engine.render import render
 from ..engine.resolve import resolve_rows
 from ..engine.schema import DataSourceDef, ProjectJSON, TemplateDef, validate_pj
+from ..gui.strings import STRINGS
 from ..tables.excel import ExcelReader
 from .storage import ProjectStore
 
@@ -22,7 +23,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-RESULT_DIR = "Результат"
+RESULT_DIR = STRINGS.GEN_RESULT_DIR
 
 
 class TemplateError(Exception):

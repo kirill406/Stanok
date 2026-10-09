@@ -10,6 +10,8 @@ from typing import Any
 import openpyxl
 from openpyxl.utils import get_column_letter
 
+from ..gui.strings import STRINGS
+
 logger = logging.getLogger(__name__)
 
 
@@ -17,7 +19,7 @@ class TableReadError(Exception):
     def __init__(self, path: Path, cause: Exception):
         self.path = path
         self.cause = cause
-        super().__init__(f"Не удалось прочитать таблицу {path}: {cause}")
+        super().__init__(STRINGS.TBL_READ_FAILED.format(path=path, cause=cause))
 
 
 class ExcelReader:
@@ -52,14 +54,14 @@ class ExcelReader:
         # Хвостовые пустые колонки — обрезать (обычное дело в живых файлах).
         last = max((i for i, h in enumerate(raw) if h), default=-1)
         if last < 0:
-            raise TableReadError(path, ValueError("первая строка пустая: нет заголовков"))
+            raise TableReadError(path, ValueError(STRINGS.TBL_EMPTY_HEADERS))
         headers = raw[: last + 1]
         # Пустой заголовок в середине — колонку нельзя адресовать.
         for i, h in enumerate(headers):
             if not h:
                 raise TableReadError(
                     path,
-                    ValueError(f"пустой заголовок в колонке {get_column_letter(i + 1)}"),
+                    ValueError(STRINGS.TBL_EMPTY_HEADER.format(column=get_column_letter(i + 1))),
                 )
         # Дубли — тихая потеря данных, запрещены.
         seen, dups = set(), set()
@@ -70,7 +72,7 @@ class ExcelReader:
         if dups:
             raise TableReadError(
                 path,
-                ValueError(f"повторяющиеся заголовки: {', '.join(sorted(dups))}"),
+                ValueError(STRINGS.TBL_DUP_HEADERS.format(headers=", ".join(sorted(dups)))),
             )
         return headers
 

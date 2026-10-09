@@ -3,12 +3,14 @@
 """Tests for Excel table reading."""
 
 import json
+import re
 import openpyxl
 from datetime import date, datetime
 from pathlib import Path
 
 import pytest
 
+from stanok.gui.strings import STRINGS
 from stanok.tables import ExcelReader, TableReadError
 
 
@@ -85,13 +87,19 @@ def test_headers_with_spaces(tmp_path):
 
 def test_duplicate_headers_raises(tmp_path):
     path = _make_xlsx(tmp_path / "dups.xlsx", [["a", "a", "b"], [1, 2, 3]])
-    with pytest.raises(TableReadError, match="повторяющиеся заголовки"):
+    with pytest.raises(
+        TableReadError,
+        match=re.escape(STRINGS.TBL_DUP_HEADERS.format(headers="a")),
+    ):
         ExcelReader().read(path)
 
 
 def test_empty_header_in_middle_raises(tmp_path):
     path = _make_xlsx(tmp_path / "gap.xlsx", [["a", None, "b"], [1, 2, 3]])
-    with pytest.raises(TableReadError, match="пустой заголовок"):
+    with pytest.raises(
+        TableReadError,
+        match=re.escape(STRINGS.TBL_EMPTY_HEADER.format(column="B")),
+    ):
         ExcelReader().read(path)
 
 

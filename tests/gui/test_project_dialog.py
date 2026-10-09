@@ -1,0 +1,91 @@
+# Copyright (C) 2026 Kirill Borovoy
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""Offscreen tests for Window 2 (ProjectDialog)."""
+
+import os
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+import pytest
+from PyQt5.QtCore import QEventLoop, QTimer
+from PyQt5.QtWidgets import QApplication, QMessageBox, QSpinBox
+
+from stanok.gui.project_dialog import ProjectDialog
+from stanok.gui.strings import STRINGS
+from stanok.services.storage import ProjectStore, StorageError
+from tests.services.test_generate import make_project
+
+
+@pytest.fixture(scope="session")
+def qapp():
+    app = QApplication.instance() or QApplication([])
+    yield app
+
+
+@pytest.fixture
+def store(tmp_path):
+    return ProjectStore(tmp_path / ".stanok")
+
+
+def _await_run(dlg, timeout_ms=15000):
+    loop = QEventLoop()
+    poll = QTimer()
+    poll.timeout.connect(lambda: dlg._progress_dialog is None and loop.quit())
+    poll.start(50)
+    QTimer.singleShot(timeout_ms, loop.quit)
+    loop.exec_()
+    poll.stop()
+
+
+def test_open_lists_templates(qapp, tmp_path, store):
+    folder = make_project(tmp_path / "proj")
+    dlg = ProjectDialog(str(folder), store=store)
+    assert dlg.table.rowCount() == 1
+    assert dlg.table.item(0, 0).text() == "Договор"
+    assert dlg.table.cellWidget(0, 1).value() == 0
+    assert "proj" in dlg.windowTitle()
+    dlg.close()
+
+
+def test_run_template_with_limit(qapp, tmp_path, store, monkeypatch):
+    infos = []
+    monkeypatch.setattr(QMessageBox, "information", lambda *a: infos.append(a[-1]))
+    folder = make_project(
+        tmp_path / "proj", rows=(("А", 1), ("Б", 2), ("В", 3))
+    )
+    dlg = ProjectDialog(str(folder), store=store)
+    dlg.table.cellWidget(0, 1).setValue(1)
+    dlg._on_run_template("Договор")
+    _await_run(dlg)
+    assert infos and "создано 1" in infos[0]
+    assert len(list((folder / "Результат").glob("*.docx"))) == 1
+    dlg.close()
+
+
+def test_cell_click_opens_fields_stub(qapp, tmp_path, store, monkeypatch):
+    infos = []
+    monkeypatch.setattr(QMessageBox, "information", lambda *a: infos.append(a[-1]))
+    folder = make_project(tmp_path / "proj")
+    dlg = ProjectDialog(str(folder), store=store)
+    dlg._on_cell_clicked(0, 0)
+    assert infos == [STRINGS.PROJ_FIELDS_TBD]
+    dlg.close()
+
+
+def test_broken_template_shows_error(qapp, tmp_path, store, monkeypatch):
+    shown = []
+    monkeypatch.setattr(QMessageBox, "critical", lambda *a: shown.append(a[-1]))
+    monkeypatch.setattr(QMessageBox, "information", lambda *a: None)
+    folder = make_project(tmp_path / "proj")
+    (folder / "Шаблоны" / "tpl.docx").unlink()
+    dlg = ProjectDialog(str(folder), store=store)
+    dlg._on_run_template("Договор")
+    _await_run(dlg)
+    assert shown
+    assert dlg.isEnabled()
+    dlg.close()
+
+
+def test_open_missing_project_raises(qapp, tmp_path, store):
+    with pytest.raises(StorageError):
+        ProjectDialog("nope", store=store)

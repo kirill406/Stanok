@@ -26,6 +26,7 @@ from PyQt5.QtWidgets import (
 
 from ..services.generate import GenerateCommand, GenerateReport
 from ..services.storage import ProjectStore
+from .project_dialog import ProjectDialog
 from .strings import STRINGS
 from .worker import GenerateWorker
 
@@ -126,13 +127,13 @@ class MainWindow(QMainWindow):
         self._open_project_dialog(item.data(Qt.UserRole))
 
     def _open_project_dialog(self, ref: str) -> None:
-        """Open window 2 (009); stub until ProjectDialog lands."""
+        """Open window 2 (ProjectDialog, 009)."""
         try:
-            from .project_dialog import ProjectDialog
-        except ImportError:
-            QMessageBox.information(self, STRINGS.MAIN_TITLE, STRINGS.MAIN_PROJECT_TBD)
+            dialog = ProjectDialog(ref, self._store, self)
+        except Exception as e:
+            logger.warning(f"open project dialog {ref}: {e}", exc_info=True)
+            self._show_error(f"{STRINGS.MAIN_ERROR_TITLE}: {e}")
             return
-        dialog = ProjectDialog(ref, self._store, self)
         dialog.exec_()
         self.refresh_recent()
 

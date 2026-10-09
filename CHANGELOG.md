@@ -14,6 +14,7 @@
 - `services.generate`: `generate_documents(cmd)` — пайплайн tables → resolve → render → `Результат/`; `GenerateCommand`/`GenerateReport`; счётчики `last += created`, resume, `max_docs`, уникальные имена `(1)`, построчные ошибки в отчёт; CLI `python run.py <проект>`
 - `gui.strings`: `STRINGS` — единый модуль пользовательских строк (NFR-3); AST-тест запрещает кириллические литералы в `src/` вне него
 - `gui.main_window` + `worker`: окно 1 (recent-список, запуск по каждому/все последовательно со сводкой, настройки-заглушка, обзор); прогон в QThread, прогресс/отмена; `progress`-колбэк в `generate_documents`; `run.py` без аргументов открывает окно; PyQt5-зависимость
+- `gui.project_dialog`: окно 2 (шапка проекта, таблица шаблонов с кол-вом, прогон по шаблону, хук окна 3); окно 1 открывает настоящий диалог (заглушка убрана)
 - Тесты: `tests/tables/`, `tests/engine/test_schema.py`, `tests/engine/test_resolve.py` (покрытие движка ~99%)
 
 ### Исправлено

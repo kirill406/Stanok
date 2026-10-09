@@ -88,27 +88,70 @@ def test_browse_broken_shows_error(qapp, tmp_path, store, monkeypatch):
     win.close()
 
 
-def test_row_click_opens_window2_hook(qapp, tmp_path, store, monkeypatch):
-    opened = []
+def test_browse_cancelled_noop(qapp, tmp_path, store, monkeypatch):
+    monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *a, **k: "")
+    win = MainWindow(store=store)
+    win._on_browse()
+    assert win.recent_list.count() == 0
+    win.close()
+
+
+def test_open_broken_dialog_shows_error(qapp, tmp_path, store, monkeypatch):
+    shown = []
+    monkeypatch.setattr(QMessageBox, "critical", lambda *a: shown.append(a[-1]))
+    win = MainWindow(store=store)
+    win._open_project_dialog("nope")
+    assert shown
+    win.close()
+
+
+def test_generate_one_failure_shows_error(qapp, tmp_path, store, monkeypatch):
+    shown = []
+    monkeypatch.setattr(QMessageBox, "critical", lambda *a: shown.append(a[-1]))
+    win = MainWindow(store=store)
+    win._on_generate_one(str(tmp_path / "gone"))
+    _await_queue(win)
+    assert shown
+    win.close()
+
+
+def test_generate_one_row_errors_shown(qapp, tmp_path, store, monkeypatch):
+    infos = []
+    monkeypatch.setattr(QMessageBox, "information", lambda *a: infos.append(a[-1]))
+    import stanok.services.generate as gen
+
+    real_render = gen.render
+    calls = {"n": 0}
+
+    def flaky(fj, template_path):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise RuntimeError("boom")
+        return real_render(fj, template_path)
+
+    monkeypatch.setattr(gen, "render", flaky)
+    folder = make_project(tmp_path / "proj")
+    store.add_recent(str(folder), "proj")
+    win = MainWindow(store=store)
+    win._on_generate_one(str(folder))
+    _await_queue(win)
+    assert infos and "boom" in infos[0]
+    win.close()
+
+
+def test_row_click_opens_real_dialog(qapp, tmp_path, store, monkeypatch):
+    exec_calls = []
     monkeypatch.setattr(
-        MainWindow, "_open_project_dialog", lambda self, ref: opened.append(ref)
+        "stanok.gui.main_window.ProjectDialog",
+        lambda ref, st, parent: type(
+            "Fake", (), {"exec_": lambda self: exec_calls.append(ref)}
+        )(),
     )
     folder = make_project(tmp_path / "proj")
     store.add_recent(str(folder), "proj")
     win = MainWindow(store=store)
     win._on_row_clicked(win.recent_list.item(0))
-    assert opened == [str(folder)]
-    win.close()
-
-
-def test_row_click_stub_without_009(qapp, tmp_path, store, monkeypatch):
-    infos = []
-    monkeypatch.setattr(QMessageBox, "information", lambda *a: infos.append(a[-1]))
-    folder = make_project(tmp_path / "proj")
-    store.add_recent(str(folder), "proj")
-    win = MainWindow(store=store)
-    win._on_row_clicked(win.recent_list.item(0))
-    assert infos == [STRINGS.MAIN_PROJECT_TBD]
+    assert exec_calls == [str(folder)]
     win.close()
 
 

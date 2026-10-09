@@ -1,6 +1,6 @@
 # Спецификация: 008-gui-main — Окно 1: проекты и запуск (FR-1)
 
-**Статус:** Active
+**Статус:** done
 **Версия:** 0.1.0
 **Фаза:** 2 (GUI)
 **Зависит от:** 006-core-generate (generate_documents), 007-gui-strings (STRINGS), 005-core-storage (recent)

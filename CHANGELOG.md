@@ -16,6 +16,7 @@
 - `gui.main_window` + `worker`: окно 1 (recent-список, запуск по каждому/все последовательно со сводкой, настройки-заглушка, обзор); прогон в QThread, прогресс/отмена; `progress`-колбэк в `generate_documents`; `run.py` без аргументов открывает окно; PyQt5-зависимость
 - `gui.project_dialog`: окно 2 (шапка проекта, таблица шаблонов с кол-вом, прогон по шаблону, хук окна 3); окно 1 открывает настоящий диалог (заглушка убрана)
 - `gui.fields_dialog`: окно 3 (правка констант, превью table/counter/today, Save в PJ, dirty-чек Save/Discard/Cancel); окно 2 открывает настоящий диалог
+- `app.create_gui`: общий `ProjectStore`, bootstrap без `exec_`; сквозной GUI-тест 1→2→3→docx; CLI-регрессия в тестах
 - Тесты: `tests/tables/`, `tests/engine/test_schema.py`, `tests/engine/test_resolve.py` (покрытие движка ~99%)
 
 ### Исправлено

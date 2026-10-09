@@ -52,6 +52,7 @@ class ProjectDialog(QDialog):
         self.setWindowTitle(
             STRINGS.PROJ_TITLE.format(name=Path(self._project_ref).name)
         )
+        self.resize(900, 650)
         layout = QVBoxLayout(self)
 
         ds_file = self._pj.data_sources[0].file if self._pj.data_sources else "-"

@@ -92,6 +92,7 @@ class FieldsDialog(QDialog):
     # -- UI construction --------------------------------------------------------
     def _build_ui(self) -> None:
         self.setWindowTitle(STRINGS.FLD_TITLE.format(name=self._template_name))
+        self.resize(900, 650)
         layout = QVBoxLayout(self)
         self.table = QTableWidget(self)
         self.table.setColumnCount(3)

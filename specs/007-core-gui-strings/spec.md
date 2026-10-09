@@ -71,12 +71,12 @@ class STRINGS:
 
 | ID    | Требование                                                                   | Приоритет   |
 |-------|------------------------------------------------------------------------------|-------------|
-| STR-1 | Модуль `gui/strings.py` с классом `STRINGS`, импорт без side effects               | Must        |
-| STR-2 | Все 19 литералов из §2.2 заменены на `STRINGS.*`, тексты дословные                 | Must        |
-| STR-3 | Тесты переведены на `STRINGS.КЛЮЧ` в `match=`                                      | Must        |
+| STR-1 | Модуль `gui/strings.py` с классом `STRINGS`, импорт без side effects         | Must        |
+| STR-2 | Все 19 литералов из §2.2 заменены на `STRINGS.*`, тексты дословные           | Must        |
+| STR-3 | Тесты переведены на `STRINGS.КЛЮЧ` в `match=`                                | Must        |
 | STR-4 | `# TODO(007)` в `app.py` снят                                                | Must        |
 | STR-5 | Тест-охранник: AST-скан `src/` — кириллица в литералах только в `strings.py` | Must        |
-| STR-6 | Все значения `STRINGS` непустые; плейсхолдеры парсятся (`string.Formatter`)        | Should      |
+| STR-6 | Все значения `STRINGS` непустые; плейсхолдеры парсятся (`string.Formatter`)  | Should      |
 
 ---
 
@@ -86,7 +86,7 @@ class STRINGS:
 
 | Сценарий                                 | Ожидаемое поведение                                            |
 |------------------------------------------|----------------------------------------------------------------|
-| Импорт `STRINGS` без Qt и side effects         | `import stanok.gui.strings` не тянет PyQt                      |
+| Импорт `STRINGS` без Qt и side effects   | `import stanok.gui.strings` не тянет PyQt                      |
 | Все ключи — непустые строки              | `all(isinstance(v, str) and v ...)`                            |
 | Плейсхолдеры валидны                     | `Formatter().parse` без ошибок, `.format()` с тестовыми kwargs |
 | AST-скан `src/*.py` (кроме `strings.py`) | ноль `Constant`-строк с кириллицей                             |

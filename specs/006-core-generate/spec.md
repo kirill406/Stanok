@@ -1,7 +1,7 @@
 # Спецификация: 006-core-generate — Оркестрация генерации (end-to-end)
 
 **Статус:** Active
-**Версия:** 0.2.0
+**Версия:** 0.1.0
 **Фаза:** 1 (Core Engine)
 **Зависит от:** 003-core-resolve (FillingJSON), 004-core-render (Document), 005-core-storage (ProjectStore)
 **FR:** FR-1, FR-3, FR-4, FR-10

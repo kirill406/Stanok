@@ -23,6 +23,7 @@ from PyQt5.QtWidgets import (
 
 from ..services.generate import GenerateCommand, GenerateReport
 from ..services.storage import ProjectStore
+from .fields_dialog import FieldsDialog
 from .strings import STRINGS
 from .worker import GenerateWorker
 
@@ -51,6 +52,7 @@ class ProjectDialog(QDialog):
         self.setWindowTitle(
             STRINGS.PROJ_TITLE.format(name=Path(self._project_ref).name)
         )
+        self.resize(900, 650)
         layout = QVBoxLayout(self)
 
         ds_file = self._pj.data_sources[0].file if self._pj.data_sources else "-"
@@ -88,14 +90,7 @@ class ProjectDialog(QDialog):
             self._open_fields_dialog(self._template_names[row])
 
     def _open_fields_dialog(self, template_name: str) -> None:
-        """Open window 3 (010); stub until FieldsDialog lands."""
-        try:
-            from .fields_dialog import FieldsDialog
-        except ImportError:
-            QMessageBox.information(
-                self, STRINGS.PROJ_TITLE.format(name=""), STRINGS.PROJ_FIELDS_TBD
-            )
-            return
+        """Open window 3 (FieldsDialog, 010)."""
         dialog = FieldsDialog(self._project_ref, template_name, self._store, self)
         dialog.exec_()
 

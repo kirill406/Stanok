@@ -62,13 +62,41 @@ def test_run_template_with_limit(qapp, tmp_path, store, monkeypatch):
     dlg.close()
 
 
-def test_cell_click_opens_fields_stub(qapp, tmp_path, store, monkeypatch):
-    infos = []
-    monkeypatch.setattr(QMessageBox, "information", lambda *a: infos.append(a[-1]))
+def test_cell_click_opens_real_dialog(qapp, tmp_path, store, monkeypatch):
+    exec_calls = []
+    monkeypatch.setattr(
+        "stanok.gui.project_dialog.FieldsDialog",
+        lambda ref, name, st, parent: type(
+            "Fake", (), {"exec_": lambda self: exec_calls.append((ref, name))}
+        )(),
+    )
     folder = make_project(tmp_path / "proj")
     dlg = ProjectDialog(str(folder), store=store)
     dlg._on_cell_clicked(0, 0)
-    assert infos == [STRINGS.PROJ_FIELDS_TBD]
+    assert exec_calls == [(str(folder), "Договор")]
+    dlg.close()
+
+
+def test_run_row_errors_shown(qapp, tmp_path, store, monkeypatch):
+    infos = []
+    monkeypatch.setattr(QMessageBox, "information", lambda *a: infos.append(a[-1]))
+    import stanok.services.generate as gen
+
+    real_render = gen.render
+    calls = {"n": 0}
+
+    def flaky(fj, template_path):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise RuntimeError("boom")
+        return real_render(fj, template_path)
+
+    monkeypatch.setattr(gen, "render", flaky)
+    folder = make_project(tmp_path / "proj")
+    dlg = ProjectDialog(str(folder), store=store)
+    dlg._on_run_template("Договор")
+    _await_run(dlg)
+    assert infos and "boom" in infos[0]
     dlg.close()
 
 

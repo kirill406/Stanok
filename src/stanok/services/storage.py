@@ -2,23 +2,20 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Project storage: atomic save/load, Home migration, recent projects."""
 
-import errno
-import fcntl
+from __future__ import annotations
+
 import json
 import logging
 import os
 import shutil
-import tempfile
 import threading
 from datetime import datetime
 from pathlib import Path
-from typing import Any
 
 from ..engine.schema import (
     ApplicationJSON,
     ProjectJSON,
     RecentItem,
-    SchemaError,
     StorageError,
     validate_aj,
     validate_pj,
@@ -33,7 +30,7 @@ class ProjectStore:
     def __init__(self, home_dir: Path | None = None):
         if home_dir is None:
             home_dir = Path.home() / ".stanok"
-        self.home_dir = home_dir.resolve()
+        self.home_dir = Path(home_dir).resolve()
         self._lock = threading.Lock()
         self._ensure_home()
 
@@ -42,55 +39,50 @@ class ProjectStore:
         settings_file = self.home_dir / "settings.json"
         if not settings_file.exists():
             default_aj = ApplicationJSON(version="0.0.0", recent=[], settings={})
-            self._atomic_write_json(settings_file, default_aj.model_dump(mode="json"))
+            self._atomic_write_json(
+                settings_file, default_aj.model_dump(mode="json")
+            )
 
     def _validate_path(self, path: Path, field: str = "path") -> Path:
         """Validate path: no traversal, must be under home_dir."""
+        if ".." in path.parts:
+            raise StorageError(field, [f"path traversal not allowed: {path}"])
+        resolved = path.resolve()
         try:
-            resolved = path.resolve()
-            # Check for traversal
-            if ".." in path.parts:
-                raise StorageError(
-                    field, [f"path traversal not allowed: {path}"]
-                )
-            # Must be under home_dir or a subdirectory
-            try:
-                resolved.relative_to(self.home_dir)
-            except ValueError:
-                raise StorageError(
-                    field, [f"path must be under home directory: {path}"]
-                )
-            return resolved
-        except Exception as e:
-            raise StorageError(field, [str(e)])
+            resolved.relative_to(self.home_dir)
+        except ValueError:
+            raise StorageError(
+                field, [f"path must be under home directory: {path}"]
+            )
+        return resolved
 
     def _atomic_write_json(self, path: Path, data: dict) -> None:
-        """Write JSON atomically: tmp -> fsync -> rename + .bak."""
+        """Write JSON atomically: tmp + fsync -> backup + rename."""
         path = self._validate_path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
 
         tmp_path = path.with_suffix(path.suffix + ".tmp")
         bak_path = path.with_suffix(path.suffix + ".bak")
 
-        # Write to tmp
-        with open(tmp_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-        # Ensure data is on disk
-        with open(tmp_path, "r") as f:
-            f.flush()
-            os.fsync(f.fileno())
+        try:
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+                f.flush()
+                os.fsync(f.fileno())
+        except Exception:
+            if tmp_path.exists():
+                tmp_path.unlink()
+            raise
 
-        # Backup existing file
         if path.exists():
             if bak_path.exists():
                 bak_path.unlink()
             path.rename(bak_path)
 
-        # Atomic rename
         try:
             tmp_path.rename(path)
-        except OSError:
-            # Fallback for Windows: copy + unlink
+        except OSError as e:
+            logger.warning(f"atomic rename failed for {path}: {e}", exc_info=True)
             shutil.copy2(tmp_path, path)
             tmp_path.unlink()
 
@@ -99,38 +91,32 @@ class ProjectStore:
         with open(path, "r", encoding="utf-8") as f:
             return json.load(f)
 
-    def _lock_file(self, path: Path, exclusive: bool = True):
-        """File locking for concurrent access."""
-        lock_path = path.with_suffix(path.suffix + ".lock")
-        lock_file = open(lock_path, "w")
-        try:
-            fcntl.flock(
-                lock_file.fileno(),
-                fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH,
-            )
-        except OSError:
-            pass  # Windows fallback: no locking
-        return lock_file
-
-    def _unlock_file(self, lock_file) -> None:
-        try:
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
-        except OSError:
-            pass
-        lock_file.close()
-
     def _get_config_path(self, name: str) -> Path:
         """Get path for config file in Home."""
         safe_name = name.replace("/", "_").replace("\\", "_")
+        if not safe_name:
+            safe_name = "project"
         return self.home_dir / f"{safe_name}.stanok"
 
-    def save(self, pj: ProjectJSON) -> Path:
+    def _extract_project_name(self, pj: ProjectJSON) -> str:
+        """Extract project name from PJ or use fallback."""
+        template = pj.filename_template or ""
+        name = template.split("{")[0].strip()
+        if name:
+            return name.replace("/", "_").replace("\\", "_")
+        if pj.templates:
+            first_template = next(iter(pj.templates.values()))
+            file = getattr(first_template, "file", "")
+            if file:
+                stem = Path(file).stem
+                if stem:
+                    return stem
+        return "project"
+
+    def save(self, pj: ProjectJSON, name: str | None = None) -> Path:
         """Save project config atomically, return path."""
         with self._lock:
-            path = self._get_config_path(pj.filename_template.split("{")[0].strip() or "project")
-            # Use project name from template or fallback
-            name = getattr(pj, "_name", None) or "project"
-            path = self._get_config_path(name)
+            path = self._get_config_path(name or self._extract_project_name(pj))
             self._atomic_write_json(path, pj.model_dump(mode="json"))
             logger.info("saved project config to %s", path)
             return path
@@ -141,8 +127,13 @@ class ProjectStore:
             path = self._get_config_path(name)
             if not path.exists():
                 raise StorageError("load", [f"project not found: {name}"])
-            data = self._read_json(path)
-            return validate_pj(data)
+            try:
+                return validate_pj(self._read_json(path))
+            except StorageError:
+                raise
+            except Exception as e:
+                logger.error(f"load config {path}: {e}", exc_info=True)
+                raise StorageError("load", [f"invalid config {name}: {e}"]) from e
 
     def delete(self, name: str) -> None:
         """Delete project config and backup."""
@@ -161,61 +152,44 @@ class ProjectStore:
             configs = []
             for path in self.home_dir.glob("*.stanok"):
                 try:
-                    data = self._read_json(path)
-                    pj = validate_pj(data)
+                    pj = validate_pj(self._read_json(path))
                     configs.append((path.stat().st_mtime, pj))
-                except Exception:
-                    logger.warning("skipping invalid config: %s", path)
+                except Exception as e:
+                    logger.warning(f"skipping invalid config {path}: {e}")
             configs.sort(key=lambda x: x[0], reverse=True)
             return [pj for _, pj in configs]
 
     def migrate_from_project(self, project_dir: Path) -> ProjectJSON:
         """Migrate project config from project folder to Home."""
-        project_dir = self._validate_path(project_dir, "project_dir")
-        legacy_config = project_dir / "project.stanok"
+        if ".." in project_dir.parts:
+            raise StorageError(
+                "migrate", [f"path traversal not allowed: {project_dir}"]
+            )
+        legacy_config = project_dir.resolve() / "project.stanok"
         if not legacy_config.exists():
             raise StorageError(
                 "migrate", [f"legacy config not found: {legacy_config}"]
             )
-
-        data = self._read_json(legacy_config)
-        pj = validate_pj(data)
-
-        # Save to Home with project folder name
-        name = project_dir.name
-        self.save(pj)
-
-        # Remove legacy config after successful migration
+        with open(legacy_config, "r", encoding="utf-8") as f:
+            pj = validate_pj(json.load(f))
+        self.save(pj, name=project_dir.name)
         legacy_config.unlink()
         logger.info("migrated project config from %s", project_dir)
         return pj
 
-    def resolve_project(
-        self, ref: str | Path, project_store: "ProjectStore"
-    ) -> tuple[ProjectJSON, Path]:
+    def resolve_project(self, ref: str | Path) -> tuple[ProjectJSON, Path]:
         """Resolve project reference to (PJ, config_path)."""
         ref_path = Path(ref) if isinstance(ref, str) else ref
 
-        # If it's a path to project folder
         if ref_path.exists() and ref_path.is_dir():
             legacy = ref_path / "project.stanok"
             if legacy.exists():
                 pj = self.migrate_from_project(ref_path)
-                config_path = self._get_config_path(ref_path.name)
-                return pj, config_path
+                return pj, self._get_config_path(ref_path.resolve().name)
 
-        # Try as config name in Home
         config_path = self._get_config_path(ref_path.name)
         if config_path.exists():
             return self.load(ref_path.name), config_path
-
-        # Try to find by folder name in Home
-        for pj in self.list():
-            # Check if any template path contains this folder name
-            if ref_path.name in str(pj.filename_template):
-                config_path = self._get_config_path(ref_path.name)
-                if config_path.exists():
-                    return self.load(ref_path.name), config_path
 
         raise StorageError("resolve", [f"project not found: {ref}"])
 
@@ -223,34 +197,30 @@ class ProjectStore:
         """Get recent projects from ApplicationJSON."""
         settings_file = self.home_dir / "settings.json"
         if settings_file.exists():
-            data = self._read_json(settings_file)
-            aj = validate_aj(data)
-            return aj.recent
+            return validate_aj(self._read_json(settings_file)).recent
         return []
 
     def add_recent(self, folder: str, config: str) -> None:
-        """Add or update recent project entry."""
-        settings_file = self.home_dir / "settings.json"
+        """Add or update recent project entry (dedupe, cap 10)."""
         with self._lock:
-            data = {}
-            if (self.home_dir / "settings.json").exists():
-                data = self._read_json(self.home_dir / "settings.json")
+            settings_file = self.home_dir / "settings.json"
+            data = self._read_json(settings_file) if settings_file.exists() else {}
             aj = validate_aj(data)
-
-            # Remove existing entry with same (folder, config)
             key = (folder, config)
             aj.recent = [r for r in aj.recent if (r.folder, r.config) != key]
-            # Add new at front
-            aj.recent.insert(0, RecentItem(folder=folder, config=config, opened_at=datetime.now()))
-            # Cap at 10
-            aj.recent = aj.recent[:10]
-
-            self._atomic_write_json(self.home_dir / "settings.json", aj.model_dump(mode="json"))
+            # Append at end (file order oldest-first; validator reverses on read)
+            aj.recent.append(
+                RecentItem(
+                    folder=folder, config=config, opened_at=datetime.now()
+                )
+            )
+            aj.recent = aj.recent[-10:]
+            self._atomic_write_json(
+                self.home_dir / "settings.json", aj.model_dump(mode="json")
+            )
             logger.info("updated recent projects, count=%d", len(aj.recent))
 
 
-def resolve_project(
-    ref: str | Path, store: "ProjectStore"
-) -> tuple[ProjectJSON, Path]:
+def resolve_project(ref: str | Path, store: ProjectStore) -> tuple:
     """Convenience function to resolve project reference."""
-    return store.resolve_project(ref, store)
+    return store.resolve_project(ref)

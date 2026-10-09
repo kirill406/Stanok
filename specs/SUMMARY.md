@@ -5,7 +5,6 @@
 
 ## Active
 
-- `003-core-resolve` — резолв строк Excel + PJ → Filling JSON; режимы sequential/circular/constant; счётчики; resume.
 - `006-core-generate` — оркестрация генерации end-to-end: tables → resolve → render → docx.
 
 ## Done
@@ -13,6 +12,8 @@
 - `001-core-tables` — чтение Excel, валидация заголовков, нормировка строк.
 - `002-core-schema` — Pydantic-модели PJ/AJ/FJ, валидация/нормализация/миграции, тесты.
 - `005-core-storage` — ProjectStore, атомарная запись, Home, recent.
+- `003-core-resolve` — строки + PJ → Filling JSON, режимы, счётчики.
+- `004-core-render` — Filling JSON → docx, run-merge, строгий режим.
 
 ## Conventions
 

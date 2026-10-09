@@ -1,6 +1,6 @@
 # Спецификация: 003-core-resolve — Строки Excel + PJ → Filling JSON
 
-**Статус:** Draft
+**Статус:** done
 **Версия:** 0.1.0
 **Фаза:** 1 (Core Engine)
 **Зависит от:** 001-core-tables (ExcelReader), 002-core-schema (PJ/AJ/FJ модели)

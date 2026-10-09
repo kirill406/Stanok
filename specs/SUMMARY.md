@@ -5,7 +5,7 @@
 
 ## Active
 
-- `007-gui-strings` — единый модуль русских строк, без хардкода.
+- `008-gui-main` — главное окно: проект, шаблоны, запуск, прогресс.
 
 ## Done
 
@@ -15,6 +15,7 @@
 - `004-core-render` — Filling JSON → docx, run-merge, строгий режим.
 - `005-core-storage` — ProjectStore, атомарная запись, Home, recent.
 - `006-core-generate` — оркестрация генерации: GenerateCommand, отчёт, resume.
+- `007-gui-strings` — STRINGS, миграция 19 литералов, AST-охранник.
 
 ## Conventions
 

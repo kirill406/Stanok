@@ -12,6 +12,7 @@
 - `engine.render` + `xmlops`: Filling → docx; run-merge с сохранением форматирования, `\n` → разрывы, таблицы (включая вложенные); строгий режим (неизвестное поле → `RenderError`)
 - `services.storage`: `ProjectStore` (атомарная запись tmp+fsync+rename+`.bak`, миграция в Home, recent ≤ 10 с дедупом, защита путей)
 - `services.generate`: `generate_documents(cmd)` — пайплайн tables → resolve → render → `Результат/`; `GenerateCommand`/`GenerateReport`; счётчики `last += created`, resume, `max_docs`, уникальные имена `(1)`, построчные ошибки в отчёт; CLI `python run.py <проект>`
+- `gui.strings`: `STRINGS` — единый модуль пользовательских строк (NFR-3); AST-тест запрещает кириллические литералы в `src/` вне него
 - Тесты: `tests/tables/`, `tests/engine/test_schema.py`, `tests/engine/test_resolve.py` (покрытие движка ~99%)
 
 ### Исправлено

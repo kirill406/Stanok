@@ -51,6 +51,7 @@ class MainWindow(QMainWindow):
     # -- UI construction -------------------------------------------------
     def _build_ui(self) -> None:
         self.setWindowTitle(STRINGS.MAIN_TITLE)
+        self.resize(900, 650)
         root = QWidget(self)
         layout = QVBoxLayout(root)
 

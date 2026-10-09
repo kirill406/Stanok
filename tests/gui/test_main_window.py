@@ -1,6 +1,6 @@
 # Copyright (C) 2026 Kirill Borovoy
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Offscreen tests for MainWindow + GenerateWorker."""
+"""Offscreen tests for Window 1 (MainWindow) + GenerateWorker."""
 
 import os
 
@@ -8,7 +8,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
 from PyQt5.QtCore import QEventLoop, QTimer
-from PyQt5.QtWidgets import QApplication, QMessageBox
+from PyQt5.QtWidgets import QApplication, QFileDialog, QMessageBox
 
 from stanok.gui.main_window import MainWindow
 from stanok.gui.strings import STRINGS
@@ -42,49 +42,123 @@ def _await_report(worker, timeout_ms=15000):
     return box
 
 
+def _await_queue(win, timeout_ms=20000):
+    """Pump events until window-1 queue dialog closes."""
+    loop = QEventLoop()
+    poll = QTimer()
+    poll.timeout.connect(lambda: win._progress_dialog is None and loop.quit())
+    poll.start(50)
+    QTimer.singleShot(timeout_ms, loop.quit)
+    loop.exec_()
+    poll.stop()
+
+
 def test_window_shows_recent(qapp, tmp_path, store):
     store.add_recent(str(tmp_path / "a"), "a")
     store.add_recent(str(tmp_path / "b"), "b")
     win = MainWindow(store=store)
     assert win.windowTitle() == STRINGS.MAIN_TITLE
     assert win.recent_list.count() == 2
-    assert win.generate_btn.text() == STRINGS.MAIN_GENERATE
+    assert win.generate_all_btn.text() == STRINGS.MAIN_GENERATE_ALL
+    assert win.settings_btn.text() == STRINGS.MAIN_SETTINGS
     win.close()
 
 
-def test_select_project_fills_templates(qapp, tmp_path, store):
+def test_browse_adds_project(qapp, tmp_path, store, monkeypatch):
     folder = make_project(tmp_path / "proj")
+    monkeypatch.setattr(
+        QFileDialog, "getExistingDirectory", lambda *a, **k: str(folder)
+    )
     win = MainWindow(store=store)
-    win._load_project(str(folder))
-    assert win._project_ref == str(folder)
-    assert [win.template_combo.itemText(i) for i in range(win.template_combo.count())] == [
-        "Договор"
-    ]
-    assert "data.xlsx" in win.source_label.text()
+    win._on_browse()
+    assert win.recent_list.count() == 1
+    assert (store.home_dir / "proj.stanok").exists()
     win.close()
 
 
-def test_broken_project_shows_error(qapp, tmp_path, store, monkeypatch):
+def test_browse_broken_shows_error(qapp, tmp_path, store, monkeypatch):
     shown = []
+    monkeypatch.setattr(QMessageBox, "critical", lambda *a: shown.append(a[-1]))
     monkeypatch.setattr(
-        QMessageBox, "critical", lambda *a: shown.append(a[-1])
+        QFileDialog, "getExistingDirectory", lambda *a, **k: str(tmp_path / "nope")
     )
     win = MainWindow(store=store)
-    win._load_project("nope")
-    assert shown, "error dialog not shown"
-    assert win.isEnabled()
-    assert win._project_ref is None
+    win._on_browse()
+    assert shown
     win.close()
 
 
-def test_generate_without_project_shows_error(qapp, tmp_path, store, monkeypatch):
-    shown = []
+def test_row_click_opens_window2_hook(qapp, tmp_path, store, monkeypatch):
+    opened = []
     monkeypatch.setattr(
-        QMessageBox, "critical", lambda *a: shown.append(a[-1])
+        MainWindow, "_open_project_dialog", lambda self, ref: opened.append(ref)
     )
+    folder = make_project(tmp_path / "proj")
+    store.add_recent(str(folder), "proj")
     win = MainWindow(store=store)
-    win._on_generate()
-    assert shown == [STRINGS.MAIN_NO_PROJECT]
+    win._on_row_clicked(win.recent_list.item(0))
+    assert opened == [str(folder)]
+    win.close()
+
+
+def test_row_click_stub_without_009(qapp, tmp_path, store, monkeypatch):
+    infos = []
+    monkeypatch.setattr(QMessageBox, "information", lambda *a: infos.append(a[-1]))
+    folder = make_project(tmp_path / "proj")
+    store.add_recent(str(folder), "proj")
+    win = MainWindow(store=store)
+    win._on_row_clicked(win.recent_list.item(0))
+    assert infos == [STRINGS.MAIN_PROJECT_TBD]
+    win.close()
+
+
+def test_settings_stub(qapp, tmp_path, store, monkeypatch):
+    infos = []
+    monkeypatch.setattr(QMessageBox, "information", lambda *a: infos.append(a[-1]))
+    win = MainWindow(store=store)
+    win._on_settings()
+    assert infos == [STRINGS.MAIN_SETTINGS_STUB]
+    win.close()
+
+
+def test_generate_one_end_to_end(qapp, tmp_path, store, monkeypatch):
+    infos = []
+    monkeypatch.setattr(QMessageBox, "information", lambda *a: infos.append(a[-1]))
+    folder = make_project(tmp_path / "proj", rows=(("Иван", 100),))
+    store.add_recent(str(folder), "proj")
+    win = MainWindow(store=store)
+    win._on_generate_one(str(folder))
+    _await_queue(win)
+    assert infos and "создано 1" in infos[0]
+    assert win.generate_all_btn.isEnabled()
+    assert (folder / "Результат" / "Договор_Иван_1.docx").exists()
+    win.close()
+
+
+def test_generate_all_two_projects(qapp, tmp_path, store, monkeypatch):
+    infos = []
+    monkeypatch.setattr(QMessageBox, "information", lambda *a: infos.append(a[-1]))
+    for name in ("p1", "p2"):
+        folder = make_project(tmp_path / name, rows=(("Иван", 100),))
+        store.add_recent(str(folder), name)
+    win = MainWindow(store=store)
+    win._on_generate_all()
+    _await_queue(win)
+    assert infos and "p1" in infos[0] and "p2" in infos[0]
+    win.close()
+
+
+def test_generate_all_broken_continues(qapp, tmp_path, store, monkeypatch):
+    infos = []
+    monkeypatch.setattr(QMessageBox, "information", lambda *a: infos.append(a[-1]))
+    good = make_project(tmp_path / "good", rows=(("Иван", 100),))
+    store.add_recent(str(good), "good")
+    store.add_recent(str(tmp_path / "gone"), "gone")
+    win = MainWindow(store=store)
+    win._on_generate_all()
+    _await_queue(win)
+    assert infos and "Ошибка" in infos[0]
+    assert (good / "Результат" / "Договор_Иван_1.docx").exists()
     win.close()
 
 
@@ -131,20 +205,3 @@ def test_worker_cancel_after_first(qapp, tmp_path, store):
     box = _await_report(worker)
     assert "failed" not in box
     assert box["report"].created == 1
-
-
-def test_window_generate_end_to_end(qapp, tmp_path, store, monkeypatch):
-    infos = []
-    monkeypatch.setattr(
-        QMessageBox, "information", lambda *a: infos.append(a[-1])
-    )
-    folder = make_project(tmp_path / "proj")
-    win = MainWindow(store=store)
-    win._load_project(str(folder))
-    win._on_generate()
-    box = _await_report(win._worker)
-    assert "failed" not in box
-    assert infos and "создано 2" in infos[0]
-    assert win.generate_btn.isEnabled()
-    assert win.recent_list.count() == 1
-    win.close()

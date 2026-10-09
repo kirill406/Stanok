@@ -1,6 +1,6 @@
 # Copyright (C) 2026 Kirill Borovoy
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Main window: pick project/template, run generation, show progress/result."""
+"""Window 1: recent projects, per-project/all generation, settings stub."""
 
 from __future__ import annotations
 
@@ -9,9 +9,6 @@ from pathlib import Path
 
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
-    QCheckBox,
-    QComboBox,
-    QFileDialog,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -22,9 +19,9 @@ from PyQt5.QtWidgets import (
     QProgressBar,
     QProgressDialog,
     QPushButton,
-    QSpinBox,
     QVBoxLayout,
     QWidget,
+    QFileDialog,
 )
 
 from ..services.generate import GenerateCommand, GenerateReport
@@ -41,9 +38,13 @@ class MainWindow(QMainWindow):
     def __init__(self, store: ProjectStore | None = None, parent=None) -> None:
         super().__init__(parent)
         self._store = store or ProjectStore()
-        self._project_ref: str | None = None
         self._worker: GenerateWorker | None = None
         self._progress_dialog: QProgressDialog | None = None
+        self._queue: list[str] = []
+        self._queue_total = 0
+        self._queue_results: list[tuple[str, GenerateReport | str]] = []
+        self._cancel_requested = False
+        self._last_started = ""
         self._build_ui()
         self.refresh_recent()
 
@@ -54,39 +55,24 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(root)
 
         group = QGroupBox(STRINGS.MAIN_PROJECT_GROUP, root)
-        grid = QVBoxLayout(group)
-        row = QHBoxLayout()
+        group_layout = QVBoxLayout(group)
         self.recent_list = QListWidget(group)
-        self.recent_list.itemClicked.connect(self._on_recent_clicked)
-        row.addWidget(self.recent_list, 1)
+        self.recent_list.itemClicked.connect(self._on_row_clicked)
+        group_layout.addWidget(self.recent_list)
+
+        buttons = QHBoxLayout()
+        self.generate_all_btn = QPushButton(STRINGS.MAIN_GENERATE_ALL, group)
+        self.generate_all_btn.setStyleSheet("background-color: #2e7d32; color: white;")
+        self.generate_all_btn.clicked.connect(self._on_generate_all)
+        buttons.addWidget(self.generate_all_btn)
         self.browse_btn = QPushButton(STRINGS.MAIN_BROWSE, group)
         self.browse_btn.clicked.connect(self._on_browse)
-        row.addWidget(self.browse_btn)
-        grid.addLayout(row)
-
-        form = QHBoxLayout()
-        form.addWidget(QLabel(STRINGS.MAIN_TEMPLATE, group))
-        self.template_combo = QComboBox(group)
-        form.addWidget(self.template_combo, 1)
-        form.addWidget(QLabel(STRINGS.MAIN_SOURCE, group))
-        self.source_label = QLabel("-", group)
-        form.addWidget(self.source_label, 1)
-        grid.addLayout(form)
-
-        opts = QHBoxLayout()
-        self.resume_check = QCheckBox(STRINGS.MAIN_RESUME, group)
-        opts.addWidget(self.resume_check)
-        opts.addWidget(QLabel(STRINGS.MAIN_LIMIT, group))
-        self.limit_spin = QSpinBox(group)
-        self.limit_spin.setRange(0, 1_000_000)
-        opts.addWidget(self.limit_spin)
-        opts.addStretch(1)
-        grid.addLayout(opts)
+        buttons.addWidget(self.browse_btn)
+        self.settings_btn = QPushButton(STRINGS.MAIN_SETTINGS, group)
+        self.settings_btn.clicked.connect(self._on_settings)
+        buttons.addWidget(self.settings_btn)
+        group_layout.addLayout(buttons)
         layout.addWidget(group)
-
-        self.generate_btn = QPushButton(STRINGS.MAIN_GENERATE, root)
-        self.generate_btn.clicked.connect(self._on_generate)
-        layout.addWidget(self.generate_btn)
 
         self.progress_bar = QProgressBar(root)
         self.progress_bar.setRange(0, 100)
@@ -96,54 +82,95 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(root)
         self.statusBar().showMessage(STRINGS.MAIN_STATUS_READY)
 
-    # -- project selection ------------------------------------------------
+    # -- project list -----------------------------------------------------
     def refresh_recent(self) -> None:
-        """Reload recent-projects list from ApplicationJSON."""
+        """Reload recent-projects list, one row per project + button."""
         self.recent_list.clear()
         for item in self._store.get_recent():
             label = f"{item.folder} [{item.config}]"
-            entry = QListWidgetItem(label, self.recent_list)
+            entry = QListWidgetItem(self.recent_list)
             entry.setData(Qt.UserRole, item.folder)
+            row = QWidget()
+            row_layout = QHBoxLayout(row)
+            row_layout.setContentsMargins(4, 2, 4, 2)
+            name = QLabel(label, row)
+            row_layout.addWidget(name, 1)
+            btn = QPushButton(STRINGS.MAIN_GENERATE, row)
+            btn.clicked.connect(
+                lambda _checked=False, ref=item.folder: self._on_generate_one(ref)
+            )
+            row_layout.addWidget(btn)
+            entry.setSizeHint(row.sizeHint())
+            self.recent_list.addItem(entry)
+            self.recent_list.setItemWidget(entry, row)
 
     def _on_browse(self) -> None:
         folder = QFileDialog.getExistingDirectory(self, STRINGS.MAIN_BROWSE)
-        if folder:
-            self._load_project(folder)
-
-    def _on_recent_clicked(self, item: QListWidgetItem) -> None:
-        self._load_project(item.data(Qt.UserRole))
-
-    def _load_project(self, ref: str) -> None:
+        if not folder:
+            return
         try:
-            pj, _ = self._store.resolve_project(ref)
+            self._store.resolve_project(folder)
         except Exception as e:
-            logger.warning(f"open project {ref}: {e}", exc_info=True)
+            logger.warning(f"open project {folder}: {e}", exc_info=True)
             self._show_error(f"{STRINGS.MAIN_ERROR_TITLE}: {e}")
             return
-        self._project_ref = ref
-        self.template_combo.clear()
-        self.template_combo.addItems(list(pj.templates))
-        self.source_label.setText(pj.data_sources[0].file if pj.data_sources else "-")
-        self.statusBar().showMessage(STRINGS.MAIN_STATUS_READY)
+        resolved = str(Path(folder).resolve())
+        self._store.add_recent(resolved, Path(folder).resolve().name)
+        self.refresh_recent()
 
-    # -- generation --------------------------------------------------------
-    def _on_generate(self) -> None:
-        if not self._project_ref:
-            self._show_error(STRINGS.MAIN_NO_PROJECT)
+    def _on_row_clicked(self, item: QListWidgetItem) -> None:
+        self._open_project_dialog(item.data(Qt.UserRole))
+
+    def _open_project_dialog(self, ref: str) -> None:
+        """Open window 2 (009); stub until ProjectDialog lands."""
+        try:
+            from .project_dialog import ProjectDialog
+        except ImportError:
+            QMessageBox.information(self, STRINGS.MAIN_TITLE, STRINGS.MAIN_PROJECT_TBD)
             return
-        limit = self.limit_spin.value()
-        cmd = GenerateCommand(
-            project_ref=self._project_ref,
-            template=self.template_combo.currentText() or None,
-            max_docs=limit if limit > 0 else None,
-            resume=self.resume_check.isChecked(),
+        dialog = ProjectDialog(ref, self._store, self)
+        dialog.exec_()
+        self.refresh_recent()
+
+    def _on_settings(self) -> None:
+        QMessageBox.information(
+            self, STRINGS.MAIN_SETTINGS, STRINGS.MAIN_SETTINGS_STUB
         )
-        self.generate_btn.setEnabled(False)
+
+    # -- generation queue ---------------------------------------------------
+    def _on_generate_one(self, ref: str) -> None:
+        self._start_queue([ref])
+
+    def _on_generate_all(self) -> None:
+        refs = [
+            self.recent_list.item(i).data(Qt.UserRole)
+            for i in range(self.recent_list.count())
+        ]
+        if refs:
+            self._start_queue(refs)
+
+    def _start_queue(self, refs: list[str]) -> None:
+        self._queue = list(refs)
+        self._queue_total = len(refs)
+        self._queue_results = []
+        self._cancel_requested = False
+        self._set_busy(True)
         self._progress_dialog = QProgressDialog(
             STRINGS.MAIN_PROGRESS_TITLE, STRINGS.MAIN_CANCEL, 0, 0, self
         )
         self._progress_dialog.canceled.connect(self._on_cancel)
         self._progress_dialog.show()
+        self._run_next()
+
+    def _run_next(self) -> None:
+        if self._cancel_requested or not self._queue:
+            self._finish_queue()
+            return
+        ref = self._queue.pop(0)
+        self._last_started = ref
+        done = self._queue_total - len(self._queue)
+        self.statusBar().showMessage(f"{ref}: {done}/{self._queue_total}")
+        cmd = GenerateCommand(project_ref=ref)
         self._worker = GenerateWorker(cmd, store=self._store, parent=self)
         self._worker.progressed.connect(self._on_progressed)
         self._worker.finished.connect(self._on_finished)
@@ -151,6 +178,7 @@ class MainWindow(QMainWindow):
         self._worker.start()
 
     def _on_cancel(self) -> None:
+        self._cancel_requested = True
         if self._worker is not None:
             self._worker.request_cancel()
 
@@ -162,37 +190,62 @@ class MainWindow(QMainWindow):
             STRINGS.MAIN_STATUS_RUNNING.format(created=created, total=total)
         )
 
-    def _finish_run(self) -> None:
+    def _on_finished(self, report: GenerateReport) -> None:
+        self._queue_results.append((self._last_started, report))
+        self._run_next()
+
+    def _on_failed(self, message: str) -> None:
+        self._queue_results.append((self._last_started, message))
+        self._run_next()
+
+    def _finish_queue(self) -> None:
         if self._progress_dialog is not None:
             self._progress_dialog.close()
             self._progress_dialog = None
-        self.generate_btn.setEnabled(True)
+        self._set_busy(False)
         self.progress_bar.setValue(0)
         self.statusBar().showMessage(STRINGS.MAIN_STATUS_READY)
-
-    def _on_finished(self, report: GenerateReport) -> None:
-        self._finish_run()
-        if self._project_ref and Path(self._project_ref).is_dir():
-            folder = str(Path(self._project_ref).resolve())
-            self._store.add_recent(folder, Path(self._project_ref).resolve().name)
-            self.refresh_recent()
-        text = STRINGS.APP_DONE.format(
-            created=report.created,
-            skipped=report.skipped,
-            errors=len(report.errors),
-            elapsed=f"{report.elapsed:.1f}",
-        )
-        if report.errors:
-            details = "\n".join(f"{i}: {msg}" for i, msg in report.errors)
+        self.refresh_recent()
+        if self._queue_total == 1 and len(self._queue_results) == 1:
+            ref, result = self._queue_results[0]
+            if isinstance(result, str):
+                self._show_error(f"{STRINGS.MAIN_ERROR_TITLE}: {result}")
+            else:
+                text = STRINGS.APP_DONE.format(
+                    created=result.created,
+                    skipped=result.skipped,
+                    errors=len(result.errors),
+                    elapsed=f"{result.elapsed:.1f}",
+                )
+                if result.errors:
+                    details = "\n".join(f"{i}: {msg}" for i, msg in result.errors)
+                    QMessageBox.information(
+                        self, STRINGS.MAIN_DONE_TITLE, f"{text}\n\n{details}"
+                    )
+                else:
+                    QMessageBox.information(self, STRINGS.MAIN_DONE_TITLE, text)
+        elif self._queue_results:
+            lines = []
+            for ref, result in self._queue_results:
+                if isinstance(result, str):
+                    lines.append(f"{ref}: {STRINGS.MAIN_ERROR_TITLE}: {result}")
+                else:
+                    lines.append(
+                        f"{ref}: "
+                        + STRINGS.APP_DONE.format(
+                            created=result.created,
+                            skipped=result.skipped,
+                            errors=len(result.errors),
+                            elapsed=f"{result.elapsed:.1f}",
+                        )
+                    )
             QMessageBox.information(
-                self, STRINGS.MAIN_DONE_TITLE, f"{text}\n\n{details}"
+                self, STRINGS.MAIN_SUMMARY_TITLE, "\n".join(lines)
             )
-        else:
-            QMessageBox.information(self, STRINGS.MAIN_DONE_TITLE, text)
 
-    def _on_failed(self, message: str) -> None:
-        self._finish_run()
-        self._show_error(f"{STRINGS.MAIN_ERROR_TITLE}: {message}")
+    def _set_busy(self, busy: bool) -> None:
+        self.generate_all_btn.setEnabled(not busy)
+        self.browse_btn.setEnabled(not busy)
 
     def _show_error(self, message: str) -> None:
         QMessageBox.critical(self, STRINGS.MAIN_ERROR_TITLE, message)

@@ -1,6 +1,6 @@
 # Спецификация: 005-core-storage — ProjectStore, атомарная запись, Home
 
-**Статус:** Active
+**Статус:** done
 **Версия:** 0.1.0
 **Фаза:** 1 (Core Engine)
 **Зависит от:** 002-core-schema (ProjectJSON), 004-core-render (Document)

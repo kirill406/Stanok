@@ -44,7 +44,7 @@ python run.py
 - `__init__.py` — версия пакета (читается из `pyproject.toml`)
 - `__main__.py` — поддержка `python -m stanok`
 - `engine/` — чистый Python: schema, resolve (планируемые: render, xmlops)
-- `services/` — use cases: (планируемые: generate, projects, storage)
+- `services/` — use cases: storage (ProjectStore); планируемые: generate, projects
 - `gui/` — тонкий Qt-адаптер (планируется)
 - `tables/` — бэкенды чтения таблиц
 

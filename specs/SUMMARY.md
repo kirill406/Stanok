@@ -11,6 +11,7 @@
 
 - `001-core-tables` — чтение Excel, валидация заголовков, нормировка строк.
 - `002-core-schema` — Pydantic-модели PJ/AJ/FJ, валидация/нормализация/миграции, тесты.
+- `005-core-storage` — ProjectStore, атомарная запись, Home, recent.
 
 ## Conventions
 

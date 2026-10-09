@@ -6,6 +6,7 @@
 ## Active
 
 - `003-core-resolve` — резолв строк Excel + PJ → Filling JSON; режимы sequential/circular/constant; счётчики; resume.
+- `006-core-generate` — оркестрация генерации end-to-end: tables → resolve → render → docx.
 
 ## Done
 

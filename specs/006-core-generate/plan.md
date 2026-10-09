@@ -31,10 +31,10 @@ src/stanok/services/
 ## День 2: Core generate — оркестрация
 
 ### 2.1 `generate.py` — скелет
-- `generate_documents(...)` → `GenerateReport`
-- Вызов `resolve_rows` → `render` → `storage.save_document`
-- Обновление PJ: `counters`, `start_row`
-- Атомарное сохранение PJ + документов
+- `generate_documents(cmd: GenerateCommand) -> GenerateReport`
+- Вызов `resolve_rows` → `render` → запись docx в `Результат/` (уникальные имена)
+- Обновление PJ: `counters` (`last += created`), `start_row`
+- `store.save(pj)` — только после прогона, отката файлов нет
 
 ### 2.2 Режимы + лимиты
 - `sequential` / `circular` / `constant` через `resolve_rows`
@@ -45,10 +45,10 @@ src/stanok/services/
 
 ## День 3: Сохранение + ошибки
 
-### 3.1 Атомарное сохранение
-- `storage.save_document(doc, dist)` → атомарная запись
-- `storage.save(pj)` — атомарное сохранение PJ с обновлёнными счётчиками
-- Rollback: при ошибке записи документа — PJ не сохраняется
+### 3.1 Сохранение
+- Запись docx в `Результат/<dist>` через `doc.save` + `_unique_path` (`(1)`, `(2)`)
+- `store.save(pj)` — атомарное сохранение PJ с обновлёнными счётчиками
+- PJ не сохраняется при `created=0`; созданные файлы не откатываются
 
 ### 3.2 Обработка ошибок
 - Одна ошибка → запись в `GenerateReport.errors`, продолжение

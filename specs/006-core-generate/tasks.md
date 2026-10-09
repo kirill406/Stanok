@@ -13,11 +13,11 @@
 
 ## 2. Core generate — оркестрация
 
-- [ ] 2.1 Функция `generate_documents(...)` → `GenerateReport`
+- [ ] 2.1 Функция `generate_documents(cmd)` → `GenerateReport`, `GenerateCommand`
 - [ ] 2.2 Внутренняя функция: обработка одного FJ → render → save
-- [ ] 2.3 Вызов `resolve_rows` → `render` → `storage.save_document`
-- [ ] 2.4 Обновление PJ: `counters`, `start_row`
-- [ ] 2.5 Атомарное сохранение PJ + документов (rollback при ошибке)
+- [ ] 2.3 Вызов `resolve_rows` → `render` → запись docx в `Результат/`
+- [ ] 2.4 Обновление PJ: `counters` (`last += created`), `start_row`
+- [ ] 2.5 `store.save(pj)` только после прогона; `_unique_path` для коллизий
 
 ---
 
@@ -33,8 +33,8 @@
 
 ## 4. Сохранение + ошибки
 
-- [ ] 4.1 Атомарное сохранение: `storage.save_document` + `storage.save`
-- [ ] 4.2 Rollback: при ошибке записи документа — PJ не сохраняется
+- [ ] 4.1 Запись docx + `store.save(pj)` после прогона
+- [ ] 4.2 При `created=0` PJ не сохраняется; файлы не откатываются
 - [ ] 4.3 Обработка ошибок: одна ошибка → запись в `GenerateReport.errors`, продолжение
 - [ ] 4.4 Логирование каждого этапа (DEBUG/INFO)
 

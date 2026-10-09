@@ -20,7 +20,9 @@ from PyQt5.QtWidgets import (
     QVBoxLayout,
 )
 
+from ..services.generate import TemplateError
 from ..services.storage import ProjectStore
+from ..engine.schema import FieldDef, ProjectJSON
 from ..tables.excel import ExcelReader
 from .strings import STRINGS
 
@@ -53,12 +55,15 @@ class FieldsDialog(QDialog):
         pj, config_path = self._store.resolve_project(project_ref)
         self._pj = pj
         self._config_name = config_path.stem
-        self._template_def = pj.templates[template_name]
+        try:
+            self._template_def = pj.templates[template_name]
+        except KeyError:
+            raise TemplateError(f"template not found: {template_name}") from None
         self._preview_row = self._read_first_row(pj)
         self._build_ui()
 
     # -- data -----------------------------------------------------------------
-    def _read_first_row(self, pj) -> dict:
+    def _read_first_row(self, pj: ProjectJSON) -> dict:
         """First data row for previews; empty dict when unreadable."""
         ref_path = Path(self._project_ref)
         if not (ref_path.exists() and ref_path.is_dir()):
@@ -72,8 +77,8 @@ class FieldsDialog(QDialog):
             logger.warning(f"preview row for {self._project_ref}: {e}", exc_info=True)
             return {}
 
-    def _preview_text(self, field_name: str, field_def) -> str:
-        source = str(field_def.source.value if hasattr(field_def.source, "value") else field_def.source)
+    def _preview_text(self, field_name: str, field_def: FieldDef) -> str:
+        source = field_def.source.value
         if source == "constant":
             return str(field_def.value)
         if source == "table":
@@ -102,7 +107,7 @@ class FieldsDialog(QDialog):
         fields = list(self._template_def.fields.items())
         self.table.setRowCount(len(fields))
         for row, (name, fdef) in enumerate(fields):
-            source = str(fdef.source.value if hasattr(fdef.source, "value") else fdef.source)
+            source = fdef.source.value
             name_item = QTableWidgetItem(name)
             name_item.setFlags(name_item.flags() & ~Qt.ItemIsEditable)
             self.table.setItem(row, 0, name_item)

@@ -122,3 +122,11 @@ def test_close_dirty_cancel_stays(qapp, tmp_path, store, monkeypatch):
 def test_open_missing_project_raises(qapp, tmp_path, store):
     with pytest.raises(StorageError):
         FieldsDialog("nope", "Договор", store=store)
+
+
+def test_open_missing_template_raises(qapp, tmp_path, store):
+    from stanok.services.generate import TemplateError
+
+    folder = make_project(tmp_path / "proj")
+    with pytest.raises(TemplateError, match="template not found"):
+        FieldsDialog(str(folder), "Чужой", store=store)

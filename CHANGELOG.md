@@ -3,7 +3,7 @@
 Все заметные изменения в этом проекте документируются в этом файле.
 Формат основан на [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/).
 
-## [Unreleased]
+## [0.1.0] — 2026-10-10
 
 ### Добавлено
 - `tables`: чтение Excel (`ExcelReader`, протокол `TableReader`, `TableReadError`); валидация заголовков, нормировка строк

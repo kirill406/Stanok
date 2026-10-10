@@ -366,3 +366,208 @@ def test_get_recent_no_settings(store):
     """Test get_recent without settings file."""
     (store.home_dir / "settings.json").unlink()
     assert store.get_recent() == []
+
+def _src_files(tmp_path, name="src"):
+    """Build one xlsx + one docx with {{ФИО}}/{{Сумма}} placeholders."""
+    from docx import Document as DocxDocument
+    from openpyxl import Workbook
+
+    src = tmp_path / name
+    src.mkdir()
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["ФИО", "Сумма"])
+    ws.append(["Иван", 100])
+    xlsx = src / "data.xlsx"
+    wb.save(xlsx)
+    doc = DocxDocument()
+    doc.add_paragraph("Договор {{ФИО}} на сумму {{Сумма}}")
+    tpl = src / "tpl.docx"
+    doc.save(tpl)
+    return xlsx, tpl
+
+
+def test_init_copies_and_builds_pj(store, tmp_path):
+    xlsx, tpl = _src_files(tmp_path)
+    pj = store.init_project(tmp_path / "proj", "nov", [xlsx], [tpl])
+    assert (tmp_path / "proj" / "Данные" / "data.xlsx").is_file()
+    assert (tmp_path / "proj" / "Шаблоны" / "tpl.docx").is_file()
+    assert pj.templates["tpl"].file == "Шаблоны/tpl.docx"
+    assert pj.templates["tpl"].fields["ФИО"].source == "table"
+    assert pj.data_sources[0].file == "Данные/data.xlsx"
+    assert pj.counters == {}
+    assert (store.home_dir / "nov.stanok").is_file()
+    assert any(r.config == "nov" for r in store.get_recent())
+
+
+def test_init_no_copy_links_in_place(store, tmp_path):
+    xlsx, tpl = _src_files(tmp_path)
+    folder = tmp_path / "proj"
+    (folder / "Данные").mkdir(parents=True)
+    (folder / "Шаблоны").mkdir(parents=True)
+    in_xlsx = folder / "Данные" / "data.xlsx"
+    in_tpl = folder / "Шаблоны" / "tpl.docx"
+    xlsx.rename(in_xlsx)
+    tpl.rename(in_tpl)
+    pj = store.init_project(folder, "loc", [in_xlsx], [in_tpl], copy_files=False)
+    assert pj.data_sources[0].file == "Данные/data.xlsx"
+    assert pj.templates["tpl"].file == "Шаблоны/tpl.docx"
+
+
+def test_init_no_copy_outside_rejected(store, tmp_path):
+    xlsx, tpl = _src_files(tmp_path)
+    with pytest.raises(StorageError, match="outside project"):
+        store.init_project(
+            tmp_path / "proj", "out", [xlsx], [tpl], copy_files=False
+        )
+
+
+def test_init_name_taken_rejected(store, tmp_path, sample_pj):
+    store.save(sample_pj, name="taken")
+    xlsx, tpl = _src_files(tmp_path)
+    with pytest.raises(StorageError, match="already exists"):
+        store.init_project(tmp_path / "proj", "taken", [xlsx], [tpl])
+    with pytest.raises(StorageError, match="invalid project name"):
+        store.init_project(tmp_path / "proj", "  ", [xlsx], [tpl])
+
+
+def test_init_copy_collision_uniquified(store, tmp_path):
+    xlsx, tpl = _src_files(tmp_path, "a")
+    xlsx_b, _ = _src_files(tmp_path, "b")
+    pj = store.init_project(tmp_path / "proj", "dup", [xlsx, xlsx_b], [tpl])
+    assert pj.data_sources[0].file == "Данные/data.xlsx"
+    assert pj.data_sources[1].file == "Данные/data (1).xlsx"
+
+
+def test_init_broken_template_aborts(store, tmp_path):
+    xlsx, _ = _src_files(tmp_path)
+    bad = tmp_path / "src" / "bad.docx"
+    bad.write_text("not a zip")
+    with pytest.raises(StorageError, match="cannot read template bad.docx"):
+        store.init_project(tmp_path / "proj", "bad", [xlsx], [bad])
+
+
+def test_init_placeholders_from_table(store, tmp_path):
+    from docx import Document as DocxDocument
+
+    xlsx, _ = _src_files(tmp_path)
+    doc = DocxDocument()
+    table = doc.add_table(rows=1, cols=1)
+    table.cell(0, 0).text = "Сумма {{Итого}}"
+    tpl = tmp_path / "src" / "tab.docx"
+    doc.save(tpl)
+    pj = store.init_project(tmp_path / "proj", "tab", [xlsx], [tpl])
+    assert set(pj.templates["tab"].fields) == {"Итого"}
+
+
+def test_init_second_copy_collision(store, tmp_path):
+    xlsx, tpl = _src_files(tmp_path, "a")
+    _src_files(tmp_path, "b")
+    _src_files(tmp_path, "c")
+    pj = store.init_project(
+        tmp_path / "proj", "col",
+        [xlsx, tmp_path / "b" / "data.xlsx", tmp_path / "c" / "data.xlsx"],
+        [tpl],
+    )
+    assert [ds.file for ds in pj.data_sources] == [
+        "Данные/data.xlsx",
+        "Данные/data (1).xlsx",
+        "Данные/data (2).xlsx",
+    ]
+
+
+def test_init_empty_lists_rejected(store, tmp_path):
+    xlsx, tpl = _src_files(tmp_path)
+    with pytest.raises(StorageError, match="no Excel"):
+        store.init_project(tmp_path / "p1", "e1", [], [tpl])
+    with pytest.raises(StorageError, match="no Word"):
+        store.init_project(tmp_path / "p2", "e2", [xlsx], [])
+
+
+def test_init_wrong_suffix_rejected(store, tmp_path):
+    xlsx, _ = _src_files(tmp_path)
+    bad = tmp_path / "src" / "notes.txt"
+    bad.write_text("hi")
+    with pytest.raises(StorageError, match="wrong file type"):
+        store.init_project(tmp_path / "proj", "ws", [bad], [xlsx])
+
+
+def test_init_missing_source_rejected(store, tmp_path):
+    _, tpl = _src_files(tmp_path)
+    with pytest.raises(StorageError, match="file not found"):
+        store.init_project(
+            tmp_path / "proj", "miss", [tmp_path / "src" / "gone.xlsx"], [tpl]
+        )
+
+
+def test_init_duplicate_template_stems(store, tmp_path):
+    from docx import Document as DocxDocument
+
+    folder = tmp_path / "proj"
+    (folder / "Данные").mkdir(parents=True)
+    xlsx, _ = _src_files(tmp_path)
+    xlsx.rename(folder / "Данные" / "data.xlsx")
+    for sub in ("a", "b"):
+        d = folder / "Шаблоны" / sub
+        d.mkdir(parents=True)
+        doc = DocxDocument()
+        doc.add_paragraph("Hi {{Имя}}")
+        doc.save(d / "tpl.docx")
+    pj = store.init_project(
+        folder, "dst",
+        [folder / "Данные" / "data.xlsx"],
+        [folder / "Шаблоны" / "a" / "tpl.docx",
+         folder / "Шаблоны" / "b" / "tpl.docx"],
+        copy_files=False,
+    )
+    assert set(pj.templates) == {"tpl", "tpl (2)"}
+
+
+def test_init_mkdir_failure(store, tmp_path, monkeypatch):
+    import pathlib
+
+    xlsx, tpl = _src_files(tmp_path)
+    real_mkdir = pathlib.Path.mkdir
+
+    def boom(self, *a, **k):
+        raise OSError("denied")
+
+    monkeypatch.setattr(pathlib.Path, "mkdir", boom)
+    try:
+        with pytest.raises(StorageError, match="cannot create folder"):
+            store.init_project(tmp_path / "proj", "mk", [xlsx], [tpl])
+    finally:
+        monkeypatch.setattr(pathlib.Path, "mkdir", real_mkdir)
+
+
+def test_init_copy_failure(store, tmp_path, monkeypatch):
+    import shutil
+
+    xlsx, tpl = _src_files(tmp_path)
+
+    def boom(*a, **k):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(shutil, "copy2", boom)
+    with pytest.raises(StorageError, match="cannot copy"):
+        store.init_project(tmp_path / "proj", "cp", [xlsx], [tpl])
+
+
+def test_init_no_copy_wrong_subdir(store, tmp_path):
+    xlsx, tpl = _src_files(tmp_path)
+    folder = tmp_path / "proj"
+    (folder / "Данные").mkdir(parents=True)
+    xlsx.rename(folder / "Данные" / "data.xlsx")
+    misplaced = folder / "tpl.docx"
+    tpl.rename(misplaced)
+    with pytest.raises(StorageError, match="must be in"):
+        store.init_project(
+            folder, "wd", [folder / "Данные" / "data.xlsx"], [misplaced],
+            copy_files=False,
+        )
+    ghost = folder / "Шаблоны" / "ghost.docx"
+    with pytest.raises(StorageError, match="file not found"):
+        store.init_project(
+            folder, "gh", [folder / "Данные" / "data.xlsx"], [ghost],
+            copy_files=False,
+        )

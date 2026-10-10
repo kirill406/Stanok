@@ -19,6 +19,7 @@
 - `app.create_gui`: общий `ProjectStore`, bootstrap без `exec_`; сквозной GUI-тест 1→2→3→docx; CLI-регрессия в тестах
 - `engine.resolve` + `services.generate` (012): `limit` в `resolve_rows` (честный circular/constant), курсор по режимам, `resumed_from` в отчёте
 - `services.generate` + GUI (013): прогон по всем Excel-источникам (FR-7), сквозные счётчики, курсоры на источник, `--source` в CLI, комбобокс источников в окне 2
+- `services.storage` + GUI (014): `init_project` — создание проекта (FR-12), копирование в `Данные/`/`Шаблоны/` с уникализацией, PJ из плейсхолдеров docx, окно 4 из окна 1
 - Тесты: `tests/tables/`, `tests/engine/test_schema.py`, `tests/engine/test_resolve.py` (покрытие движка ~99%)
 
 ### Исправлено

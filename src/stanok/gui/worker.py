@@ -41,7 +41,7 @@ class GenerateWorker(QThread):
         return self._cancel
 
     def run(self) -> None:
-        self._execute()
+        self._execute()  # pragma: no cover - QThread body untraceable, see _execute test
 
     def _execute(self) -> None:
         """Generate body (also callable directly in tests, same-thread)."""

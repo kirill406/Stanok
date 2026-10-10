@@ -162,15 +162,21 @@ def test_normalize_strips_strings():
     }
 
 
+def test_normalize_tuple_to_list():
+    assert normalize(("a", "  b  ", 1)) == ["a", "b", 1]
+
+
 def test_get_package_version_not_installed(monkeypatch):
-    # Simulate PackageNotFoundError by making pkg_version raise
+    # Patch the bound name (schema.pkg_version), not importlib.metadata.version.
     import importlib.metadata
+
+    import stanok.engine.schema as schema_mod
 
     def raise_not_found(name):
         raise importlib.metadata.PackageNotFoundError(name)
 
-    monkeypatch.setattr(importlib.metadata, "version", raise_not_found)
-    assert schema._get_package_version() == "0.0.0"
+    monkeypatch.setattr(schema_mod, "pkg_version", raise_not_found)
+    assert schema_mod._get_package_version() == "0.0.0"
 
 
 def test_migrate_no_version_update(monkeypatch):

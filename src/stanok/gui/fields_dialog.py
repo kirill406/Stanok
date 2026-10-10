@@ -92,7 +92,7 @@ class FieldsDialog(QDialog):
             )
         if source == "today":
             return STRINGS.FLD_PREVIEW_TODAY.format(today=date.today().isoformat())
-        return str(field_def.value)
+        raise AssertionError(f"unreachable preview source: {source}")  # pragma: no cover - enum-exhaustive
 
     # -- UI construction --------------------------------------------------------
     def _build_ui(self) -> None:

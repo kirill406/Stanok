@@ -2,7 +2,7 @@
 
 > Десктопное приложение: заполняет docx-документы данными из Excel по docx шаблонам.
 
-**Статус:** Draft.
+**Статус:** Pre-alpha (0.1.0): все Must FR-1–FR-14 работают, тесты зелёные.
 
 ## Требования
 
@@ -44,11 +44,11 @@ python run.py
 - `__init__.py` — версия пакета (читается из `pyproject.toml`)
 - `__main__.py` — поддержка `python -m stanok`
 - `engine/` — чистый Python: schema, resolve, render, xmlops
-- `services/` — use cases: storage (ProjectStore), generate (оркестрация); планируемые: projects
-- `gui/` — тонкий Qt-адаптер (окна 1–3, worker, `strings.py`, bootstrap)
+- `services/` — use cases: storage (ProjectStore: конфиги, recent, создание/удаление), generate (оркестрация: режимы, resume, лимиты)
+- `gui/` — тонкий Qt-адаптер: окна 1–5 (main, project, fields, create, settings), worker, `strings.py`, bootstrap
 - `tables/` — бэкенды чтения таблиц
 
-**tests/** — pytest: юнит-тесты движка и таблиц, фикстуры
+**tests/** — pytest (headless Qt): юнит-тесты движка/таблиц/сервисов, GUI-тесты окон, фикстуры
 
 **scripts/** — автоматизация:
 - `pre-commit` — git-хук: trufflehog3 + pytest

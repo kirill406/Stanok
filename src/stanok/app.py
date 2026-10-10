@@ -137,5 +137,5 @@ def create_gui(store=None):
     return qt_app, window
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover - entry guard
     sys.exit(main())

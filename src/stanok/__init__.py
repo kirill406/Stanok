@@ -7,5 +7,5 @@ from importlib.metadata import PackageNotFoundError, version
 try:
     # Single source of truth: version lives in pyproject.toml only.
     __version__ = version("stanok")
-except PackageNotFoundError:  # package not installed (dev without uv sync)
+except PackageNotFoundError:  # pragma: no cover - installed in practice
     __version__ = "0.0.0"

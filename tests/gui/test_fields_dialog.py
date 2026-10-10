@@ -130,3 +130,112 @@ def test_open_missing_template_raises(qapp, tmp_path, store):
     folder = make_project(tmp_path / "proj")
     with pytest.raises(TemplateError, match="template not found"):
         FieldsDialog(str(folder), "Чужой", store=store)
+
+
+def _add_today(folder):
+    pj_path = folder / "project.stanok"
+    data = json.loads(pj_path.read_text())
+    data["templates"]["Договор"]["fields"]["Дата"] = {"source": "today"}
+    pj_path.write_text(json.dumps(data, ensure_ascii=False))
+
+
+def test_today_preview(qapp, tmp_path, store):
+    import datetime
+
+    folder = make_project(tmp_path / "proj")
+    _add_today(folder)
+    dlg = FieldsDialog(str(folder), "Договор", store=store)
+    texts = [dlg.table.item(r, 2).text() for r in range(dlg.table.rowCount())]
+    assert any(datetime.date.today().isoformat() in t for t in texts)
+    dlg.close()
+
+
+def test_preview_nondir_ref(qapp, tmp_path, store):
+    from stanok.services.generate import generate_documents, GenerateCommand
+
+    folder = make_project(tmp_path / "proj")
+    generate_documents(GenerateCommand(project_ref=folder), store=store)
+    store.add_recent(str(folder), "proj")
+    dlg = FieldsDialog("proj", "Договор", store=store)
+    assert dlg._preview_row == {}
+    dlg.close()
+
+
+def test_preview_no_sources(qapp, tmp_path, store):
+    import json as _json
+
+    folder = make_project(tmp_path / "proj")
+    data = _json.loads((folder / "project.stanok").read_text())
+    data["data_sources"] = []
+    (folder / "project.stanok").write_text(_json.dumps(data))
+    dlg = FieldsDialog(str(folder), "Договор", store=store)
+    assert dlg._preview_row == {}
+    dlg.close()
+
+
+def test_preview_read_failure(qapp, tmp_path, store, monkeypatch):
+    import stanok.gui.fields_dialog as fd
+
+    folder = make_project(tmp_path / "proj")
+
+    def boom(self, path):
+        raise OSError("locked")
+
+    monkeypatch.setattr(fd.ExcelReader, "read", boom)
+    dlg = FieldsDialog(str(folder), "Договор", store=store)
+    assert dlg._preview_row == {}
+    dlg.close()
+
+
+def test_save_failure_shows_critical(qapp, tmp_path, store, monkeypatch):
+    folder = make_project(tmp_path / "proj")
+    _add_constant(folder)
+    shown = []
+    monkeypatch.setattr(
+        QMessageBox, "critical", lambda *a: shown.append(a[-1])
+    )
+
+    def boom(*a, **k):
+        raise OSError("read-only")
+
+    dlg = FieldsDialog(str(folder), "Договор", store=store)
+    monkeypatch.setattr(store, "save", boom)
+    dlg._dirty = True
+    dlg._on_save()
+    assert shown
+    assert dlg._dirty
+    dlg.close()
+
+
+def test_dirty_save_failure_stays_open(qapp, tmp_path, store, monkeypatch):
+    folder = make_project(tmp_path / "proj")
+    _add_constant(folder)
+    shown = []
+    monkeypatch.setattr(
+        QMessageBox, "critical", lambda *a: shown.append(a[-1])
+    )
+    monkeypatch.setattr(
+        QMessageBox, "question", lambda *a, **k: QMessageBox.Save
+    )
+
+    def boom(*a, **k):
+        raise OSError("read-only")
+
+    dlg = FieldsDialog(str(folder), "Договор", store=store)
+    monkeypatch.setattr(store, "save", boom)
+    dlg._dirty = True
+    dlg.reject()
+    assert shown
+    dlg.close()
+
+
+def test_preview_text_constant_direct(qapp, tmp_path, store):
+    from stanok.engine.schema import FieldDef
+
+    folder = make_project(tmp_path / "proj")
+    dlg = FieldsDialog(str(folder), "Договор", store=store)
+    assert (
+        dlg._preview_text("Город", FieldDef(source="constant", value="Москва"))
+        == "Москва"
+    )
+    dlg.close()

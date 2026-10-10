@@ -5,7 +5,9 @@
 
 ## Active
 
-- `014-project-create` — диалог создания, копирование файлов, PJ из плейсхолдеров.
+- `015-project-manage` — добавить/удалить шаблон, удалить проект.
+
+## Done
 
 ## Done
 
@@ -22,6 +24,7 @@
 - `011-gui-integration` — create_gui, сквозной тест, CLI-регрессия.
 - `012-batch-resume` — лимит в resolve, курсор по режимам, resumed_from.
 - `013-multi-source` — прогон по всем источникам, сквозные счётчики.
+- `014-project-create` — init_project, копирование файлов, окно 4.
 
 ## Conventions
 

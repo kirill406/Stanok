@@ -144,6 +144,7 @@ class MainWindow(QMainWindow):
 
     def _on_create(self) -> None:
         """Open window 4 (CreateDialog, 014); refresh recent on success."""
+        # Local import: keeps module import light and patchable in tests.
         from .create_dialog import CreateDialog
 
         recent = self._store.get_recent()

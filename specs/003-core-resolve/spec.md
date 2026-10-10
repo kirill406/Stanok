@@ -25,6 +25,7 @@ def resolve_rows(
     rows: list[dict],
     pj: ProjectJSON,
     today: date | None = None,
+    limit: int | None = None,  # 012: лимит документов
 ) -> tuple[list[FillingJSON], dict[str, int]]:
     """Строит Filling JSON для каждой строки данных."""
 ```
@@ -49,9 +50,9 @@ def resolve_rows(
 
 | Режим | Поведение |
 |-------|-----------|
-| `sequential` | По порядку, от `start_row` до конца. После конца — стоп. |
-| `circular` | До FR-17 (лимиты): один круг, как sequential. |
-| `constant` | Первая строка данных (`start_row`), повторяется по числу строк выборки. |
+| `sequential` | По порядку, от `start_row` до конца (или `limit`). После конца — стоп. |
+| `circular` | Цикл по строкам до `limit`; без лимита — один круг, как sequential (012). |
+| `constant` | Первая строка данных (`start_row`), повторяется `limit` раз (без лимита — по числу строк). |
 
 ### 2.4 Продолжение (Resume) — FR-5
 

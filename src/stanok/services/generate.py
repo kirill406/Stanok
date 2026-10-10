@@ -50,6 +50,7 @@ class GenerateReport:
     errors: list[tuple[int, str]] = field(default_factory=list)
     output_paths: list[Path] = field(default_factory=list)
     elapsed: float = 0.0
+    resumed_from: int | None = None  # input cursor; None on fresh start
 
 
 def _unique_path(base: Path) -> Path:
@@ -172,6 +173,7 @@ def generate_documents(
     indexed = [(i, r) for i, r in enumerate(rows[start:], start)]
     nonempty = [(i, r) for i, r in indexed if not _is_empty_row(r)]
     report.skipped = len(indexed) - len(nonempty)
+    report.resumed_from = start or None
     if not nonempty:
         logger.info("generate finished: only empty rows")
         report.elapsed = time.monotonic() - started
@@ -181,26 +183,31 @@ def generate_documents(
     if limit is not None and limit <= 0:
         report.elapsed = time.monotonic() - started
         return report
-    if ds.mode == "constant":
-        attempt = [(nonempty[0][0], nonempty[0][1])] * (
-            limit if limit is not None else len(nonempty)
-        )
-        consumed_through = nonempty[0][0]
-    else:
-        attempt = nonempty if limit is None else nonempty[:limit]
-        consumed_through = attempt[-1][0]
-    if not attempt:  # pragma: no cover - defensive, nonempty is non-empty here
-        report.elapsed = time.monotonic() - started
-        return report
 
-    fillings, counters = resolve_rows([r for _, r in attempt], work, today)
+    # Mode selection (incl. circular cycling) lives in the engine;
+    # here only clean rows + limit go in, cursor math stays here.
+    clean_idx = [i for i, _ in nonempty]
+    fillings, counters = resolve_rows(
+        [r for _, r in nonempty], work, today, limit=limit
+    )
     logger.debug(f"resolved {len(fillings)} fillings, mode={ds.mode}")
+    n = len(clean_idx)
+    if ds.mode == "circular" and limit is not None:
+        attempt_idx = [clean_idx[k % n] for k in range(len(fillings))]
+        new_start = start + len(indexed)
+    elif ds.mode == "constant":
+        attempt_idx = [clean_idx[0]] * len(fillings)
+        new_start = clean_idx[0] + 1
+    else:
+        attempt_idx = clean_idx[: len(fillings)]
+        new_start = start + len(indexed if limit is None else indexed[:limit])
+    attempt = list(zip(attempt_idx, fillings))
 
     out_dir = project_dir / RESULT_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
     total = len(fillings)
     cancelled = False
-    for (abs_index, _), fj in zip(attempt, fillings):
+    for abs_index, fj in attempt:
         try:
             doc = render(fj, template_path)
             path = _save_document(doc, out_dir, fj.dist, abs_index)
@@ -225,12 +232,10 @@ def generate_documents(
             if name in counters:
                 pj.counters[name].last = counters[name]
         # Counters for docs that failed to render keep resolved numbers
-        # (gaps are accepted); cursor advances past all attempted rows.
-        pj.data_sources[ds_index].start_row = consumed_through + 1
+        # (gaps are accepted); cursor advances per mode (§2.2 spec 012).
+        pj.data_sources[ds_index].start_row = new_start
         store.save(pj, name=config_path.stem)
-        logger.info(
-            f"saved PJ counters/start_row={consumed_through + 1} to {config_path}"
-        )
+        logger.info(f"saved PJ counters/start_row={new_start} to {config_path}")
 
     report.elapsed = time.monotonic() - started
     logger.info(

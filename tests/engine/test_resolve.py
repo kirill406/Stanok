@@ -199,3 +199,38 @@ def test_no_rows_returns_empty_counters():
     fjs, counters = resolve_rows([], pj, today=TODAY)
     assert fjs == []
     assert counters == {"n": 42}
+
+
+def _pj_mode(mode):
+    return _pj(data_sources=[{"file": "Данные/X.xlsx", "mode": mode, "start_row": 0}])
+
+
+def test_limit_sequential_truncates():
+    fjs, counters = resolve_rows(ROWS[:2], _pj(), today=TODAY, limit=1)
+    assert len(fjs) == 1
+    assert counters == {"n": 43}
+
+
+def test_limit_zero_and_negative_empty():
+    for limit in (0, -3):
+        fjs, counters = resolve_rows(ROWS[:2], _pj(), today=TODAY, limit=limit)
+        assert fjs == []
+        assert counters == {"n": 42}
+
+
+def test_circular_cycles_to_limit():
+    fjs, counters = resolve_rows(ROWS[:2], _pj_mode("circular"), today=TODAY, limit=5)
+    assert [f.fields["ФИО"] for f in fjs] == ["Иванов", "Петров"] * 2 + ["Иванов"]
+    assert [f.fields["Номер"] for f in fjs] == ["43", "44", "45", "46", "47"]
+    assert counters == {"n": 47}
+
+
+def test_circular_without_limit_one_circle():
+    fjs, _ = resolve_rows(ROWS[:2], _pj_mode("circular"), today=TODAY)
+    assert len(fjs) == 2
+
+
+def test_constant_repeats_first_with_limit():
+    fjs, counters = resolve_rows(ROWS[:2], _pj_mode("constant"), today=TODAY, limit=3)
+    assert [f.fields["ФИО"] for f in fjs] == ["Иванов"] * 3
+    assert counters == {"n": 45}

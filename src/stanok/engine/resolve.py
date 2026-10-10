@@ -133,6 +133,7 @@ def resolve_rows(
     rows: list[dict[str, Any]],
     pj: ProjectJSON,
     today: date | None = None,
+    limit: int | None = None,
 ) -> tuple[list[FillingJSON], dict[str, int]]:
     """Resolve Excel rows + ProjectJSON → (FillingJSON list, new counter state).
 
@@ -143,6 +144,9 @@ def resolve_rows(
         rows: list of dicts from ExcelReader (including empty rows as Nones).
         pj: validated ProjectJSON.
         today: date for TODAY fields / month counters (default: date.today()).
+        limit: max documents to resolve (None/<=0 handling below).
+            sequential: first `limit` rows; circular: cycle until `limit`
+            (one circle when None); constant: repeat first row `limit` times.
 
     Returns:
         (filling list, counters) — counters map name → new last value.
@@ -165,14 +169,19 @@ def resolve_rows(
     data_rows = rows[start_row:]
     if not data_rows:
         return [], counters
+    if limit is not None and limit <= 0:
+        return [], counters
 
     if mode == "sequential":
-        selected = data_rows
+        selected = data_rows if limit is None else data_rows[:limit]
     elif mode == "constant":
-        selected = [data_rows[0]] * len(data_rows)
+        count = len(data_rows) if limit is None else limit
+        selected = [data_rows[0]] * count
     elif mode == "circular":
-        # До FR-18 (max_docs): один круг, как sequential.
-        selected = data_rows
+        if limit is None:
+            selected = data_rows
+        else:
+            selected = [data_rows[i % len(data_rows)] for i in range(limit)]
     else:
         raise ResolveError("mode", [f"unknown mode: {mode}"])
 

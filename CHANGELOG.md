@@ -17,6 +17,7 @@
 - `gui.project_dialog`: окно 2 (шапка проекта, таблица шаблонов с кол-вом, прогон по шаблону, хук окна 3); окно 1 открывает настоящий диалог (заглушка убрана)
 - `gui.fields_dialog`: окно 3 (правка констант, превью table/counter/today, Save в PJ, dirty-чек Save/Discard/Cancel); окно 2 открывает настоящий диалог
 - `app.create_gui`: общий `ProjectStore`, bootstrap без `exec_`; сквозной GUI-тест 1→2→3→docx; CLI-регрессия в тестах
+- `engine.resolve` + `services.generate` (012): `limit` в `resolve_rows` (честный circular/constant), курсор по режимам, `resumed_from` в отчёте
 - Тесты: `tests/tables/`, `tests/engine/test_schema.py`, `tests/engine/test_resolve.py` (покрытие движка ~99%)
 
 ### Исправлено

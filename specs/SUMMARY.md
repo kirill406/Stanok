@@ -5,7 +5,7 @@
 
 ## Active
 
-- `012-batch-resume` — честный circular, resume, имена файлов.
+- `013-multi-source` — несколько Excel-источников одного проекта.
 
 ## Done
 
@@ -20,6 +20,7 @@
 - `009-gui-project` — окно 2: шаблоны, кол-во, прогон, стык с окном 1.
 - `010-gui-fields` — окно 3: редактор полей, Save, dirty-чек.
 - `011-gui-integration` — create_gui, сквозной тест, CLI-регрессия.
+- `012-batch-resume` — лимит в resolve, курсор по режимам, resumed_from.
 
 ## Conventions
 

@@ -334,3 +334,68 @@ def test_main_create_opens_dialog(qapp, tmp_path, store, monkeypatch):
     win._on_create()
     assert opened and refreshed
     win.close()
+
+
+def test_browse_empty_folder_friendly_error(qapp, tmp_path, store, monkeypatch):
+    shown = []
+    monkeypatch.setattr(QMessageBox, "critical", lambda *a: shown.append(a[-1]))
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    monkeypatch.setattr(
+        QFileDialog, "getExistingDirectory", lambda *a, **k: str(empty)
+    )
+    win = MainWindow(store=store)
+    win._on_browse()
+    assert shown and STRINGS.MAIN_NO_PROJECT in shown[0]
+    assert win.recent_list.count() == 0
+    win.close()
+
+
+def test_browse_broken_config_raw_error(qapp, tmp_path, store, monkeypatch):
+    shown = []
+    monkeypatch.setattr(QMessageBox, "critical", lambda *a: shown.append(a[-1]))
+    folder = make_project(tmp_path / "proj")
+    (folder / "project.stanok").write_text("{broken")
+    monkeypatch.setattr(
+        QFileDialog, "getExistingDirectory", lambda *a, **k: str(folder)
+    )
+    win = MainWindow(store=store)
+    win._on_browse()
+    assert shown and STRINGS.MAIN_NO_PROJECT not in shown[0]
+    win.close()
+
+
+def test_browse_unexpected_error_shown(qapp, tmp_path, store, monkeypatch):
+    shown = []
+    monkeypatch.setattr(QMessageBox, "critical", lambda *a: shown.append(a[-1]))
+    monkeypatch.setattr(
+        QFileDialog, "getExistingDirectory", lambda *a, **k: str(tmp_path)
+    )
+
+    def boom(ref):
+        raise RuntimeError("weird")
+
+    monkeypatch.setattr(store, "resolve_project", boom)
+    win = MainWindow(store=store)
+    win._on_browse()
+    assert shown and "weird" in shown[0]
+    win.close()
+
+
+def test_browse_storage_error_raw(qapp, tmp_path, store, monkeypatch):
+    from stanok.services.storage import StorageError
+
+    shown = []
+    monkeypatch.setattr(QMessageBox, "critical", lambda *a: shown.append(a[-1]))
+    monkeypatch.setattr(
+        QFileDialog, "getExistingDirectory", lambda *a, **k: str(tmp_path)
+    )
+
+    def boom(ref):
+        raise StorageError("load", ["badness"])
+
+    monkeypatch.setattr(store, "resolve_project", boom)
+    win = MainWindow(store=store)
+    win._on_browse()
+    assert shown and "badness" in shown[0]
+    win.close()

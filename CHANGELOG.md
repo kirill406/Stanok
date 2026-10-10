@@ -22,6 +22,7 @@
 - `services.storage` + GUI (014): `init_project` — создание проекта (FR-12), копирование в `Данные/`/`Шаблоны/` с уникализацией, PJ из плейсхолдеров docx, окно 4 из окна 1
 - `services.storage` + окно 2 (015): `add/remove_template`, `delete_project`, `remove_recent` (FR-13); кнопки шаблонов и снос проекта с confirm
 - GUI (016): FR-10 — окно 3 и reload окна 2 при битых входах показывают диалог, окна живы
+- Окно 1 + `services.storage` (017): FR-14 — дружелюбная ошибка пустой папки; миграция с коллизией уходит в `имя (N)`
 - Тесты: `tests/tables/`, `tests/engine/test_schema.py`, `tests/engine/test_resolve.py` (покрытие движка ~99%)
 
 ### Исправлено

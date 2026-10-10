@@ -334,3 +334,29 @@ def test_reload_broken_config_keeps_rows(qapp, tmp_path, store, monkeypatch):
     assert dlg.table.rowCount() == 1
     assert dlg.table.item(0, 0).text() == "Договор"
     dlg.close()
+
+
+def test_run_stale_template_shows_error(qapp, tmp_path, store, monkeypatch):
+    folder = make_project(tmp_path / "proj", rows=(("Иван", 100),))
+    shown = []
+    monkeypatch.setattr(QMessageBox, "critical", lambda *a: shown.append(a[-1]))
+    monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: None)
+    dlg = ProjectDialog(str(folder), store=store)
+    (folder / "Шаблоны" / "tpl.docx").unlink()
+    dlg._on_run_template("Договор")
+    _await_run(dlg)
+    assert shown and "template file not found" in shown[0]
+    dlg.close()
+
+
+def test_run_stale_source_shows_error(qapp, tmp_path, store, monkeypatch):
+    folder = make_project(tmp_path / "proj", rows=(("Иван", 100),))
+    shown = []
+    monkeypatch.setattr(QMessageBox, "critical", lambda *a: shown.append(a[-1]))
+    monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: None)
+    dlg = ProjectDialog(str(folder), store=store)
+    (folder / "Данные" / "data.xlsx").unlink()
+    dlg._on_run_template("Договор")
+    _await_run(dlg)
+    assert shown
+    dlg.close()

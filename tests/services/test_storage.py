@@ -699,3 +699,29 @@ def test_delete_project_rmtree_failure(store, tmp_path, monkeypatch):
     monkeypatch.setattr(shutil, "rmtree", boom)
     with pytest.raises(StorageError, match="partially removed"):
         store.delete_project(folder, delete_folder=True)
+
+
+def test_migrate_name_collision_uniquified(store, tmp_path, sample_pj):
+    store.save(sample_pj, name="proj")
+    legacy = tmp_path / "proj"
+    legacy.mkdir()
+    (legacy / "project.stanok").write_text(
+        (store.home_dir / "proj.stanok").read_text()
+    )
+    pj = store.migrate_from_project(legacy)
+    assert (store.home_dir / "proj.stanok").is_file()
+    assert (store.home_dir / "proj (1).stanok").is_file()
+    assert not (legacy / "project.stanok").exists()
+    assert pj is not None
+
+
+def test_migrate_double_collision(store, tmp_path, sample_pj):
+    store.save(sample_pj, name="proj")
+    store.save(sample_pj, name="proj (1)")
+    legacy = tmp_path / "proj"
+    legacy.mkdir()
+    (legacy / "project.stanok").write_text(
+        (store.home_dir / "proj.stanok").read_text()
+    )
+    store.migrate_from_project(legacy)
+    assert (store.home_dir / "proj (2).stanok").is_file()

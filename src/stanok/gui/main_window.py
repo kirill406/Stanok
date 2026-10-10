@@ -25,7 +25,7 @@ from PyQt5.QtWidgets import (
 )
 
 from ..services.generate import GenerateCommand, GenerateReport
-from ..services.storage import ProjectStore
+from ..services.storage import ProjectStore, StorageError
 from .project_dialog import ProjectDialog
 from .strings import STRINGS
 from .worker import GenerateWorker
@@ -115,6 +115,16 @@ class MainWindow(QMainWindow):
             return
         try:
             self._store.resolve_project(folder)
+        except StorageError as e:
+            logger.warning(f"open project {folder}: {e}", exc_info=True)
+            if e.path == "resolve":
+                self._show_error(
+                    f"{STRINGS.MAIN_ERROR_TITLE}: "
+                    f"{STRINGS.MAIN_NO_PROJECT} ({folder})"
+                )
+            else:
+                self._show_error(f"{STRINGS.MAIN_ERROR_TITLE}: {e}")
+            return
         except Exception as e:
             logger.warning(f"open project {folder}: {e}", exc_info=True)
             self._show_error(f"{STRINGS.MAIN_ERROR_TITLE}: {e}")

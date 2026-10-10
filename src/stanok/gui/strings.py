@@ -108,5 +108,6 @@ class STRINGS:
     MAIN_DONE_TITLE = "Генерация завершена"
     MAIN_ERRORS_TITLE = "Ошибки генерации"
     MAIN_ERROR_TITLE = "Ошибка"
+    MAIN_NO_PROJECT = "В папке нет проекта Станка: нет файла «project.stanok» и конфига в домашней папке"
     MAIN_CANCELLED = "Генерация отменена: создано {created}"
     MAIN_NO_PROJECT = "Выберите проект: папку или запись из недавних"

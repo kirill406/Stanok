@@ -20,6 +20,7 @@
 - `engine.resolve` + `services.generate` (012): `limit` в `resolve_rows` (честный circular/constant), курсор по режимам, `resumed_from` в отчёте
 - `services.generate` + GUI (013): прогон по всем Excel-источникам (FR-7), сквозные счётчики, курсоры на источник, `--source` в CLI, комбобокс источников в окне 2
 - `services.storage` + GUI (014): `init_project` — создание проекта (FR-12), копирование в `Данные/`/`Шаблоны/` с уникализацией, PJ из плейсхолдеров docx, окно 4 из окна 1
+- `services.storage` + окно 2 (015): `add/remove_template`, `delete_project`, `remove_recent` (FR-13); кнопки шаблонов и снос проекта с confirm
 - Тесты: `tests/tables/`, `tests/engine/test_schema.py`, `tests/engine/test_resolve.py` (покрытие движка ~99%)
 
 ### Исправлено

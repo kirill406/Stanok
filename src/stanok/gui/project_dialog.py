@@ -9,9 +9,11 @@ from pathlib import Path
 
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
+    QFileDialog,
     QLabel,
     QMessageBox,
     QProgressDialog,
@@ -64,13 +66,33 @@ class ProjectDialog(QDialog):
             self.source_combo.addItem(ds.file, ds.file)
         layout.addWidget(self.source_combo)
 
+        self.add_tpl_btn = QPushButton(STRINGS.TPL_ADD, self)
+        self.add_tpl_btn.clicked.connect(self._on_add_template)
+        layout.addWidget(self.add_tpl_btn)
+
         self.table = QTableWidget(self)
-        self.table.setColumnCount(3)
+        self.table.setColumnCount(4)
         self.table.setHorizontalHeaderLabels(
-            [STRINGS.PROJ_TPL_COL, STRINGS.PROJ_COUNT_COL, ""]
+            [STRINGS.PROJ_TPL_COL, STRINGS.PROJ_COUNT_COL, "", ""]
         )
-        self.table.setRowCount(len(self._template_names))
         self.table.cellClicked.connect(self._on_cell_clicked)
+        self._reload_templates()
+        layout.addWidget(self.table)
+
+        self.delete_btn = QPushButton(STRINGS.PROJ_DELETE, self)
+        self.delete_btn.setStyleSheet("color: #b71c1c;")
+        self.delete_btn.clicked.connect(self._on_delete_project)
+        layout.addWidget(self.delete_btn)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Close, self)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def _reload_templates(self) -> None:
+        """Re-resolve PJ and rebuild template rows (015)."""
+        self._pj, _ = self._store.resolve_project(self._project_ref)
+        self._template_names = list(self._pj.templates)
+        self.table.setRowCount(len(self._template_names))
         for row, name in enumerate(self._template_names):
             name_item = QTableWidgetItem(name)
             name_item.setFlags(name_item.flags() & ~Qt.ItemIsEditable)
@@ -84,11 +106,13 @@ class ProjectDialog(QDialog):
                 lambda _checked=False, template=name: self._on_run_template(template)
             )
             self.table.setCellWidget(row, 2, btn)
-        layout.addWidget(self.table)
-
-        buttons = QDialogButtonBox(QDialogButtonBox.Close, self)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
+            rm_btn = QPushButton(STRINGS.TPL_REMOVE, self.table)
+            rm_btn.clicked.connect(
+                lambda _checked=False, template=name: self._on_remove_template(
+                    template
+                )
+            )
+            self.table.setCellWidget(row, 3, rm_btn)
 
     # -- window 3 hook ------------------------------------------------------
     def _on_cell_clicked(self, row: int, col: int) -> None:
@@ -99,6 +123,67 @@ class ProjectDialog(QDialog):
         """Open window 3 (FieldsDialog, 010)."""
         dialog = FieldsDialog(self._project_ref, template_name, self._store, self)
         dialog.exec_()
+
+    # -- template management (015) -----------------------------------------
+    def _on_add_template(self) -> None:
+        if self._running:
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            self, STRINGS.TPL_ADD, "", "Word (*.docx)"
+        )
+        if not path:
+            return
+        try:
+            self._store.add_template(self._project_ref, path)
+        except Exception as e:
+            logger.warning(f"add template failed: {e}", exc_info=True)
+            QMessageBox.warning(self, STRINGS.MAIN_ERROR_TITLE, str(e))
+            return
+        self._reload_templates()
+
+    def _on_remove_template(self, template_name: str) -> None:
+        if self._running:
+            return
+        if len(self._template_names) == 1:
+            QMessageBox.information(self, STRINGS.TPL_REMOVE, STRINGS.TPL_LAST_KEPT)
+            return
+        answer = QMessageBox.question(
+            self, STRINGS.TPL_REMOVE, STRINGS.TPL_REMOVE_ASK.format(name=template_name)
+        )
+        if answer != QMessageBox.Yes:
+            return
+        try:
+            self._store.remove_template(self._project_ref, template_name)
+        except Exception as e:
+            logger.warning(f"remove template failed: {e}", exc_info=True)
+            QMessageBox.warning(self, STRINGS.MAIN_ERROR_TITLE, str(e))
+            return
+        self._reload_templates()
+
+    def _on_delete_project(self) -> None:
+        if self._running:
+            return
+        name = Path(self._project_ref).name
+        box = QMessageBox(self)
+        box.setWindowTitle(STRINGS.PROJ_DELETE)
+        box.setText(STRINGS.PROJ_DELETE_ASK.format(name=name))
+        box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        check = QCheckBox(STRINGS.PROJ_DELETE_FOLDER, box)
+        box.setCheckBox(check)
+        if box.exec_() != QMessageBox.Yes:
+            return
+        try:
+            self._store.delete_project(
+                self._project_ref, delete_folder=check.isChecked()
+            )
+        except Exception as e:
+            logger.warning(f"delete project failed: {e}", exc_info=True)
+            QMessageBox.warning(self, STRINGS.MAIN_ERROR_TITLE, str(e))
+            return
+        QMessageBox.information(
+            self, STRINGS.PROJ_DELETE, STRINGS.PROJ_DELETED.format(name=name)
+        )
+        self.accept()
 
     # -- per-template run ----------------------------------------------------
     def _on_run_template(self, template_name: str) -> None:

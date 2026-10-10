@@ -571,3 +571,131 @@ def test_init_no_copy_wrong_subdir(store, tmp_path):
             folder, "gh", [folder / "Данные" / "data.xlsx"], [ghost],
             copy_files=False,
         )
+
+
+def _init_simple(store, tmp_path, name="proj"):
+    """init_project with one xlsx + one docx; return folder."""
+    from tests.services.test_storage import _src_files
+
+    xlsx, tpl = _src_files(tmp_path, f"src_{name}")
+    folder = tmp_path / name
+    store.init_project(folder, name, [xlsx], [tpl])
+    return folder
+
+
+def test_add_template_copies(store, tmp_path):
+    from docx import Document as DocxDocument
+
+    folder = _init_simple(store, tmp_path)
+    extra = tmp_path / "extra.docx"
+    doc = DocxDocument()
+    doc.add_paragraph("Акт {{Номер}} от {{Дата}}")
+    doc.save(extra)
+    stem = store.add_template(folder, extra)
+    assert stem == "extra"
+    assert (folder / "Шаблоны" / "extra.docx").is_file()
+    pj = store.load("proj")
+    assert set(pj.templates["extra"].fields) == {"Номер", "Дата"}
+
+
+def test_add_template_stem_collision(store, tmp_path):
+    from docx import Document as DocxDocument
+
+    folder = _init_simple(store, tmp_path)
+    subs = []
+    for sub in ("a", "b"):
+        d = folder / "Шаблоны" / sub
+        d.mkdir(parents=True)
+        doc = DocxDocument()
+        doc.add_paragraph("X {{A}}")
+        doc.save(d / "new.docx")
+        subs.append(d / "new.docx")
+    assert store.add_template(folder, subs[0], copy_files=False) == "new"
+    assert store.add_template(folder, subs[1], copy_files=False) == "new (2)"
+
+
+def test_remove_template(store, tmp_path):
+    from tests.services.test_storage import _src_files
+
+    folder = _init_simple(store, tmp_path)
+    xlsx, tpl = _src_files(tmp_path, "src2")
+    store.add_template(folder, tpl)
+    store.remove_template(folder, "tpl")
+    pj = store.load("proj")
+    assert set(pj.templates) == {"tpl (1)"}
+    with pytest.raises(StorageError, match="cannot remove last"):
+        store.remove_template(folder, "tpl (1)")
+    with pytest.raises(StorageError, match="template not found"):
+        store.remove_template(folder, "nope")
+
+
+def test_remove_recent(store):
+    store.add_recent("/f/a", "a")
+    store.add_recent("/f/b", "b")
+    store.remove_recent("/f/a", "a")
+    assert [(r.folder, r.config) for r in store.get_recent()] == [("/f/b", "b")]
+    store.remove_recent("/f/a", "a")
+
+
+def test_delete_project_config_only(store, tmp_path):
+    folder = _init_simple(store, tmp_path)
+    store.delete_project(folder)
+    assert not (store.home_dir / "proj.stanok").exists()
+    assert not any(r.config == "proj" for r in store.get_recent())
+    assert folder.is_dir()
+
+
+def test_delete_project_with_folder(store, tmp_path):
+    folder = _init_simple(store, tmp_path)
+    store.delete_project(folder, delete_folder=True)
+    assert not (store.home_dir / "proj.stanok").exists()
+    assert not folder.exists()
+
+
+def test_delete_project_missing_folder_ok(store, tmp_path):
+    folder = _init_simple(store, tmp_path)
+    import shutil
+
+    shutil.rmtree(folder)
+    store.delete_project(folder, delete_folder=True)
+    assert not (store.home_dir / "proj.stanok").exists()
+
+
+def test_add_template_mkdir_failure(store, tmp_path, monkeypatch):
+    import pathlib
+
+    from tests.services.test_storage import _src_files
+
+    folder = _init_simple(store, tmp_path)
+    _, tpl = _src_files(tmp_path, "srcx")
+
+    def boom(self, *a, **k):
+        raise OSError("denied")
+
+    monkeypatch.setattr(pathlib.Path, "mkdir", boom)
+    try:
+        with pytest.raises(StorageError, match="cannot create folder"):
+            store.add_template(folder, tpl)
+    finally:
+        monkeypatch.setattr(pathlib.Path, "mkdir", pathlib.Path.mkdir)
+
+
+def test_delete_project_home_guard(store, tmp_path, sample_pj):
+    store.save(sample_pj, name="hproj")
+    store.add_recent(str(store.home_dir), "hproj")
+    with pytest.raises(StorageError, match="refusing to delete home"):
+        store.delete_project("hproj", delete_folder=True)
+    assert (store.home_dir / "hproj.stanok").exists()
+
+
+def test_delete_project_rmtree_failure(store, tmp_path, monkeypatch):
+    import shutil
+
+    folder = _init_simple(store, tmp_path)
+
+    def boom(*a, **k):
+        raise OSError("locked")
+
+    monkeypatch.setattr(shutil, "rmtree", boom)
+    with pytest.raises(StorageError, match="partially removed"):
+        store.delete_project(folder, delete_folder=True)

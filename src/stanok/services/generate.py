@@ -16,7 +16,7 @@ from ..engine.resolve import resolve_rows
 from ..engine.schema import DataSourceDef, ProjectJSON, TemplateDef, validate_pj
 from ..gui.strings import STRINGS
 from ..tables.excel import ExcelReader
-from .storage import ProjectStore
+from .storage import ProjectStore, project_folder
 
 if TYPE_CHECKING:
     from docx.document import Document
@@ -68,24 +68,6 @@ def _unique_path(base: Path) -> Path:
 
 def _is_empty_row(row: dict[str, Any]) -> bool:
     return all(v is None or v == "" for v in row.values())
-
-
-def _resolve_project_dir(
-    ref: str | Path, pj: ProjectJSON, config_path: Path, store: ProjectStore
-) -> Path:
-    """Find project folder: direct dir ref, else AJ recent lookup by config."""
-    ref_path = Path(ref) if isinstance(ref, str) else ref
-    if ref_path.exists() and ref_path.is_dir():
-        return ref_path.resolve()
-    # Config-name ref: folder remembered in recent projects.
-    for item in store.get_recent():
-        if item.config == ref_path.name or item.config == config_path.stem:
-            folder = Path(item.folder)
-            if folder.is_dir():
-                return folder.resolve()
-    raise TemplateError(
-        f"project folder not found for '{ref}': pass a project folder path"
-    )
 
 
 def _pick_template(pj: ProjectJSON, name: str | None) -> tuple[str, TemplateDef]:
@@ -154,7 +136,7 @@ def generate_documents(
     )
 
     pj, config_path = store.resolve_project(cmd.project_ref)
-    project_dir = _resolve_project_dir(cmd.project_ref, pj, config_path, store)
+    project_dir = project_folder(cmd.project_ref, pj, config_path, store)
 
     template_name, template_def = _pick_template(pj, cmd.template)
     sources = _pick_data_sources(pj, cmd.data_source)

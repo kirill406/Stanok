@@ -148,7 +148,10 @@ def generate_documents(
     started = time.monotonic()
     report = GenerateReport()
     store = store or ProjectStore()
-    logger.info(f"generate started: ref={cmd.project_ref} resume={cmd.resume}")
+    logger.info(
+        f"generate started: ref={cmd.project_ref} resume={cmd.resume} "
+        f"source={cmd.data_source or 'all'}"
+    )
 
     pj, config_path = store.resolve_project(cmd.project_ref)
     project_dir = _resolve_project_dir(cmd.project_ref, pj, config_path, store)

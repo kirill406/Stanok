@@ -1,6 +1,6 @@
 # Copyright (C) 2026 Kirill Borovoy
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Window 1: recent projects, per-project/all generation, settings stub."""
+"""Window 1: recent projects, per-project/all generation, settings, create."""
 
 from __future__ import annotations
 

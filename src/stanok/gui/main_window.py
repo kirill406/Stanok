@@ -148,9 +148,11 @@ class MainWindow(QMainWindow):
         self.refresh_recent()
 
     def _on_settings(self) -> None:
-        QMessageBox.information(
-            self, STRINGS.MAIN_SETTINGS, STRINGS.MAIN_SETTINGS_STUB
-        )
+        """Open settings dialog (018); keeps import lazy like create (tests)."""
+        from .settings_dialog import SettingsDialog
+
+        dialog = SettingsDialog(self._store, self)
+        dialog.exec_()
 
     def _on_create(self) -> None:
         """Open window 4 (CreateDialog, 014); refresh recent on success."""

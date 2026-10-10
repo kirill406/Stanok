@@ -155,12 +155,22 @@ def test_row_click_opens_real_dialog(qapp, tmp_path, store, monkeypatch):
     win.close()
 
 
-def test_settings_stub(qapp, tmp_path, store, monkeypatch):
-    infos = []
-    monkeypatch.setattr(QMessageBox, "information", lambda *a: infos.append(a[-1]))
+def test_settings_opens_dialog(qapp, tmp_path, store, monkeypatch):
+    import stanok.gui.settings_dialog as sd
+
+    opened = []
+
+    class FakeDialog:
+        def __init__(self, *a, **k):
+            opened.append(a)
+
+        def exec_(self):
+            return False
+
+    monkeypatch.setattr(sd, "SettingsDialog", FakeDialog)
     win = MainWindow(store=store)
     win._on_settings()
-    assert infos == [STRINGS.MAIN_SETTINGS_STUB]
+    assert opened and opened[0][0] is store
     win.close()
 
 

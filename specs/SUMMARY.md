@@ -5,7 +5,9 @@
 
 ## Active
 
-- `018-observability` — лог в Home, окно настроек.
+- `019-release` — стабилизация, версия 0.1.0, релиз.
+
+## Done
 
 ## Done
 
@@ -34,6 +36,7 @@
 - `015-project-manage` — шаблоны и снос проекта, окно 2.
 - `016-error-dialogs` — аудит слотов, два фикса, окно живо.
 - `017-edge-cases` — FR-14, уникализация миграции, протухшие файлы.
+- `018-observability` — stanok.log, настройки, STANOK_HOME.
 
 ## Conventions
 

@@ -23,6 +23,7 @@
 - `services.storage` + окно 2 (015): `add/remove_template`, `delete_project`, `remove_recent` (FR-13); кнопки шаблонов и снос проекта с confirm
 - GUI (016): FR-10 — окно 3 и reload окна 2 при битых входах показывают диалог, окна живы
 - Окно 1 + `services.storage` (017): FR-14 — дружелюбная ошибка пустой папки; миграция с коллизией уходит в `имя (N)`
+- `app` + окно настроек (018): `stanok.log` с ротацией в Home, уровень из AJ, `STANOK_HOME`, окно настроек вместо стаба
 - Тесты: `tests/tables/`, `tests/engine/test_schema.py`, `tests/engine/test_resolve.py` (покрытие движка ~99%)
 
 ### Исправлено

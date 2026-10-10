@@ -428,6 +428,30 @@ class ProjectStore:
             )
             logger.info("removed recent project %s", config)
 
+    def get_setting(self, key: str, default=None):
+        """Read one AJ setting (018)."""
+        settings_file = self.home_dir / "settings.json"
+        if not settings_file.exists():
+            return default
+        try:
+            data = self._read_json(settings_file)
+            return validate_aj(data).settings.get(key, default)
+        except Exception as e:
+            logger.warning(f"read setting {key} failed: {e}", exc_info=True)
+            return default
+
+    def set_setting(self, key: str, value) -> None:
+        """Write one AJ setting atomically (018)."""
+        with self._lock:
+            settings_file = self.home_dir / "settings.json"
+            data = self._read_json(settings_file) if settings_file.exists() else {}
+            aj = validate_aj(data)
+            aj.settings[key] = value
+            self._atomic_write_json(
+                self.home_dir / "settings.json", aj.model_dump(mode="json")
+            )
+            logger.info("updated setting %s", key)
+
     def add_template(
         self, ref: str | Path, docx: str | Path, copy_files: bool = True
     ) -> str:

@@ -1,6 +1,6 @@
 # Спецификация: 011-gui-integration — Bootstrap и сквозной прогон GUI
 
-**Статус:** Active
+**Статус:** done
 **Версия:** 0.1.0
 **Фаза:** 2 (GUI)
 **Зависит от:** 008-gui-main, 009-gui-project, 010-gui-fields, 005-core-storage

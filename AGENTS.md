@@ -35,7 +35,7 @@
 - Release flow: move `CHANGELOG.md [Unreleased]` entries under new version header with date, bump version in both places, tag `git tag vX.Y.Z`, push tag
 - Never Bump version in feature branches — only in release commits on `main`
 
-### Development stages (current: Planning, `0.0.0`)
+### Development stages (current: Pre-alpha, `0.1.0`)
 - Planning — name reserved, scope outlined; usually no version yet
 - Pre-alpha — working sketch; architecture may change anytime; `0.x.y`
 - Alpha — architecture settled; inner circle can use it; testing toward product

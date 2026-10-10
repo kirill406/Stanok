@@ -124,3 +124,9 @@ def test_workbook_closed_after_read(tmp_path):
     path = _make_xlsx(tmp_path / "lock.xlsx", [["a"], [1]])
     ExcelReader().read(path)
     path.unlink()  # упадёт, если файл всё ещё открыт
+
+
+def test_blank_header_row_raises(tmp_path):
+    path = _make_xlsx(tmp_path / "blank.xlsx", [[None, None], [1, 2]])
+    with pytest.raises(TableReadError, match=re.escape(STRINGS.TBL_NO_HEADERS)):
+        ExcelReader().read(path)

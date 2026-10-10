@@ -227,7 +227,7 @@ def test_config_name_ref_via_recent(tmp_path, store):
 def test_config_name_without_folder_fails(tmp_path, store):
     folder = make_project(tmp_path / "proj", rows=(("Иван", 100),))
     generate_documents(GenerateCommand(project_ref=folder), store=store)
-    with pytest.raises(TemplateError, match="project folder not found"):
+    with pytest.raises(StorageError, match="project folder not found"):
         generate_documents(GenerateCommand(project_ref="proj"), store=store)
 
 

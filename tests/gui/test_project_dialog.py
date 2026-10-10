@@ -147,3 +147,144 @@ def test_source_combo_runs_selected_only(qapp, tmp_path, store, monkeypatch):
     _await_run(dlg)
     assert infos and "создано 1" in infos[0]
     dlg.close()
+
+
+def _extra_docx(path, text="Акт {{Номер}}"):
+    from docx import Document as DocxDocument
+
+    doc = DocxDocument()
+    doc.add_paragraph(text)
+    doc.save(path)
+    return path
+
+
+def test_add_template_reloads_table(qapp, tmp_path, store, monkeypatch):
+    from PyQt5.QtWidgets import QFileDialog
+
+    folder = make_project(tmp_path / "proj")
+    extra = _extra_docx(tmp_path / "extra.docx")
+    monkeypatch.setattr(
+        QFileDialog, "getOpenFileName", lambda *a, **k: (str(extra), "")
+    )
+    dlg = ProjectDialog(str(folder), store=store)
+    assert dlg.table.rowCount() == 1
+    dlg._on_add_template()
+    assert dlg.table.rowCount() == 2
+    assert dlg.table.item(1, 0).text() == "extra"
+    dlg.close()
+
+
+def test_remove_template_with_confirm(qapp, tmp_path, store, monkeypatch):
+    folder = make_project(tmp_path / "proj")
+    extra = _extra_docx(tmp_path / "extra.docx")
+    store.add_template(folder, extra)
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.Yes)
+    infos = []
+    monkeypatch.setattr(QMessageBox, "information", lambda *a: infos.append(a[-1]))
+    dlg = ProjectDialog(str(folder), store=store)
+    assert dlg.table.rowCount() == 2
+    dlg._on_remove_template("Договор")
+    assert dlg.table.rowCount() == 1
+    dlg._on_remove_template("extra")
+    assert infos == [STRINGS.TPL_LAST_KEPT]
+    assert dlg.table.rowCount() == 1
+    dlg.close()
+
+
+def test_delete_project_closes_dialog(qapp, tmp_path, store, monkeypatch):
+    folder = make_project(tmp_path / "proj")
+    store.add_recent(str(folder), "proj")
+    monkeypatch.setattr(QMessageBox, "exec_", lambda self: QMessageBox.Yes)
+    infos = []
+    monkeypatch.setattr(QMessageBox, "information", lambda *a: infos.append(a[-1]))
+    dlg = ProjectDialog(str(folder), store=store)
+    dlg._on_delete_project()
+    assert dlg.result()
+    assert not (store.home_dir / "proj.stanok").exists()
+    assert infos and "удалён" in infos[0]
+    dlg.close()
+
+
+def test_manage_slots_guards_and_errors(qapp, tmp_path, store, monkeypatch):
+    from PyQt5.QtWidgets import QFileDialog
+
+    folder = make_project(tmp_path / "proj")
+    warnings = []
+    monkeypatch.setattr(
+        QMessageBox, "warning", lambda *a: warnings.append(a[-1])
+    )
+    monkeypatch.setattr(
+        QMessageBox, "question", lambda *a, **k: QMessageBox.No
+    )
+    monkeypatch.setattr(
+        QFileDialog, "getOpenFileName", lambda *a, **k: ("", "")
+    )
+    monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: None)
+    dlg = ProjectDialog(str(folder), store=store)
+
+    dlg._running = True
+
+    dlg._running = True
+    dlg._on_add_template()
+    dlg._on_remove_template("Договор")
+    dlg._on_delete_project()
+    assert dlg.table.rowCount() == 1
+    dlg._running = False
+
+    dlg._on_add_template()
+    assert dlg.table.rowCount() == 1
+
+    monkeypatch.setattr(
+        QFileDialog, "getOpenFileName", lambda *a, **k: (str(tmp_path / "gone.docx"), "")
+    )
+    dlg._on_add_template()
+    assert warnings and dlg.table.rowCount() == 1
+
+    extra = _extra_docx(tmp_path / "extra2.docx")
+    store.add_template(folder, extra)
+    dlg._reload_templates()
+    assert dlg.table.rowCount() == 2
+    dlg._on_remove_template("extra2")
+    assert dlg.table.rowCount() == 2
+
+    monkeypatch.setattr(
+        QMessageBox, "question", lambda *a, **k: QMessageBox.Yes
+    )
+    dlg._on_remove_template("extra2")
+    assert dlg.table.rowCount() == 1
+
+    def boom(*a, **k):
+        raise RuntimeError("disk gone")
+
+    monkeypatch.setattr(store, "remove_template", boom)
+    extra = _extra_docx(tmp_path / "extra.docx")
+    store.add_template(folder, extra)
+    dlg._reload_templates()
+    assert dlg.table.rowCount() == 2
+    dlg._on_remove_template("extra")
+    assert len(warnings) == 2
+    dlg.close()
+
+
+def test_delete_project_errors(qapp, tmp_path, store, monkeypatch):
+    folder = make_project(tmp_path / "proj")
+    warnings = []
+    monkeypatch.setattr(
+        QMessageBox, "warning", lambda *a: warnings.append(a[-1])
+    )
+    monkeypatch.setattr(QMessageBox, "exec_", lambda self: QMessageBox.No)
+    dlg = ProjectDialog(str(folder), store=store)
+    dlg._on_delete_project()
+    assert not dlg.result()
+    assert (store.home_dir / "proj.stanok").exists()
+
+    monkeypatch.setattr(QMessageBox, "exec_", lambda self: QMessageBox.Yes)
+
+    def boom(*a, **k):
+        raise RuntimeError("locked")
+
+    monkeypatch.setattr(store, "delete_project", boom)
+    dlg._on_delete_project()
+    assert warnings
+    assert (store.home_dir / "proj.stanok").exists()
+    dlg.close()

@@ -5,7 +5,9 @@
 
 ## Active
 
-- `015-project-manage` — добавить/удалить шаблон, удалить проект.
+- `016-error-dialogs` — битые входы → диалог везде (FR-10).
+
+## Done
 
 ## Done
 
@@ -25,6 +27,7 @@
 - `012-batch-resume` — лимит в resolve, курсор по режимам, resumed_from.
 - `013-multi-source` — прогон по всем источникам, сквозные счётчики.
 - `014-project-create` — init_project, копирование файлов, окно 4.
+- `015-project-manage` — шаблоны и снос проекта, окно 2.
 
 ## Conventions
 

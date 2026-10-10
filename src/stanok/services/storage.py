@@ -14,9 +14,12 @@ from pathlib import Path
 
 from ..engine.schema import (
     ApplicationJSON,
+    FieldDef,
+    FieldSource,
     ProjectJSON,
     RecentItem,
     StorageError,
+    TemplateDef,
     validate_aj,
     validate_pj,
 )
@@ -24,6 +27,25 @@ from ..engine.xmlops import PLACEHOLDER_RE
 from ..gui.strings import STRINGS
 
 logger = logging.getLogger(__name__)
+
+
+def project_folder(
+    ref: str | Path, pj: ProjectJSON, config_path: Path, store: ProjectStore
+) -> Path:
+    """Find project folder: direct dir ref, else AJ recent lookup by config."""
+    ref_path = Path(ref) if isinstance(ref, str) else ref
+    if ref_path.exists() and ref_path.is_dir():
+        return ref_path.resolve()
+    # Config-name ref: folder remembered in recent projects.
+    for item in store.get_recent():
+        if item.config == ref_path.name or item.config == config_path.stem:
+            folder = Path(item.folder)
+            if folder.is_dir():
+                return folder.resolve()
+    raise StorageError(
+        "resolve",
+        [f"project folder not found for '{ref}': pass a project folder path"],
+    )
 
 
 def _scan_placeholders(docx_path: Path) -> list[str]:
@@ -376,6 +398,102 @@ class ProjectStore:
         if not resolved.is_file():
             raise StorageError("init", [f"file not found: {src}"])
         return rel.as_posix()
+
+
+    def remove_recent(self, folder: str, config: str) -> None:
+        """Remove one recent project entry (no-op when absent)."""
+        with self._lock:
+            settings_file = self.home_dir / "settings.json"
+            data = self._read_json(settings_file) if settings_file.exists() else {}
+            aj = validate_aj(data)
+            aj.recent = [
+                r
+                for r in aj.recent
+                if (r.folder, r.config) != (folder, config)
+            ]
+            self._atomic_write_json(
+                self.home_dir / "settings.json", aj.model_dump(mode="json")
+            )
+            logger.info("removed recent project %s", config)
+
+    def add_template(
+        self, ref: str | Path, docx: str | Path, copy_files: bool = True
+    ) -> str:
+        """Attach a docx template to the project (FR-13); return its name."""
+        with self._lock:
+            pj, config_path = self.resolve_project(ref)
+            folder = project_folder(ref, pj, config_path, self)
+            tpl_dir = folder / STRINGS.TPL_DIR
+            try:
+                tpl_dir.mkdir(parents=True, exist_ok=True)
+            except OSError as e:
+                logger.warning(f"cannot create templates dir {tpl_dir}: {e}")
+                raise StorageError(
+                    "templates", [f"cannot create folder {tpl_dir}: {e}"]
+                ) from e
+            rel = self._place_source(
+                Path(docx), tpl_dir, folder, ".docx", copy_files
+            )
+            stem = Path(rel).stem
+            base, i = stem, 1
+            while stem in pj.templates:
+                i += 1
+                stem = f"{base} ({i})"
+            placeholders = _scan_placeholders(folder / rel)
+            pj.templates[stem] = TemplateDef(
+                file=rel,
+                fields={
+                    ph: FieldDef(source=FieldSource.TABLE, value=ph)
+                    for ph in placeholders
+                },
+            )
+            self.save(pj, name=config_path.stem)
+            logger.info("attached template %s to %s", stem, config_path.stem)
+            return stem
+
+    def remove_template(self, ref: str | Path, name: str) -> None:
+        """Detach a template; removing the last one is forbidden (FR-13)."""
+        with self._lock:
+            pj, config_path = self.resolve_project(ref)
+            if name not in pj.templates:
+                raise StorageError(
+                    "templates", [f"template not found: {name}"]
+                )
+            if len(pj.templates) == 1:
+                raise StorageError(
+                    "templates",
+                    ["cannot remove last template: project needs at least one"],
+                )
+            del pj.templates[name]
+            self.save(pj, name=config_path.stem)
+            logger.info("removed template %s from %s", name, config_path.stem)
+
+    def delete_project(self, ref: str | Path, delete_folder: bool = False) -> None:
+        """Delete project config + recent entry; folder only on flag (FR-13)."""
+        with self._lock:
+            pj, config_path = self.resolve_project(ref)
+            try:
+                folder = project_folder(ref, pj, config_path, self)
+            except StorageError:
+                folder = None
+            if delete_folder and folder == self.home_dir:
+                raise StorageError(
+                    "delete", ["refusing to delete home directory"]
+                )
+            self.delete(config_path.stem)
+            if folder is not None:
+                self.remove_recent(str(folder), config_path.stem)
+            if delete_folder and folder is not None:
+                if folder.exists():
+                    try:
+                        shutil.rmtree(folder)
+                    except OSError as e:
+                        logger.warning(f"rmtree {folder} failed: {e}")
+                        raise StorageError(
+                            "delete",
+                            [f"config deleted, folder partially removed: {e}"],
+                        ) from e
+            logger.info("deleted project %s", config_path.stem)
 
 
 def resolve_project(ref: str | Path, store: ProjectStore) -> tuple:

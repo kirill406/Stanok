@@ -5,7 +5,7 @@
 
 ## Active
 
-- `011-gui-integration` — bootstrap и сквозной прогон GUI.
+- `012-batch-resume` — честный circular, resume, имена файлов.
 
 ## Done
 
@@ -19,6 +19,7 @@
 - `008-gui-main` — окно 1: recent, запуск по каждому/все, демо-генератор.
 - `009-gui-project` — окно 2: шаблоны, кол-во, прогон, стык с окном 1.
 - `010-gui-fields` — окно 3: редактор полей, Save, dirty-чек.
+- `011-gui-integration` — create_gui, сквозной тест, CLI-регрессия.
 
 ## Conventions
 

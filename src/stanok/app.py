@@ -59,14 +59,24 @@ def main(argv: list[str] | None = None) -> int:
 
 def _run_gui() -> int:
     """Open main window (imports Qt lazily so CLI stays light)."""
+    qt_app, window = create_gui()
+    window.show()
+    return qt_app.exec_()
+
+
+def create_gui(store=None):
+    """Build QApplication + MainWindow without exec_ (tests, embedding).
+
+    Creates one shared ProjectStore when none is passed.
+    """
     from PyQt5.QtWidgets import QApplication
 
     from .gui.main_window import MainWindow
+    from .services.storage import ProjectStore
 
     qt_app = QApplication.instance() or QApplication([])
-    window = MainWindow()
-    window.show()
-    return qt_app.exec_()
+    window = MainWindow(store=store if store is not None else ProjectStore())
+    return qt_app, window
 
 
 if __name__ == "__main__":

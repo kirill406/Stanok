@@ -72,6 +72,7 @@ class ProjectDialog(QDialog):
             self.table.setItem(row, 0, name_item)
             spin = QSpinBox(self.table)
             spin.setRange(0, 1_000_000)
+            spin.setToolTip(STRINGS.PROJ_COUNT_TIP)
             self.table.setCellWidget(row, 1, spin)
             btn = QPushButton(STRINGS.PROJ_RUN, self.table)
             btn.clicked.connect(

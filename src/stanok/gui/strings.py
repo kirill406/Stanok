@@ -58,7 +58,8 @@ class STRINGS:
     PROJ_DATA = "Данные: {path}"
     PROJ_SOURCE = "Источник: {file}"
     PROJ_TPL_COL = "Шаблон"
-    PROJ_COUNT_COL = "Кол-во"
+    PROJ_COUNT_COL = "Лимит"
+    PROJ_COUNT_TIP = "Сколько документов создать (0 — без лимита, все строки)"
     PROJ_RUN = "Сгенерировать"
     # Fields dialog (gui/fields_dialog.py, window 3)
     FLD_TITLE = "Шаблон: {name}"

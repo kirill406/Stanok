@@ -288,3 +288,49 @@ def test_delete_project_errors(qapp, tmp_path, store, monkeypatch):
     assert warnings
     assert (store.home_dir / "proj.stanok").exists()
     dlg.close()
+
+
+def test_fields_dialog_broken_config_warns(qapp, tmp_path, store, monkeypatch):
+    folder = make_project(tmp_path / "proj")
+    warnings = []
+    monkeypatch.setattr(
+        QMessageBox, "warning", lambda *a: warnings.append(a[-1])
+    )
+    dlg = ProjectDialog(str(folder), store=store)
+    (store.home_dir / "proj.stanok").write_text("{broken")
+    dlg._open_fields_dialog("Договор")
+    assert warnings
+    dlg.close()
+
+
+def test_fields_dialog_missing_template_warns(qapp, tmp_path, store, monkeypatch):
+    import json
+
+    folder = make_project(tmp_path / "proj")
+    warnings = []
+    monkeypatch.setattr(
+        QMessageBox, "warning", lambda *a: warnings.append(a[-1])
+    )
+    dlg = ProjectDialog(str(folder), store=store)
+    data = json.loads((store.home_dir / "proj.stanok").read_text())
+    data["templates"] = {"Чужой": data["templates"]["Договор"]}
+    (store.home_dir / "proj.stanok").write_text(json.dumps(data))
+    dlg._open_fields_dialog("Договор")
+    assert warnings and "template not found" in warnings[0]
+    dlg.close()
+
+
+def test_reload_broken_config_keeps_rows(qapp, tmp_path, store, monkeypatch):
+    folder = make_project(tmp_path / "proj")
+    warnings = []
+    monkeypatch.setattr(
+        QMessageBox, "warning", lambda *a: warnings.append(a[-1])
+    )
+    dlg = ProjectDialog(str(folder), store=store)
+    assert dlg.table.rowCount() == 1
+    (store.home_dir / "proj.stanok").write_text("{broken")
+    dlg._reload_templates()
+    assert warnings
+    assert dlg.table.rowCount() == 1
+    assert dlg.table.item(0, 0).text() == "Договор"
+    dlg.close()

@@ -89,8 +89,16 @@ class ProjectDialog(QDialog):
         layout.addWidget(buttons)
 
     def _reload_templates(self) -> None:
-        """Re-resolve PJ and rebuild template rows (015)."""
-        self._pj, _ = self._store.resolve_project(self._project_ref)
+        """Re-resolve PJ and rebuild template rows (015).
+
+        Broken config mid-session → warning, existing rows stay (016/FR-10).
+        """
+        try:
+            self._pj, _ = self._store.resolve_project(self._project_ref)
+        except Exception as e:
+            logger.warning(f"reload templates failed: {e}", exc_info=True)
+            QMessageBox.warning(self, STRINGS.MAIN_ERROR_TITLE, str(e))
+            return
         self._template_names = list(self._pj.templates)
         self.table.setRowCount(len(self._template_names))
         for row, name in enumerate(self._template_names):
@@ -120,8 +128,13 @@ class ProjectDialog(QDialog):
             self._open_fields_dialog(self._template_names[row])
 
     def _open_fields_dialog(self, template_name: str) -> None:
-        """Open window 3 (FieldsDialog, 010)."""
-        dialog = FieldsDialog(self._project_ref, template_name, self._store, self)
+        """Open window 3 (FieldsDialog, 010); broken config → dialog (016)."""
+        try:
+            dialog = FieldsDialog(self._project_ref, template_name, self._store, self)
+        except Exception as e:
+            logger.warning(f"open fields dialog failed: {e}", exc_info=True)
+            QMessageBox.warning(self, STRINGS.MAIN_ERROR_TITLE, str(e))
+            return
         dialog.exec_()
 
     # -- template management (015) -----------------------------------------

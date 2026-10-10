@@ -6,16 +6,71 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
 
 from .gui.strings import STRINGS
 
 logger = logging.getLogger(__name__)
 
+LOG_FILE = "stanok.log"
+LOG_MAX_BYTES = 1_000_000
+LOG_BACKUPS = 3
+
+
+def _app_home() -> Path:
+    """User Home dir, overridable via STANOK_HOME (tests, portable mode)."""
+    override = os.environ.get("STANOK_HOME")
+    return Path(override).expanduser() if override else Path.home() / ".stanok"
+
+
+def _setup_logging() -> Path:
+    """Console + rotating file logging in Home; level from AJ (018/NFR-5).
+
+    Idempotent: repeated calls attach nothing twice.
+    """
+    home = _app_home()
+    home.mkdir(parents=True, exist_ok=True)
+    root = logging.getLogger()
+    if getattr(root, "_stanok_configured", False):
+        return home
+    fmt = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+    console = logging.StreamHandler()
+    console.setFormatter(fmt)
+    root.addHandler(console)
+    try:
+        fh = RotatingFileHandler(
+            home / LOG_FILE, maxBytes=LOG_MAX_BYTES, backupCount=LOG_BACKUPS,
+            encoding="utf-8",
+        )
+        fh.setFormatter(fmt)
+        root.addHandler(fh)
+    except OSError as e:
+        root.warning("file logging disabled: %s", e)
+    level = _stored_log_level(home)
+    root.setLevel(level)
+    root._stanok_configured = True  # type: ignore[attr-defined]
+    return home
+
+
+def _stored_log_level(home: Path) -> int:
+    """Read log level from AJ settings (INFO default / on any error)."""
+    import json
+
+    try:
+        data = json.loads((home / "settings.json").read_text(encoding="utf-8"))
+        name = str(data.get("settings", {}).get("log_level", "INFO")).upper()
+        return {"DEBUG": logging.DEBUG, "INFO": logging.INFO,
+                "WARNING": logging.WARNING, "ERROR": logging.ERROR}[name]
+    except Exception:
+        return logging.INFO
+
 
 def main(argv: list[str] | None = None) -> int:
     """CLI entry: `stanok <project>` generates; bare `stanok` opens GUI."""
-    logging.basicConfig(level=logging.INFO)
+    _setup_logging()
     parser = argparse.ArgumentParser(prog="stanok", description=STRINGS.APP_DESCR)
     parser.add_argument(
         "project_ref", nargs="?", default=None, help=STRINGS.APP_REF_HELP

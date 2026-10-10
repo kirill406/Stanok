@@ -48,7 +48,16 @@ class STRINGS:
     MAIN_GENERATE = "Сгенерировать"
     MAIN_GENERATE_ALL = "Сгенерировать все"
     MAIN_SETTINGS = "Настройки"
-    MAIN_SETTINGS_STUB = "Настройки приложения появятся позже"
+
+    # Settings dialog (gui/settings_dialog.py)
+    SET_TITLE = "Настройки"
+    SET_LOG_LEVEL = "Уровень лога:"
+    SET_HOME = "Папка данных:"
+    SET_VERSION = "Версия:"
+    SET_LOG_FILE = "Файл лога:"
+    SET_OPEN_FOLDER = "Открыть папку"
+    SET_SAVE = "Сохранить"
+    SET_CANCEL = "Отмена"
     MAIN_SUMMARY_TITLE = "Сгенерировать все: итог"
     MAIN_CREATE = "Создать проект"
 

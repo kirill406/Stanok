@@ -107,3 +107,16 @@ def test_cli_broken_project_returns_1(tmp_path, store, monkeypatch):
         "stanok.services.generate.ProjectStore", lambda *a, **k: store
     )
     assert main([str(tmp_path / "gone")]) == 1
+
+
+def test_cli_source_alias(tmp_path, store, monkeypatch, capsys):
+    from tests.services.test_generate import _add_source
+
+    monkeypatch.setattr(
+        "stanok.services.generate.ProjectStore", lambda *a, **k: store
+    )
+    folder = make_project(tmp_path / "cli")
+    second = _add_source(folder)
+    assert main([str(folder), "--source", second]) == 0
+    out, _ = capsys.readouterr()
+    assert "создано 1" in out

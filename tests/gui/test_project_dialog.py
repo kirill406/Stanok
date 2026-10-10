@@ -129,3 +129,21 @@ def test_broken_template_shows_error(qapp, tmp_path, store, monkeypatch):
 def test_open_missing_project_raises(qapp, tmp_path, store):
     with pytest.raises(StorageError):
         ProjectDialog("nope", store=store)
+
+
+def test_source_combo_runs_selected_only(qapp, tmp_path, store, monkeypatch):
+    from tests.services.test_generate import _add_source
+
+    infos = []
+    monkeypatch.setattr(QMessageBox, "information", lambda *a: infos.append(a[-1]))
+    folder = make_project(tmp_path / "proj")
+    second = _add_source(folder)
+    dlg = ProjectDialog(str(folder), store=store)
+    assert dlg.source_combo.count() == 3
+    assert dlg.source_combo.itemText(0) == STRINGS.PROJ_SOURCE_ALL
+    dlg.source_combo.setCurrentIndex(2)
+    assert dlg.source_combo.currentData() == second
+    dlg._on_run_template("Договор")
+    _await_run(dlg)
+    assert infos and "создано 1" in infos[0]
+    dlg.close()

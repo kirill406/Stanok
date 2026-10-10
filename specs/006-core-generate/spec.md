@@ -58,6 +58,8 @@ cmd.project_ref
     → read_excel(источник) → rows
     → resolve_rows(rows, pj, today, limit=max_docs) → (fillings, counters)
     → окно чистых строк в сервисе (start, пропуск пустых); выборка режимов — в движке (012)
+    → FR-7 (013): при data_source=None — цикл по всем источникам по порядку PJ;
+    счётчики сквозные, курсор свой у каждого; max_docs — на источник
     → for each FJ: render(fj, template_path) → Document
     → doc.save(Результат/<dist> с уникальным именем)
     → update PJ: counters (last += created), start_row

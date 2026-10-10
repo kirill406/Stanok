@@ -297,13 +297,112 @@ def test_named_data_source_pick(tmp_path, store):
         )
 
 
-def test_multiple_sources_warn_first(tmp_path, store):
+def _add_source(folder, name="data2.xlsx", rows=(("Зоя", 300),), mode="sequential",
+               start_row=0):
+    """Append second xlsx + data_sources entry to a make_project folder."""
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["ФИО", "Сумма"])
+    for r in rows:
+        ws.append(list(r))
+    wb.save(folder / "Данные" / name)
+    pj_path = folder / "project.stanok"
+    data = json.loads(pj_path.read_text())
+    data["data_sources"].append(
+        {"file": f"Данные/{name}", "mode": mode, "start_row": start_row}
+    )
+    pj_path.write_text(json.dumps(data, ensure_ascii=False))
+    return f"Данные/{name}"
+
+
+def test_multiple_sources_run_all(tmp_path, store):
     folder = make_project(tmp_path / "proj")
     data = json.loads((folder / "project.stanok").read_text())
     data["data_sources"].append(data["data_sources"][0])
     (folder / "project.stanok").write_text(json.dumps(data, ensure_ascii=False))
     report = generate_documents(GenerateCommand(project_ref=folder), store=store)
+    assert report.created == 4
+    saved = _load_saved(store, "proj")
+    assert saved.counters["num"].last == 4
+    assert [ds.start_row for ds in saved.data_sources] == [2, 2]
+
+
+def test_two_sources_shared_counters(tmp_path, store):
+    folder = make_project(tmp_path / "proj")
+    _add_source(folder)
+    report = generate_documents(GenerateCommand(project_ref=folder), store=store)
+    assert report.created == 3
+    assert report.resumed_from is None
+    saved = _load_saved(store, "proj")
+    assert saved.counters["num"].last == 3
+    assert [ds.start_row for ds in saved.data_sources] == [2, 1]
+
+
+def test_named_second_source_uses_own_mode(tmp_path, store):
+    folder = make_project(tmp_path / "proj")
+    second = _add_source(folder, rows=(("А", 1), ("Б", 2)), mode="circular")
+    report = generate_documents(
+        GenerateCommand(project_ref=folder, data_source=second, max_docs=5),
+        store=store,
+    )
+    assert report.created == 5
+    saved = _load_saved(store, "proj")
+    assert saved.counters["num"].last == 5
+    assert [ds.start_row for ds in saved.data_sources] == [0, 2]
+
+
+def test_broken_second_source_continues(tmp_path, store):
+    folder = make_project(tmp_path / "proj")
+    pj_path = folder / "project.stanok"
+    data = json.loads(pj_path.read_text())
+    data["data_sources"].append(
+        {"file": "Данные/none.xlsx", "mode": "sequential", "start_row": 0}
+    )
+    pj_path.write_text(json.dumps(data, ensure_ascii=False))
+    report = generate_documents(GenerateCommand(project_ref=folder), store=store)
     assert report.created == 2
+    assert len(report.errors) == 1
+    idx, msg = report.errors[0]
+    assert idx == -1
+    assert msg.startswith("Данные/none.xlsx: ")
+
+
+def test_resumed_from_first_source(tmp_path, store):
+    folder = make_project(tmp_path / "proj", start_row=1)
+    _add_source(folder)
+    report = generate_documents(
+        GenerateCommand(project_ref=folder, resume=True), store=store
+    )
+    assert report.created == 2
+    assert report.resumed_from == 1
+
+
+def test_single_broken_source_raises(tmp_path, store):
+    folder = make_project(tmp_path / "proj")
+    pj_path = folder / "project.stanok"
+    data = json.loads(pj_path.read_text())
+    data["data_sources"] = [
+        {"file": "Данные/none.xlsx", "mode": "sequential", "start_row": 0}
+    ]
+    pj_path.write_text(json.dumps(data, ensure_ascii=False))
+    with pytest.raises(Exception, match="none.xlsx"):
+        generate_documents(GenerateCommand(project_ref=folder), store=store)
+
+
+def test_cancel_stops_before_second_source(tmp_path, store):
+    folder = make_project(tmp_path / "proj")
+    _add_source(folder)
+
+    def stop_after_first(created, total):
+        return True
+
+    report = generate_documents(
+        GenerateCommand(project_ref=folder), store=store,
+        progress=stop_after_first,
+    )
+    assert report.created == 1
+    saved = _load_saved(store, "proj")
+    assert [ds.start_row for ds in saved.data_sources] == [2, 0]
 
 
 def test_save_document_escape_rejected(tmp_path):

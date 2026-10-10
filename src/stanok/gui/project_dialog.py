@@ -9,6 +9,7 @@ from pathlib import Path
 
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
+    QComboBox,
     QDialog,
     QDialogButtonBox,
     QLabel,
@@ -55,9 +56,13 @@ class ProjectDialog(QDialog):
         self.resize(900, 650)
         layout = QVBoxLayout(self)
 
-        ds_file = self._pj.data_sources[0].file if self._pj.data_sources else "-"
         layout.addWidget(QLabel(STRINGS.PROJ_DATA.format(path=self._project_ref)))
-        layout.addWidget(QLabel(STRINGS.PROJ_SOURCE.format(file=ds_file)))
+        layout.addWidget(QLabel(STRINGS.PROJ_SOURCE))
+        self.source_combo = QComboBox(self)
+        self.source_combo.addItem(STRINGS.PROJ_SOURCE_ALL, None)
+        for ds in self._pj.data_sources:
+            self.source_combo.addItem(ds.file, ds.file)
+        layout.addWidget(self.source_combo)
 
         self.table = QTableWidget(self)
         self.table.setColumnCount(3)
@@ -106,6 +111,7 @@ class ProjectDialog(QDialog):
         cmd = GenerateCommand(
             project_ref=self._project_ref,
             template=template_name,
+            data_source=self.source_combo.currentData(),
             max_docs=limit if limit > 0 else None,
         )
         self._progress_dialog = QProgressDialog(

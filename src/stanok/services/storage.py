@@ -221,6 +221,17 @@ class ProjectStore:
             configs.sort(key=lambda x: x[0], reverse=True)
             return [pj for _, pj in configs]
 
+    def _unique_config_name(self, base: str) -> str:
+        """Free config stem: base, base (1), base (2), ... (§5.3 spec.md)."""
+        if not self._get_config_path(base).exists():
+            return base
+        i = 1
+        while True:
+            candidate = f"{base} ({i})"
+            if not self._get_config_path(candidate).exists():
+                return candidate
+            i += 1
+
     def migrate_from_project(self, project_dir: Path) -> ProjectJSON:
         """Migrate project config from project folder to Home."""
         if ".." in project_dir.parts:
@@ -234,9 +245,10 @@ class ProjectStore:
             )
         with open(legacy_config, "r", encoding="utf-8") as f:
             pj = validate_pj(json.load(f))
-        self.save(pj, name=project_dir.name)
+        name = self._unique_config_name(project_dir.resolve().name)
+        self.save(pj, name=name)
         legacy_config.unlink()
-        logger.info("migrated project config from %s", project_dir)
+        logger.info("migrated project config from %s as %s", project_dir, name)
         return pj
 
     def resolve_project(self, ref: str | Path) -> tuple[ProjectJSON, Path]:

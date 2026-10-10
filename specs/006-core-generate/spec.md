@@ -43,6 +43,7 @@ class GenerateReport:
     errors: list[tuple[int, str]]    # (row_index, error_msg)
     output_paths: list[Path]         # пути к созданным файлам
     elapsed: float                   # секунды
+    resumed_from: int | None         # входной курсор; None при старте с 0 (012)
 
 
 def generate_documents(cmd: GenerateCommand) -> GenerateReport:
@@ -55,8 +56,8 @@ def generate_documents(cmd: GenerateCommand) -> GenerateReport:
 cmd.project_ref
     → resolve_project() → (PJ, config_path)
     → read_excel(источник) → rows
-    → resolve_rows(rows, pj, today) → (fillings, counters)
-    → window строк [:max_docs] ДО resolve (счётчики точные: last += created)
+    → resolve_rows(rows, pj, today, limit=max_docs) → (fillings, counters)
+    → окно чистых строк в сервисе (start, пропуск пустых); выборка режимов — в движке (012)
     → for each FJ: render(fj, template_path) → Document
     → doc.save(Результат/<dist> с уникальным именем)
     → update PJ: counters (last += created), start_row

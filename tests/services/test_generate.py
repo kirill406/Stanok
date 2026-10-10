@@ -297,6 +297,36 @@ def test_named_data_source_pick(tmp_path, store):
         )
 
 
+def test_multiple_sources_warn_first(tmp_path, store):
+    folder = make_project(tmp_path / "proj")
+    data = json.loads((folder / "project.stanok").read_text())
+    data["data_sources"].append(data["data_sources"][0])
+    (folder / "project.stanok").write_text(json.dumps(data, ensure_ascii=False))
+    report = generate_documents(GenerateCommand(project_ref=folder), store=store)
+    assert report.created == 2
+
+
+def test_save_document_escape_rejected(tmp_path):
+    from docx import Document as DocxDocument
+
+    from stanok.services.generate import _save_document
+
+    with pytest.raises(TemplateError, match="escapes"):
+        _save_document(DocxDocument(), tmp_path, "../evil.docx", 0)
+
+
+def test_progress_callback_error_ignored(tmp_path, store):
+    folder = make_project(tmp_path / "proj", rows=(("А", 1),))
+
+    def bad_progress(created, total):
+        raise RuntimeError("callback boom")
+
+    report = generate_documents(
+        GenerateCommand(project_ref=folder), store=store, progress=bad_progress
+    )
+    assert report.created == 1
+
+
 def test_dist_escape_fails_fast(tmp_path, store):
     folder = make_project(tmp_path / "proj", rows=(("Иван", 100),))
     _rewrite_pj(folder, filename_template="../evil_{i}.docx")
@@ -310,6 +340,46 @@ def test_only_empty_rows(tmp_path, store):
     report = generate_documents(GenerateCommand(project_ref=folder), store=store)
     assert report.created == 0
     assert report.skipped == 2
+
+
+def test_circular_cycles_to_max_docs(tmp_path, store):
+    folder = make_project(
+        tmp_path / "proj", rows=(("А", 1), ("Б", 2)), mode="circular"
+    )
+    report = generate_documents(
+        GenerateCommand(project_ref=folder, max_docs=5), store=store
+    )
+    assert report.created == 5
+    assert report.resumed_from is None
+    saved = _load_saved(store, "proj")
+    assert saved.counters["num"].last == 5
+    assert saved.data_sources[0].start_row == 2
+
+
+def test_resumed_from_reported(tmp_path, store):
+    folder = make_project(tmp_path / "proj", start_row=1)
+    fresh = generate_documents(GenerateCommand(project_ref=folder), store=store)
+    assert fresh.resumed_from is None
+    resumed = generate_documents(
+        GenerateCommand(project_ref=folder, resume=True), store=store
+    )
+    assert resumed.created == 0
+    assert resumed.resumed_from == 2
+
+
+def test_dist_from_counter_and_today(tmp_path, store):
+    import re
+
+    folder = make_project(tmp_path / "proj", rows=(("Иван", 100),))
+    pj_path = folder / "project.stanok"
+    data = json.loads(pj_path.read_text())
+    data["templates"]["Договор"]["fields"]["Дата"] = {"source": "today"}
+    data["filename_template"] = "Д_{Номер}_{Дата}.docx"
+    pj_path.write_text(json.dumps(data, ensure_ascii=False))
+    report = generate_documents(GenerateCommand(project_ref=folder), store=store)
+    assert report.created == 1
+    name = report.output_paths[0].name
+    assert re.fullmatch(r"Д_1_\d{4}-\d{2}-\d{2}\.docx", name), name
 
 
 def test_progress_callback_cancel(tmp_path, store):

@@ -21,7 +21,10 @@ def main(argv: list[str] | None = None) -> int:
         "project_ref", nargs="?", default=None, help=STRINGS.APP_REF_HELP
     )
     parser.add_argument("--template", default=None, help=STRINGS.APP_TEMPLATE_HELP)
-    parser.add_argument("--data-source", default=None, help=STRINGS.APP_SOURCE_HELP)
+    parser.add_argument(
+        "--data-source", "--source", dest="data_source", default=None,
+        help=STRINGS.APP_SOURCE_HELP,
+    )
     parser.add_argument("--max-docs", type=int, default=None, help=STRINGS.APP_MAXDOCS_HELP)
     parser.add_argument("--resume", action="store_true", help=STRINGS.APP_RESUME_HELP)
     args = parser.parse_args(argv)

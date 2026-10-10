@@ -36,8 +36,8 @@ class GenerateCommand:
 
     project_ref: str | Path
     template: str | None = None
-    data_source: str | None = None
-    max_docs: int | None = None
+    data_source: str | None = None  # None = all sources in PJ order (FR-7)
+    max_docs: int | None = None  # per-source limit (013)
     resume: bool = False
 
 
@@ -101,16 +101,17 @@ def _pick_template(pj: ProjectJSON, name: str | None) -> tuple[str, TemplateDef]
     return name, pj.templates[name]
 
 
-def _pick_data_source(pj: ProjectJSON, name: str | None) -> tuple[int, DataSourceDef]:
+def _pick_data_sources(
+    pj: ProjectJSON, name: str | None
+) -> list[tuple[int, DataSourceDef]]:
+    """Select sources to run: all in PJ order (None) or one by file name."""
     if not pj.data_sources:
         raise TemplateError("no data sources defined in project")
     if name is None:
-        if len(pj.data_sources) > 1:
-            logger.warning(f"multiple data sources, using first: {pj.data_sources[0].file}")
-        return 0, pj.data_sources[0]
+        return list(enumerate(pj.data_sources))
     for i, ds in enumerate(pj.data_sources):
         if ds.file == name:
-            return i, ds
+            return [(i, ds)]
     raise TemplateError(f"data source not found: {name}")
 
 
@@ -136,8 +137,11 @@ def generate_documents(
 ) -> GenerateReport:
     """Run tables → resolve → render → docx pipeline, return report.
 
+    FR-7: data_source=None runs ALL sources in PJ order with shared counters;
+    per-source cursors persist independently. max_docs applies per source.
     Fail-fast (exception out): project/template/data config errors.
-    Per-row (collected into report.errors): render/save errors.
+    Per-source file errors (multi-source only) and per-row render/save errors
+    are collected into report.errors.
     progress(created, total) is called after each created document;
     returning True cancels the run (partial report, created files stay).
     """
@@ -150,92 +154,112 @@ def generate_documents(
     project_dir = _resolve_project_dir(cmd.project_ref, pj, config_path, store)
 
     template_name, template_def = _pick_template(pj, cmd.template)
-    ds_index, ds = _pick_data_source(pj, cmd.data_source)
+    sources = _pick_data_sources(pj, cmd.data_source)
+    multi = len(sources) > 1
     template_path = project_dir / template_def.file
     if not template_path.is_file():
         raise TemplateError(f"template file not found: {template_path}")
 
-    rows = ExcelReader().read(project_dir / ds.file)
-    logger.debug(f"read {len(rows)} rows from {ds.file}")
-    if not rows:
-        logger.info("generate finished: empty data source")
-        report.elapsed = time.monotonic() - started
-        return report
-
-    # Work copy: single template + single source, effective cursor.
-    work = pj.model_copy(deep=True)
-    work.templates = {template_name: template_def}
-    work_ds = work.data_sources[ds_index]
-    start = max(0, ds.start_row if cmd.resume else 0)
-    work_ds.start_row = 0
-    work = validate_pj(work.model_dump(mode="json"))
-
-    indexed = [(i, r) for i, r in enumerate(rows[start:], start)]
-    nonempty = [(i, r) for i, r in indexed if not _is_empty_row(r)]
-    report.skipped = len(indexed) - len(nonempty)
-    report.resumed_from = start or None
-    if not nonempty:
-        logger.info("generate finished: only empty rows")
-        report.elapsed = time.monotonic() - started
-        return report
-
-    limit = cmd.max_docs
-    if limit is not None and limit <= 0:
-        report.elapsed = time.monotonic() - started
-        return report
-
-    # Mode selection (incl. circular cycling) lives in the engine;
-    # here only clean rows + limit go in, cursor math stays here.
-    clean_idx = [i for i, _ in nonempty]
-    fillings, counters = resolve_rows(
-        [r for _, r in nonempty], work, today, limit=limit
-    )
-    logger.debug(f"resolved {len(fillings)} fillings, mode={ds.mode}")
-    n = len(clean_idx)
-    if ds.mode == "circular" and limit is not None:
-        attempt_idx = [clean_idx[k % n] for k in range(len(fillings))]
-        new_start = start + len(indexed)
-    elif ds.mode == "constant":
-        attempt_idx = [clean_idx[0]] * len(fillings)
-        new_start = clean_idx[0] + 1
-    else:
-        attempt_idx = clean_idx[: len(fillings)]
-        new_start = start + len(indexed if limit is None else indexed[:limit])
-    attempt = list(zip(attempt_idx, fillings))
-
     out_dir = project_dir / RESULT_DIR
-    out_dir.mkdir(parents=True, exist_ok=True)
-    total = len(fillings)
+
+    first_ds = sources[0][1]
+    first_start = max(0, first_ds.start_row if cmd.resume else 0)
+    report.resumed_from = first_start or None
+
     cancelled = False
-    for abs_index, fj in attempt:
+    for ds_index, ds in sources:
+        if cancelled:
+            break
         try:
-            doc = render(fj, template_path)
-            path = _save_document(doc, out_dir, fj.dist, abs_index)
-            report.output_paths.append(path)
-            report.created += 1
+            rows = ExcelReader().read(project_dir / ds.file)
         except Exception as e:
-            logger.warning(f"row {abs_index} failed: {e}", exc_info=True)
-            report.errors.append((abs_index, str(e)))
-        if progress is not None:
+            if not multi:
+                raise
+            logger.warning(f"source {ds.file} failed: {e}", exc_info=True)
+            report.errors.append((-1, f"{ds.file}: {e}"))
+            continue
+        logger.debug(f"read {len(rows)} rows from {ds.file}")
+        if not rows:
+            logger.info(f"generate: empty data source {ds.file}")
+            continue
+
+        # Work copy: single template + THIS source only (013: resolve reads [0]).
+        work = pj.model_copy(deep=True)
+        work.templates = {template_name: template_def}
+        src = ds.model_copy()
+        start = max(0, ds.start_row if cmd.resume else 0)
+        src.start_row = 0
+        work.data_sources = [src]
+        work = validate_pj(work.model_dump(mode="json"))
+
+        indexed = [(i, r) for i, r in enumerate(rows[start:], start)]
+        nonempty = [(i, r) for i, r in indexed if not _is_empty_row(r)]
+        report.skipped += len(indexed) - len(nonempty)
+        if not nonempty:
+            logger.info(f"generate: only empty rows in {ds.file}")
+            continue
+
+        limit = cmd.max_docs
+        if limit is not None and limit <= 0:
+            continue
+
+        # Mode selection (incl. circular cycling) lives in the engine;
+        # here only clean rows + limit go in, cursor math stays here.
+        clean_idx = [i for i, _ in nonempty]
+        fillings, counters = resolve_rows(
+            [r for _, r in nonempty], work, today, limit=limit
+        )
+        logger.debug(f"resolved {len(fillings)} fillings, mode={ds.mode}")
+        n = len(clean_idx)
+        if ds.mode == "circular" and limit is not None:
+            attempt_idx = [clean_idx[k % n] for k in range(len(fillings))]
+            new_start = start + len(indexed)
+        elif ds.mode == "constant":
+            attempt_idx = [clean_idx[0]] * len(fillings)
+            new_start = clean_idx[0] + 1
+        else:
+            attempt_idx = clean_idx[: len(fillings)]
+            new_start = start + len(indexed if limit is None else indexed[:limit])
+        attempt = list(zip(attempt_idx, fillings))
+
+        total = len(fillings)
+        tag = f"{ds.file}: " if multi else ""
+        source_created = 0
+        out_dir.mkdir(parents=True, exist_ok=True)
+        for abs_index, fj in attempt:
             try:
-                if progress(report.created, total):
-                    logger.info(f"generate cancelled after {report.created} docs")
-                    cancelled = True
-                    break
+                doc = render(fj, template_path)
+                path = _save_document(doc, out_dir, fj.dist, abs_index)
+                report.output_paths.append(path)
+                report.created += 1
+                source_created += 1
             except Exception as e:
-                logger.warning(f"progress callback failed: {e}", exc_info=True)
-    if cancelled:
-        logger.info("generate cancelled by user")
+                logger.warning(f"row {abs_index} failed: {e}", exc_info=True)
+                report.errors.append((abs_index, f"{tag}{e}"))
+            if progress is not None:
+                try:
+                    if progress(report.created, total):
+                        logger.info(
+                            f"generate cancelled after {report.created} docs"
+                        )
+                        cancelled = True
+                        break
+                except Exception as e:
+                    logger.warning(f"progress callback failed: {e}", exc_info=True)
+        if cancelled:
+            logger.info("generate cancelled by user")
+
+        if source_created:
+            for name in pj.counters:
+                if name in counters:
+                    pj.counters[name].last = counters[name]
+            # Counters for docs that failed to render keep resolved numbers
+            # (gaps are accepted); cursor advances per mode (§2.2 spec 012).
+            pj.data_sources[ds_index].start_row = new_start
 
     if report.created:
-        for name in pj.counters:
-            if name in counters:
-                pj.counters[name].last = counters[name]
-        # Counters for docs that failed to render keep resolved numbers
-        # (gaps are accepted); cursor advances per mode (§2.2 spec 012).
-        pj.data_sources[ds_index].start_row = new_start
         store.save(pj, name=config_path.stem)
-        logger.info(f"saved PJ counters/start_row={new_start} to {config_path}")
+        logger.info(f"saved PJ counters/cursors to {config_path}")
 
     report.elapsed = time.monotonic() - started
     logger.info(

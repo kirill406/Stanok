@@ -18,6 +18,7 @@
 - `gui.fields_dialog`: окно 3 (правка констант, превью table/counter/today, Save в PJ, dirty-чек Save/Discard/Cancel); окно 2 открывает настоящий диалог
 - `app.create_gui`: общий `ProjectStore`, bootstrap без `exec_`; сквозной GUI-тест 1→2→3→docx; CLI-регрессия в тестах
 - `engine.resolve` + `services.generate` (012): `limit` в `resolve_rows` (честный circular/constant), курсор по режимам, `resumed_from` в отчёте
+- `services.generate` + GUI (013): прогон по всем Excel-источникам (FR-7), сквозные счётчики, курсоры на источник, `--source` в CLI, комбобокс источников в окне 2
 - Тесты: `tests/tables/`, `tests/engine/test_schema.py`, `tests/engine/test_resolve.py` (покрытие движка ~99%)
 
 ### Исправлено

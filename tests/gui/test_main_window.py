@@ -164,14 +164,44 @@ def test_settings_stub(qapp, tmp_path, store, monkeypatch):
     win.close()
 
 
-def test_create_stub(qapp, tmp_path, store, monkeypatch):
-    infos = []
-    monkeypatch.setattr(QMessageBox, "information", lambda *a: infos.append(a[-1]))
-    win = MainWindow(store=store)
-    assert win.create_btn.text() == STRINGS.MAIN_CREATE
-    win._on_create()
-    assert infos == [STRINGS.MAIN_CREATE_STUB]
-    win.close()
+def test_create_dialog_builds_project(qapp, tmp_path, store, monkeypatch):
+    from tests.services.test_storage import _src_files
+
+    from stanok.gui.create_dialog import CreateDialog
+
+    xlsx, tpl = _src_files(tmp_path)
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a: None)
+    dlg = CreateDialog(store, str(tmp_path), None)
+    assert not dlg.create_btn.isEnabled()
+    dlg.name_edit.setText("nov")
+    assert not dlg.create_btn.isEnabled()
+    dlg.folder_edit.setText(str(tmp_path / "proj"))
+    dlg.xlsx_list.addItem(str(xlsx))
+    dlg.docx_list.addItem(str(tpl))
+    dlg._update_create_enabled()
+    assert dlg.create_btn.isEnabled()
+    dlg._on_create()
+    assert dlg.result()
+    assert (tmp_path / "proj" / "Данные" / "data.xlsx").is_file()
+    assert any(r.config == "nov" for r in store.get_recent())
+    dlg.close()
+
+
+def test_create_dialog_shows_error(qapp, tmp_path, store, monkeypatch):
+    warnings = []
+    monkeypatch.setattr(
+        QMessageBox, "warning", lambda *a: warnings.append(a[-1])
+    )
+
+    from stanok.gui.create_dialog import CreateDialog
+
+    dlg = CreateDialog(store, str(tmp_path), None)
+    dlg.name_edit.setText("  ")
+    dlg.folder_edit.setText(str(tmp_path / "proj"))
+    dlg._on_create()
+    assert warnings
+    assert not dlg.result()
+    dlg.close()
 
 
 def test_generate_one_end_to_end(qapp, tmp_path, store, monkeypatch):
@@ -258,3 +288,49 @@ def test_worker_cancel_after_first(qapp, tmp_path, store):
     box = _await_report(worker)
     assert "failed" not in box
     assert box["report"].created == 1
+
+
+def test_create_dialog_file_slots(qapp, tmp_path, store, monkeypatch):
+    from PyQt5.QtWidgets import QFileDialog
+
+    from stanok.gui.create_dialog import CreateDialog
+
+    monkeypatch.setattr(
+        QFileDialog, "getOpenFileNames",
+        lambda *a, **k: (["/tmp/a.xlsx", "/tmp/a.xlsx", "/tmp/b.xlsx"], ""),
+    )
+    monkeypatch.setattr(
+        QFileDialog, "getExistingDirectory",
+        lambda *a, **k: "/tmp/proj",
+    )
+    dlg = CreateDialog(store, "", None)
+    dlg._on_add_files(dlg.xlsx_list, "Excel (*.xlsx)")
+    assert dlg.xlsx_list.count() == 2
+    dlg.xlsx_list.setCurrentRow(0)
+    dlg._on_remove_selected(dlg.xlsx_list)
+    assert dlg.xlsx_list.count() == 1
+    dlg._on_browse_folder()
+    assert dlg.folder_edit.text() == "/tmp/proj"
+    dlg.close()
+
+
+def test_main_create_opens_dialog(qapp, tmp_path, store, monkeypatch):
+    import stanok.gui.create_dialog as cd
+
+    opened = {}
+
+    class FakeDialog:
+        def __init__(self, *a, **k):
+            opened["args"] = a
+
+        def exec_(self):
+            return True
+
+    monkeypatch.setattr(cd, "CreateDialog", FakeDialog)
+    store.add_recent(str(tmp_path), "old")
+    win = MainWindow(store=store)
+    refreshed = []
+    monkeypatch.setattr(win, "refresh_recent", lambda: refreshed.append(True))
+    win._on_create()
+    assert opened and refreshed
+    win.close()

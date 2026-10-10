@@ -143,10 +143,15 @@ class MainWindow(QMainWindow):
         )
 
     def _on_create(self) -> None:
-        """Create-project flow lives in 014; stub for now."""
-        QMessageBox.information(
-            self, STRINGS.MAIN_CREATE, STRINGS.MAIN_CREATE_STUB
-        )
+        """Open window 4 (CreateDialog, 014); refresh recent on success."""
+        # Local import: keeps module import light and patchable in tests.
+        from .create_dialog import CreateDialog
+
+        recent = self._store.get_recent()
+        hint = recent[-1].folder if recent else str(Path.home())
+        dialog = CreateDialog(self._store, hint, self)
+        if dialog.exec_():
+            self.refresh_recent()
 
     # -- generation queue ---------------------------------------------------
     def _on_generate_one(self, ref: str) -> None:

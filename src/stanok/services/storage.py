@@ -20,8 +20,47 @@ from ..engine.schema import (
     validate_aj,
     validate_pj,
 )
+from ..engine.xmlops import PLACEHOLDER_RE
+from ..gui.strings import STRINGS
 
 logger = logging.getLogger(__name__)
+
+
+def _scan_placeholders(docx_path: Path) -> list[str]:
+    """Ordered unique {{name}} placeholders from docx paragraphs + tables."""
+    from docx import Document
+
+    try:
+        doc = Document(str(docx_path))
+    except Exception as e:
+        logger.warning(f"unreadable template {docx_path}: {e}", exc_info=True)
+        raise StorageError(
+            "init", [f"cannot read template {docx_path.name}: {e}"]
+        ) from e
+    blocks = list(doc.paragraphs)
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                blocks.extend(cell.paragraphs)
+    names: list[str] = []
+    for p in blocks:
+        for m in PLACEHOLDER_RE.finditer(p.text):
+            name = m.group(1).strip()
+            if name and name not in names:
+                names.append(name)
+    return names
+
+
+def _unique_sibling(path: Path) -> Path:
+    """Return path or first free `stem (1).suffix` sibling."""
+    if not path.exists():
+        return path
+    i = 1
+    while True:
+        candidate = path.with_name(f"{path.stem} ({i}){path.suffix}")
+        if not candidate.exists():
+            return candidate
+        i += 1
 
 
 class ProjectStore:
@@ -31,7 +70,8 @@ class ProjectStore:
         if home_dir is None:
             home_dir = Path.home() / ".stanok"
         self.home_dir = Path(home_dir).resolve()
-        self._lock = threading.Lock()
+        # RLock: init_project re-enters via save()/add_recent().
+        self._lock = threading.RLock()
         self._ensure_home()
 
     def _ensure_home(self) -> None:
@@ -219,6 +259,123 @@ class ProjectStore:
                 self.home_dir / "settings.json", aj.model_dump(mode="json")
             )
             logger.info("updated recent projects, count=%d", len(aj.recent))
+
+
+    def init_project(
+        self,
+        folder: str | Path,
+        name: str,
+        xlsx: list[str | Path],
+        docx: list[str | Path],
+        copy_files: bool = True,
+    ) -> ProjectJSON:
+        """Create project folder with Данные/Шаблоны + PJ from files (FR-12).
+
+        copy_files=True copies sources into the folder (unique names on
+        collision); False only links files already inside Данные/Шаблоны.
+        Template fields default to table source named as the placeholder.
+        """
+        with self._lock:
+            name = (name or "").strip()
+            if not name or "/" in name or "\\" in name or name in (".", ".."):
+                raise StorageError("init", [f"invalid project name: {name!r}"])
+            if self._get_config_path(name).exists():
+                raise StorageError("init", [f"project already exists: {name}"])
+            if not xlsx:
+                raise StorageError("init", ["no Excel files selected"])
+            if not docx:
+                raise StorageError("init", ["no Word templates selected"])
+
+            folder = Path(folder).resolve()
+            data_dir = folder / STRINGS.DATA_DIR
+            tpl_dir = folder / STRINGS.TPL_DIR
+            try:
+                data_dir.mkdir(parents=True, exist_ok=True)
+                tpl_dir.mkdir(parents=True, exist_ok=True)
+            except OSError as e:
+                logger.warning(f"cannot create project folder {folder}: {e}")
+                raise StorageError(
+                    "init", [f"cannot create folder {folder}: {e}"]
+                ) from e
+
+            rel_xlsx = [
+                self._place_source(Path(f), data_dir, folder, ".xlsx", copy_files)
+                for f in xlsx
+            ]
+            templates: dict[str, dict] = {}
+            for f in docx:
+                rel = self._place_source(
+                    Path(f), tpl_dir, folder, ".docx", copy_files
+                )
+                stem = Path(rel).stem
+                base, i = stem, 1
+                while stem in templates:
+                    i += 1
+                    stem = f"{base} ({i})"
+                placeholders = _scan_placeholders(folder / rel)
+                templates[stem] = {
+                    "file": rel,
+                    "fields": {
+                        ph: {"source": "table", "value": ph} for ph in placeholders
+                    },
+                }
+
+            pj = validate_pj(
+                {
+                    "version": "0.0.0",
+                    "templates": templates,
+                    "data_sources": [
+                        {"file": r, "mode": "sequential", "start_row": 0}
+                        for r in rel_xlsx
+                    ],
+                    "counters": {},
+                    "filename_template": "{template}_{i}",
+                }
+            )
+            self.save(pj, name=name)
+            self.add_recent(str(folder), name)
+            logger.info("initialized project %s in %s", name, folder)
+            return pj
+
+    def _place_source(
+        self,
+        src: Path,
+        dest_dir: Path,
+        folder: Path,
+        suffix: str,
+        copy_files: bool,
+    ) -> str:
+        """Copy (or link in place) one source file; return PJ-relative posix path."""
+        if src.suffix.lower() != suffix:
+            raise StorageError(
+                "init", [f"wrong file type {src.name}: expected *{suffix}"]
+            )
+        if copy_files:
+            if not src.is_file():
+                raise StorageError("init", [f"file not found: {src}"])
+            try:
+                dst = _unique_sibling(dest_dir / src.name)
+                shutil.copy2(src, dst)
+            except OSError as e:
+                logger.warning(f"copy {src} -> {dest_dir} failed: {e}")
+                raise StorageError(
+                    "init", [f"cannot copy {src.name}: {e}"]
+                ) from e
+            return dst.relative_to(folder).as_posix()
+        resolved = src.resolve()
+        try:
+            rel = resolved.relative_to(folder)
+        except ValueError:
+            raise StorageError(
+                "init", [f"file outside project folder: {src}"]
+            ) from None
+        if rel.parts[0] != dest_dir.name:
+            raise StorageError(
+                "init", [f"file must be in {dest_dir.name}/: {src}"]
+            )
+        if not resolved.is_file():
+            raise StorageError("init", [f"file not found: {src}"])
+        return rel.as_posix()
 
 
 def resolve_project(ref: str | Path, store: ProjectStore) -> tuple:

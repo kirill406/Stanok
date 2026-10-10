@@ -51,7 +51,24 @@ class STRINGS:
     MAIN_SETTINGS_STUB = "Настройки приложения появятся позже"
     MAIN_SUMMARY_TITLE = "Сгенерировать все: итог"
     MAIN_CREATE = "Создать проект"
-    MAIN_CREATE_STUB = "Создание проекта появится в 014"
+
+    # Create dialog (gui/create_dialog.py, window 4)
+    CRT_TITLE = "Новый проект"
+    CRT_NAME = "Имя проекта:"
+    CRT_FOLDER = "Папка:"
+    CRT_BROWSE = "Обзор..."
+    CRT_XLSX = "Excel-файлы:"
+    CRT_DOCX = "DOCX-шаблоны:"
+    CRT_ADD = "Добавить..."
+    CRT_REMOVE = "Убрать"
+    CRT_COPY = "Скопировать файлы в проект"
+    CRT_CREATE = "Создать"
+    CRT_CANCEL = "Отмена"
+    CRT_ERR_TITLE = "Не удалось создать проект"
+
+    # Project folder layout (shared, NFR-3: no Cyrillic literals in code)
+    DATA_DIR = "Данные"
+    TPL_DIR = "Шаблоны"
 
     # Project dialog (gui/project_dialog.py, window 2)
     PROJ_TITLE = "Проект: {name}"

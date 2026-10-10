@@ -53,6 +53,7 @@
 - Never Add new env var without updating `.env.example` (empty value)
 - Never Hardcode Russian strings in UI code — keep them reviewable in one place
 - Never Change license headers or `LICENSE` without explicit user approval
+- Never Delete branches (local `git branch -D` or remote `git push --delete`) without explicit user approval — merged feature branches stay
 
 ## Architecture Decisions (details: [docs/architecture.md](docs/architecture.md) — single source of truth)
 - Thin entry: `run.py` contains no logic, only `sys.path` setup + `main()` call

@@ -101,6 +101,14 @@ class FieldSource(str, Enum):
 class FieldDef(_WarnExtra):
     source: FieldSource
     value: Any = None
+    table: str | None = None  # TABLE: source file (020); None = any (legacy)
+
+    @field_validator("table")
+    @classmethod
+    def _relative_table(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        return _check_relative_path(v, "templates.<name>.fields.table")
 
 
 class CounterDef(_WarnExtra):

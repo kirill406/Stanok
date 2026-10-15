@@ -51,12 +51,17 @@ def test_open_shows_fields(qapp, tmp_path, store):
     assert dlg.table.rowCount() == 4
     names = [dlg.table.item(r, 0).text() for r in range(4)]
     assert names == ["ФИО", "Сумма", "Номер", "Город"]
-    # Only constant is editable
-    assert isinstance(dlg.table.cellWidget(3, 2), QLineEdit)
-    assert not (dlg.table.item(0, 2).flags() & Qt.ItemIsEditable)
-    # Previews
-    assert "Иван" in dlg.table.item(0, 2).text()
-    assert "last=0" in dlg.table.item(2, 2).text()
+    types = [dlg._rows[n]["type"].currentText() for n in names]
+    assert types == [
+        STRINGS.FLD_SRC_TABLE,
+        STRINGS.FLD_SRC_TABLE,
+        STRINGS.FLD_SRC_COUNTER,
+        STRINGS.FLD_SRC_CONSTANT,
+    ]
+    # Table row: file + column combos with headers
+    assert dlg._rows["ФИО"]["col"].count() == 2
+    assert dlg._rows["ФИО"]["col"].currentText() == "ФИО"
+    assert isinstance(dlg._rows["Город"]["const"], QLineEdit)
     dlg.close()
 
 
@@ -64,7 +69,7 @@ def test_edit_save_persists(qapp, tmp_path, store):
     folder = make_project(tmp_path / "proj")
     _add_constant(folder)
     dlg = FieldsDialog(str(folder), "Договор", store=store)
-    dlg._editors["Город"].setText("Казань")
+    dlg._rows["Город"]["const"].setText("Казань")
     assert dlg._dirty
     dlg._on_save()
     assert not dlg._dirty
@@ -90,7 +95,7 @@ def test_close_dirty_discard(qapp, tmp_path, store, monkeypatch):
     folder = make_project(tmp_path / "proj")
     _add_constant(folder)
     dlg = FieldsDialog(str(folder), "Договор", store=store)
-    dlg._editors["Город"].setText("Казань")
+    dlg._rows["Город"]["const"].setText("Казань")
     dlg.reject()
     assert dlg.result() == QDialog.Rejected
     assert _saved_value(store) == "Москва"
@@ -101,7 +106,7 @@ def test_close_dirty_save(qapp, tmp_path, store, monkeypatch):
     folder = make_project(tmp_path / "proj")
     _add_constant(folder)
     dlg = FieldsDialog(str(folder), "Договор", store=store)
-    dlg._editors["Город"].setText("Казань")
+    dlg._rows["Город"]["const"].setText("Казань")
     dlg.reject()
     assert dlg.result() == QDialog.Accepted
     assert _saved_value(store) == "Казань"
@@ -112,7 +117,7 @@ def test_close_dirty_cancel_stays(qapp, tmp_path, store, monkeypatch):
     folder = make_project(tmp_path / "proj")
     _add_constant(folder)
     dlg = FieldsDialog(str(folder), "Договор", store=store)
-    dlg._editors["Город"].setText("Казань")
+    dlg._rows["Город"]["const"].setText("Казань")
     dlg.reject()
     assert dlg.result() == 0
     assert _saved_value(store) == "Москва"
@@ -145,23 +150,24 @@ def test_today_preview(qapp, tmp_path, store):
     folder = make_project(tmp_path / "proj")
     _add_today(folder)
     dlg = FieldsDialog(str(folder), "Договор", store=store)
-    texts = [dlg.table.item(r, 2).text() for r in range(dlg.table.rowCount())]
-    assert any(datetime.date.today().isoformat() in t for t in texts)
+    assert "Дата" in dlg._rows
+    assert "preview" in dlg._rows["Дата"]
+    assert datetime.date.today().isoformat() in dlg._rows["Дата"]["preview"].text()
     dlg.close()
 
 
-def test_preview_nondir_ref(qapp, tmp_path, store):
+def test_headers_nondir_ref(qapp, tmp_path, store):
     from stanok.services.generate import generate_documents, GenerateCommand
 
     folder = make_project(tmp_path / "proj")
     generate_documents(GenerateCommand(project_ref=folder), store=store)
     store.add_recent(str(folder), "proj")
     dlg = FieldsDialog("proj", "Договор", store=store)
-    assert dlg._preview_row == {}
+    assert dlg._read_headers(None) == []
     dlg.close()
 
 
-def test_preview_no_sources(qapp, tmp_path, store):
+def test_headers_no_sources(qapp, tmp_path, store):
     import json as _json
 
     folder = make_project(tmp_path / "proj")
@@ -169,21 +175,26 @@ def test_preview_no_sources(qapp, tmp_path, store):
     data["data_sources"] = []
     (folder / "project.stanok").write_text(_json.dumps(data))
     dlg = FieldsDialog(str(folder), "Договор", store=store)
-    assert dlg._preview_row == {}
+    assert dlg._read_headers(None) == []
     dlg.close()
 
 
-def test_preview_read_failure(qapp, tmp_path, store, monkeypatch):
+def test_headers_read_failure_warns(qapp, tmp_path, store, monkeypatch):
     import stanok.gui.fields_dialog as fd
 
     folder = make_project(tmp_path / "proj")
+    warnings = []
+    monkeypatch.setattr(
+        QMessageBox, "warning", lambda *a: warnings.append(a[-1])
+    )
 
     def boom(self, path):
         raise OSError("locked")
 
     monkeypatch.setattr(fd.ExcelReader, "read", boom)
     dlg = FieldsDialog(str(folder), "Договор", store=store)
-    assert dlg._preview_row == {}
+    assert dlg._read_headers("Данные/data.xlsx") == []
+    assert warnings and "data.xlsx" in warnings[0]
     dlg.close()
 
 
@@ -229,13 +240,142 @@ def test_dirty_save_failure_stays_open(qapp, tmp_path, store, monkeypatch):
     dlg.close()
 
 
-def test_preview_text_constant_direct(qapp, tmp_path, store):
-    from stanok.engine.schema import FieldDef
+def _saved_pj(store):
+    return json.loads((store.home_dir / "proj.stanok").read_text())
 
+
+def _set_type(dlg, name, source):
+    dlg._rows[name]["type"].setCurrentIndex(["constant", "table", "counter", "today"].index(source))
+
+
+def test_switch_to_constant_prefills_and_saves(qapp, tmp_path, store):
     folder = make_project(tmp_path / "proj")
     dlg = FieldsDialog(str(folder), "Договор", store=store)
-    assert (
-        dlg._preview_text("Город", FieldDef(source="constant", value="Москва"))
-        == "Москва"
+    _set_type(dlg, "ФИО", "constant")
+    assert dlg._dirty
+    assert dlg._rows["ФИО"]["const"].text() == "{{ФИО}}"
+    dlg._on_save()
+    saved = _saved_pj(store)["templates"]["Договор"]["fields"]["ФИО"]
+    assert saved == {"source": "constant", "value": "{{ФИО}}", "table": None}
+    dlg.close()
+
+
+def test_table_file_and_column_saved(qapp, tmp_path, store):
+    from tests.services.test_storage import _src_files
+
+    folder = make_project(tmp_path / "proj")
+    xlsx, _ = _src_files(tmp_path, "src2")
+    (folder / "Данные").mkdir(parents=True, exist_ok=True)
+    import shutil
+
+    shutil.copy(xlsx, folder / "Данные" / "data2.xlsx")
+    pj_path = folder / "project.stanok"
+    data = json.loads(pj_path.read_text())
+    data["data_sources"].append(
+        {"file": "Данные/data2.xlsx", "mode": "sequential", "start_row": 0}
     )
+    pj_path.write_text(json.dumps(data, ensure_ascii=False))
+    dlg = FieldsDialog(str(folder), "Договор", store=store)
+    st = dlg._rows["ФИО"]
+    assert st["file"].count() == 3
+    st["file"].setCurrentIndex(2)
+    assert st["col"].count() == 2
+    st["col"].setCurrentIndex(0)
+    dlg._on_save()
+    saved = _saved_pj(store)["templates"]["Договор"]["fields"]["ФИО"]
+    assert saved["table"] == "Данные/data2.xlsx"
+    assert saved["value"] == "ФИО"
+    dlg.close()
+
+
+def test_legacy_table_without_file(qapp, tmp_path, store):
+    folder = make_project(tmp_path / "proj")
+    dlg = FieldsDialog(str(folder), "Договор", store=store)
+    st = dlg._rows["ФИО"]
+    assert st["file"].currentData() is None
+    assert st["file"].currentText() == STRINGS.FLD_TABLE_ANY
+    assert st["col"].currentText() == "ФИО"
+    dlg.close()
+
+
+def test_counter_new_name_and_format(qapp, tmp_path, store):
+    folder = make_project(tmp_path / "proj")
+    dlg = FieldsDialog(str(folder), "Договор", store=store)
+    _set_type(dlg, "ФИО", "counter")
+    st = dlg._rows["ФИО"]
+    st["counter"].setText("doc")
+    st["fmt"].setCurrentIndex(1)
+    assert st["fmt"].currentData() == "month"
+    dlg._on_save()
+    saved = _saved_pj(store)
+    assert saved["templates"]["Договор"]["fields"]["ФИО"]["value"] == "doc"
+    assert saved["counters"]["doc"] == {"last": 0, "format": "month"}
+    assert saved["templates"]["Договор"]["fields"]["Номер"]["value"] == "num"
+    dlg.close()
+
+
+def test_empty_column_blocks_save(qapp, tmp_path, store, monkeypatch):
+    folder = make_project(tmp_path / "proj")
+    (folder / "Данные" / "data.xlsx").unlink()
+    warnings = []
+    monkeypatch.setattr(
+        QMessageBox, "warning", lambda *a: warnings.append(a[-1])
+    )
+    dlg = FieldsDialog(str(folder), "Договор", store=store)
+    assert dlg._rows["ФИО"]["col"].count() == 0
+    dlg._on_save()
+    assert any("ФИО" in w and "пустое" in w for w in warnings)
+    assert _saved_pj(store)["templates"]["Договор"]["fields"]["ФИО"]["value"] == "ФИО"
+    dlg.close()
+
+
+def test_type_switch_marks_dirty(qapp, tmp_path, store):
+    folder = make_project(tmp_path / "proj")
+    dlg = FieldsDialog(str(folder), "Договор", store=store)
+    assert not dlg._dirty
+    _set_type(dlg, "Номер", "today")
+    assert dlg._dirty
+    assert "preview" in dlg._rows["Номер"]
+    dlg.close()
+
+
+def test_empty_counter_blocks_save(qapp, tmp_path, store, monkeypatch):
+    folder = make_project(tmp_path / "proj")
+    warnings = []
+    monkeypatch.setattr(
+        QMessageBox, "warning", lambda *a: warnings.append(a[-1])
+    )
+    dlg = FieldsDialog(str(folder), "Договор", store=store)
+    _set_type(dlg, "ФИО", "counter")
+    dlg._rows["ФИО"]["counter"].setText("   ")
+    dlg._on_save()
+    assert any("ФИО" in w for w in warnings)
+    dlg.close()
+
+
+def test_today_type_saves(qapp, tmp_path, store):
+    folder = make_project(tmp_path / "proj")
+    dlg = FieldsDialog(str(folder), "Договор", store=store)
+    _set_type(dlg, "Номер", "today")
+    dlg._on_save()
+    saved = _saved_pj(store)["templates"]["Договор"]["fields"]["Номер"]
+    assert saved == {"source": "today", "value": None, "table": None}
+    dlg.close()
+
+
+def test_dirty_close_save_blocked_stays_open(qapp, tmp_path, store, monkeypatch):
+    folder = make_project(tmp_path / "proj")
+    (folder / "Данные" / "data.xlsx").unlink()
+    warnings = []
+    monkeypatch.setattr(
+        QMessageBox, "warning", lambda *a: warnings.append(a[-1])
+    )
+    monkeypatch.setattr(
+        QMessageBox, "question", lambda *a, **k: QMessageBox.Save
+    )
+    dlg = FieldsDialog(str(folder), "Договор", store=store)
+    dlg._dirty = True
+    dlg.reject()
+    assert any("пустое" in w for w in warnings)
+    assert dlg.result() == 0
     dlg.close()

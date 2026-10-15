@@ -34,6 +34,7 @@ class FieldSource(str, Enum):
 class FieldDef(BaseModel):
     source: FieldSource
     value: Any = None        # для CONSTANT — само значение; для TABLE — имя колонки
+    table: str | None = None # 020: файл источника колонки; None — любой (legacy)
 
 class CounterDef(BaseModel):
     last: int = 0

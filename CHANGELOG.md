@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+- Окно 3 (020): смена источника поля (комбобокс типа, файл+колонка для table, формат счётчика); `FieldDef.table` — привязка колонки к файлу
+
 ### Добавлено
 - `tables`: чтение Excel (`ExcelReader`, протокол `TableReader`, `TableReadError`); валидация заголовков, нормировка строк
 - `engine.schema`: модели PJ/AJ/Filling на pydantic v2, `validate_*`, `normalize`, реестр `MIGRATIONS` + `migrate()`, `FormatTooNewError`

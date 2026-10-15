@@ -188,3 +188,27 @@ def test_migrate_no_version_update(monkeypatch):
     )
     with pytest.raises(schema.SchemaError, match="didn't update version"):
         migrate({"version": "0.0.0"})
+
+
+def test_field_table_binding():
+    pj = validate_pj({
+        "version": "0.0.0",
+        "templates": {"T": {"file": "Шаблоны/t.docx", "fields": {
+            "F": {"source": "table", "value": "col", "table": "Данные/d.xlsx"},
+        }}},
+        "data_sources": [{"file": "Данные/d.xlsx", "mode": "sequential", "start_row": 0}],
+        "counters": {},
+        "filename_template": "Д_{i}.docx",
+    })
+    assert pj.templates["T"].fields["F"].table == "Данные/d.xlsx"
+    bad = {
+        "version": "0.0.0",
+        "templates": {"T": {"file": "Шаблоны/t.docx", "fields": {
+            "F": {"source": "table", "value": "col", "table": "../evil.xlsx"},
+        }}},
+        "data_sources": [{"file": "Данные/d.xlsx", "mode": "sequential", "start_row": 0}],
+        "counters": {},
+        "filename_template": "Д_{i}.docx",
+    }
+    with pytest.raises(Exception, match="относительным"):
+        validate_pj(bad)

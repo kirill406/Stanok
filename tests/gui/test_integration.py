@@ -72,7 +72,7 @@ def test_window_chain_to_docx(qapp, tmp_path, store, monkeypatch):
     assert dlg2.table.rowCount() == 1
 
     dlg3 = FieldsDialog(str(folder), "Договор", store=store)
-    dlg3._editors["Город"].setText("Казань")
+    dlg3._rows["Город"]["const"].setText("Казань")
     dlg3._on_save()
     assert not dlg3._dirty
     dlg3.close()

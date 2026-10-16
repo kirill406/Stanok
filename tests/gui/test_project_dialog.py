@@ -392,3 +392,27 @@ def test_open_syncs_new_fields(qapp, tmp_path, store):
     fld = FieldsDialog(str(folder), "Договор", store=store)
     assert "Штрихкод" in fld._rows
     fld.close()
+
+
+def test_add_source_reloads_combo(qapp, tmp_path, store, monkeypatch):
+    from PyQt5.QtWidgets import QFileDialog
+
+    from tests.services.test_storage import _src_files
+
+    folder = make_project(tmp_path / "proj")
+    xlsx, _ = _src_files(tmp_path, "extra")
+    monkeypatch.setattr(
+        QFileDialog, "getOpenFileName", lambda *a, **k: (str(xlsx), "")
+    )
+    dlg = ProjectDialog(str(folder), store=store)
+    assert dlg.source_combo.count() == 2
+    dlg._on_add_source()
+    assert dlg.source_combo.count() == 3
+    assert dlg.source_combo.currentData() == "Данные/data (1).xlsx"
+    from PyQt5.QtWidgets import QLabel
+
+    assert any(
+        w.text() == "Источники:" for w in dlg.findChildren(QLabel)
+    )
+    assert dlg.add_src_btn.text() == STRINGS.PROJ_SOURCE_ADD
+    dlg.close()

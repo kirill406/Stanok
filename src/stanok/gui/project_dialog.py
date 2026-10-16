@@ -62,10 +62,11 @@ class ProjectDialog(QDialog):
         layout.addWidget(QLabel(STRINGS.PROJ_DATA.format(path=self._project_ref)))
         layout.addWidget(QLabel(STRINGS.PROJ_SOURCE))
         self.source_combo = QComboBox(self)
-        self.source_combo.addItem(STRINGS.PROJ_SOURCE_ALL, None)
-        for ds in self._pj.data_sources:
-            self.source_combo.addItem(ds.file, ds.file)
         layout.addWidget(self.source_combo)
+        self._reload_sources()
+        self.add_src_btn = QPushButton(STRINGS.PROJ_SOURCE_ADD, self)
+        self.add_src_btn.clicked.connect(self._on_add_source)
+        layout.addWidget(self.add_src_btn)
 
         self.add_tpl_btn = QPushButton(STRINGS.TPL_ADD, self)
         self.add_tpl_btn.clicked.connect(self._on_add_template)
@@ -91,6 +92,36 @@ class ProjectDialog(QDialog):
             close_btn.setText(STRINGS.FLD_CLOSE)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
+
+    def _reload_sources(self, keep: str | None = None) -> None:
+        """Rebuild source combo, preserving selection when possible."""
+        if keep is None:
+            keep = self.source_combo.currentData()
+        self.source_combo.blockSignals(True)
+        self.source_combo.clear()
+        self.source_combo.addItem(STRINGS.PROJ_SOURCE_ALL, None)
+        for ds in self._pj.data_sources:
+            self.source_combo.addItem(ds.file, ds.file)
+        idx = self.source_combo.findData(keep)
+        self.source_combo.setCurrentIndex(idx if idx >= 0 else 0)
+        self.source_combo.blockSignals(False)
+
+    def _on_add_source(self) -> None:
+        if self._running:
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            self, STRINGS.PROJ_SOURCE_ADD, "", "Excel (*.xlsx)"
+        )
+        if not path:
+            return
+        try:
+            added = self._store.add_source(self._project_ref, path)
+        except Exception as e:
+            logger.warning(f"add source failed: {e}", exc_info=True)
+            QMessageBox.warning(self, STRINGS.MAIN_ERROR_TITLE, str(e))
+            return
+        self._pj, _ = self._store.resolve_project(self._project_ref)
+        self._reload_sources(keep=added)
 
     def _reload_templates(self) -> None:
         """Re-resolve PJ and rebuild template rows (015).

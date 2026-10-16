@@ -83,8 +83,9 @@ class STRINGS:
     # Project dialog (gui/project_dialog.py, window 2)
     PROJ_TITLE = "Проект: {name}"
     PROJ_DATA = "Данные: {path}"
-    PROJ_SOURCE = "Источник:"
+    PROJ_SOURCE = "Источники:"
     PROJ_SOURCE_ALL = "все источники"
+    PROJ_SOURCE_ADD = "Добавить источник..."
     PROJ_TPL_COL = "Шаблон"
     PROJ_COUNT_COL = "Лимит"
     PROJ_COUNT_TIP = "Сколько документов создать (0 — без лимита, все строки)"

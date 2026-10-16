@@ -14,6 +14,7 @@ from pathlib import Path
 
 from ..engine.schema import (
     ApplicationJSON,
+    DataSourceDef,
     FieldDef,
     FieldSource,
     ProjectJSON,
@@ -534,6 +535,33 @@ class ProjectStore:
             del pj.templates[name]
             self.save(pj, name=config_path.stem)
             logger.info("removed template %s from %s", name, config_path.stem)
+
+    def add_source(
+        self, ref: str | Path, xlsx: str | Path, copy_files: bool = True
+    ) -> str:
+        """Attach an xlsx data source (sequential); return its PJ path."""
+        with self._lock:
+            pj, config_path = self.resolve_project(ref)
+            folder = project_folder(ref, pj, config_path, self)
+            data_dir = folder / STRINGS.DATA_DIR
+            try:
+                data_dir.mkdir(parents=True, exist_ok=True)
+            except OSError as e:
+                logger.warning(f"cannot create data dir {data_dir}: {e}")
+                raise StorageError(
+                    "data", [f"cannot create folder {data_dir}: {e}"]
+                ) from e
+            rel = self._place_source(
+                Path(xlsx), data_dir, folder, ".xlsx", copy_files
+            )
+            if any(ds.file == rel for ds in pj.data_sources):
+                raise StorageError(
+                    "data", [f"data source already attached: {rel}"]
+                )
+            pj.data_sources.append(DataSourceDef(file=rel))
+            self.save(pj, name=config_path.stem)
+            logger.info("attached data source %s to %s", rel, config_path.stem)
+            return rel
 
     def delete_project(self, ref: str | Path, delete_folder: bool = False) -> None:
         """Delete project config + recent entry; folder only on flag (FR-13)."""

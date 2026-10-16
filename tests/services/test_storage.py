@@ -573,18 +573,8 @@ def test_init_no_copy_wrong_subdir(store, tmp_path):
         )
 
 
-def _init_simple(store, tmp_path, name="proj"):
-    """init_project with one xlsx + one docx; return folder."""
+def test_add_source_copies(store, tmp_path):
     from tests.services.test_storage import _src_files
-
-    xlsx, tpl = _src_files(tmp_path, f"src_{name}")
-    folder = tmp_path / name
-    store.init_project(folder, name, [xlsx], [tpl])
-    return folder
-
-
-def test_add_template_copies(store, tmp_path):
-    from docx import Document as DocxDocument
 
     folder = _init_simple(store, tmp_path)
     extra = tmp_path / "extra.docx"
@@ -824,3 +814,38 @@ def test_scan_finds_header_placeholders(tmp_path):
     tpl = tmp_path / "hdr.docx"
     doc.save(tpl)
     assert _scan_placeholders(tpl) == ["Код"]
+
+
+def _init_simple(store, tmp_path, name="proj"):
+    from tests.services.test_storage import _src_files
+
+    xlsx, tpl = _src_files(tmp_path, f"src_{name}")
+    folder = tmp_path / name
+    store.init_project(folder, name, [xlsx], [tpl])
+    return folder
+
+
+def test_add_source_copies(store, tmp_path):
+    from tests.services.test_storage import _src_files
+
+    folder = _init_simple(store, tmp_path)
+    xlsx, _ = _src_files(tmp_path, "extra")
+    rel = store.add_source(folder, xlsx)
+    assert rel == "Данные/data.xlsx" or rel.startswith("Данные/")
+    assert (folder / rel).is_file()
+    pj = store.load("proj")
+    assert pj.data_sources[-1].file == rel
+    assert pj.data_sources[-1].mode == "sequential"
+
+
+def test_add_source_duplicate_rejected(store, tmp_path):
+    from tests.services.test_storage import _src_files
+
+    folder = _init_simple(store, tmp_path)
+    xlsx, _ = _src_files(tmp_path, "extra2")
+    import shutil
+
+    shutil.copy(xlsx, folder / "Данные" / "extra.xlsx")
+    store.add_source(folder, folder / "Данные" / "extra.xlsx", copy_files=False)
+    with pytest.raises(StorageError, match="already attached"):
+        store.add_source(folder, folder / "Данные" / "extra.xlsx", copy_files=False)

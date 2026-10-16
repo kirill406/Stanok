@@ -149,7 +149,16 @@ class FieldsDialog(QDialog):
             ]
         )
         self.table.horizontalHeader().setSectionResizeMode(
-            3, QHeaderView.Stretch
+            0, QHeaderView.ResizeToContents
+        )
+        self.table.horizontalHeader().setSectionResizeMode(
+            1, QHeaderView.ResizeToContents
+        )
+        self.table.horizontalHeader().setSectionResizeMode(
+            2, QHeaderView.Stretch
+        )
+        self.table.horizontalHeader().setSectionResizeMode(
+            3, QHeaderView.ResizeToContents
         )
         fields = list(self._template_def.fields.items())
         self.table.setRowCount(len(fields))
@@ -180,6 +189,7 @@ class FieldsDialog(QDialog):
         self.save_btn.setStyleSheet("color: #b71c1c;")
         self.save_btn.clicked.connect(self._on_save)
         close_btn = buttons.addButton(QDialogButtonBox.Close)
+        close_btn.setText(STRINGS.FLD_CLOSE)
         close_btn.clicked.connect(self.reject)
         # Hide AFTER all buttons are added: QDialogButtonBox unhides on add.
         self.save_btn.setVisible(False)

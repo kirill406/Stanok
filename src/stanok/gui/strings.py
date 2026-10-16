@@ -99,10 +99,11 @@ class STRINGS:
     # Fields dialog (gui/fields_dialog.py, window 3)
     FLD_TITLE = "Шаблон: {name}"
     FLD_COL_FIELD = "Поле"
-    FLD_COL_SOURCE = "Источник"
+    FLD_COL_SOURCE = "Тип"
     FLD_COL_VALUE = "Значение"
     FLD_COL_DATA = "Данные"
     FLD_SAVE = "Сохранить"
+    FLD_CLOSE = "Закрыть"
     FLD_HINT = "Источник меняется комбобоксом, значение — редактором по типу."
     FLD_DIRTY_ASK = "Есть несохранённые изменения. Сохранить?"
     FLD_SRC_CONSTANT = "Константа"

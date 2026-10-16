@@ -516,7 +516,7 @@ def test_result_column(qapp, tmp_path, store):
         dlg.table.horizontalHeaderItem(c).text()
         for c in range(dlg.table.columnCount())
     ]
-    assert headers == ["Поле", "Источник", "Данные", "Значение"]
+    assert headers == ["Поле", "Тип", "Данные", "Значение"]
     assert dlg._rows["ФИО"]["clabel"].text() == "Иван"
     assert dlg._rows["Город"]["result"].text() == "Москва"
     dlg._rows["Город"]["const"].setText("Казань")
@@ -535,4 +535,23 @@ def test_save_button_visibility(qapp, tmp_path, store):
     assert "b71c1c" in dlg.save_btn.styleSheet()
     dlg._on_save()
     assert dlg.save_btn.isHidden()
+    dlg.close()
+
+
+def test_headers_and_close_button(qapp, tmp_path, store):
+    from PyQt5.QtWidgets import QHeaderView
+
+    folder = make_project(tmp_path / "proj")
+    dlg = FieldsDialog(str(folder), "Договор", store=store)
+    header = dlg.table.horizontalHeader()
+    assert header.sectionResizeMode(0) == QHeaderView.ResizeToContents
+    assert header.sectionResizeMode(1) == QHeaderView.ResizeToContents
+    assert header.sectionResizeMode(2) == QHeaderView.Stretch
+    assert header.sectionResizeMode(3) == QHeaderView.ResizeToContents
+    assert dlg.findChild(type(dlg.save_btn)).text() != ""
+    close_btns = [
+        b for b in dlg.findChildren(type(dlg.save_btn))
+        if b.text() == STRINGS.FLD_CLOSE
+    ]
+    assert len(close_btns) == 1
     dlg.close()

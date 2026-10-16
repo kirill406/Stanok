@@ -177,9 +177,12 @@ class FieldsDialog(QDialog):
         self.save_btn = buttons.addButton(
             STRINGS.FLD_SAVE, QDialogButtonBox.ActionRole
         )
+        self.save_btn.setStyleSheet("color: #b71c1c;")
         self.save_btn.clicked.connect(self._on_save)
         close_btn = buttons.addButton(QDialogButtonBox.Close)
         close_btn.clicked.connect(self.reject)
+        # Hide AFTER all buttons are added: QDialogButtonBox unhides on add.
+        self.save_btn.setVisible(False)
         layout.addWidget(buttons)
         layout.addWidget(QLabel(STRINGS.FLD_HINT, self))
 
@@ -405,6 +408,7 @@ class FieldsDialog(QDialog):
     # -- save + dirty check -------------------------------------------------------
     def _mark_dirty(self) -> None:
         self._dirty = True
+        self.save_btn.setVisible(True)
 
     def _show_field_warning(self, e: _FieldError) -> None:
         logger.warning(f"save fields blocked: {e.msg} {e.field}")
@@ -466,6 +470,7 @@ class FieldsDialog(QDialog):
                 f.table = None
         self._store.save(self._pj, name=self._config_name)
         self._dirty = False
+        self.save_btn.setVisible(False)
         logger.info(f"saved fields of {self._template_name} to {self._config_name}")
 
     def reject(self) -> None:

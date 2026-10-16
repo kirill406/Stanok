@@ -523,3 +523,16 @@ def test_result_column(qapp, tmp_path, store):
     assert dlg._rows["Город"]["result"].text() == "Казань"
     assert "Дата" in dlg._rows
     dlg.close()
+
+
+def test_save_button_visibility(qapp, tmp_path, store):
+    folder = make_project(tmp_path / "proj")
+    _add_constant(folder)
+    dlg = FieldsDialog(str(folder), "Договор", store=store)
+    assert dlg.save_btn.isHidden()
+    dlg._rows["Город"]["const"].setText("Казань")
+    assert not dlg.save_btn.isHidden()
+    assert "b71c1c" in dlg.save_btn.styleSheet()
+    dlg._on_save()
+    assert dlg.save_btn.isHidden()
+    dlg.close()

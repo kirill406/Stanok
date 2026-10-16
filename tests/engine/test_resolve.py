@@ -234,3 +234,28 @@ def test_constant_repeats_first_with_limit():
     fjs, counters = resolve_rows(ROWS[:2], _pj_mode("constant"), today=TODAY, limit=3)
     assert [f.fields["ФИО"] for f in fjs] == ["Иванов"] * 3
     assert counters == {"n": 45}
+
+
+def test_counter_width_padding():
+    pj = _pj()
+    pj.counters["n"].format = "001"
+    fjs, _ = resolve_rows(ROWS[:1], pj, today=TODAY)
+    assert fjs[0].fields["Номер"] == "043"
+
+
+def test_today_presets():
+    pj = _pj()
+    pj.templates["Д"].fields["Дата"].value = "dmy"
+    fjs, _ = resolve_rows(ROWS[:1], pj, today=TODAY)
+    assert fjs[0].fields["Дата"] == "05.10.2026"
+    pj.templates["Д"].fields["Дата"].value = "iso"
+    fjs, _ = resolve_rows(ROWS[:1], pj, today=TODAY)
+    assert fjs[0].fields["Дата"] == "2026-10-05"
+    pj.templates["Д"].fields["Дата"].value = "ru_long"
+    fjs, _ = resolve_rows(ROWS[:1], pj, today=TODAY)
+    assert fjs[0].fields["Дата"] == "5 октября 2026"
+
+
+def test_today_legacy_none_is_date():
+    fjs, _ = resolve_rows(ROWS[:1], _pj(), today=TODAY)
+    assert fjs[0].fields["Дата"] == TODAY

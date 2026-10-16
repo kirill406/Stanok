@@ -51,11 +51,11 @@ def make_project(
     }
     if with_counter:
         fields["Номер"] = {"source": "counter", "value": "num"}
-    else:  # pragma: no cover - template without counter
+    else:
         doc2 = DocxDocument()
         doc2.add_paragraph("Договор {{ФИО}}")
         doc2.save(tpl_dir / "tpl.docx")
-        del fields["Номер"]
+        fields.pop("Номер", None)
     pj = {
         "version": "0.0.0",
         "templates": {"Договор": {"file": "Шаблоны/tpl.docx", "fields": fields}},

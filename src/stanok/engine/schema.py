@@ -113,7 +113,7 @@ class FieldDef(_WarnExtra):
 
 class CounterDef(_WarnExtra):
     last: int = 0
-    format: str = "plain"  # plain | month (ГГГГ-ММ-###)
+    format: str = "1"  # 020: width 1 | 01 | 001 | 0001 (zero-pad); legacy plain/month still render
 
 
 class TemplateDef(_WarnExtra):

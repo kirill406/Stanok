@@ -151,8 +151,8 @@ def test_today_preview(qapp, tmp_path, store):
     _add_today(folder)
     dlg = FieldsDialog(str(folder), "Договор", store=store)
     assert "Дата" in dlg._rows
-    assert "preview" in dlg._rows["Дата"]
-    assert datetime.date.today().isoformat() in dlg._rows["Дата"]["preview"].text()
+    assert "dlabel" in dlg._rows["Дата"]
+    assert datetime.date.today().isoformat() in dlg._rows["Дата"]["dlabel"].text()
     dlg.close()
 
 
@@ -298,19 +298,24 @@ def test_legacy_table_without_file(qapp, tmp_path, store):
     dlg.close()
 
 
-def test_counter_new_name_and_format(qapp, tmp_path, store):
+def test_counter_new_name_and_format(qapp, tmp_path, store, monkeypatch):
+    from PyQt5.QtWidgets import QInputDialog
+
     folder = make_project(tmp_path / "proj")
+    monkeypatch.setattr(
+        QInputDialog, "getText", lambda *a, **k: ("doc", True)
+    )
     dlg = FieldsDialog(str(folder), "Договор", store=store)
     _set_type(dlg, "ФИО", "counter")
     st = dlg._rows["ФИО"]
-    st["counter"].setText("doc")
-    st["fmt"].setCurrentIndex(1)
-    assert st["fmt"].currentData() == "month"
+    st["cname"].setCurrentIndex(st["cname"].count() - 1)
+    assert st["cname"].currentData() == "doc"
+    st["fmt"].setCurrentIndex(st["fmt"].findData("001"))
+    assert "043" in st["cprev"].text() or st["cprev"].text() == "000"
     dlg._on_save()
     saved = _saved_pj(store)
     assert saved["templates"]["Договор"]["fields"]["ФИО"]["value"] == "doc"
-    assert saved["counters"]["doc"] == {"last": 0, "format": "month"}
-    assert saved["templates"]["Договор"]["fields"]["Номер"]["value"] == "num"
+    assert saved["counters"]["doc"] == {"last": 0, "format": "001"}
     dlg.close()
 
 
@@ -335,7 +340,7 @@ def test_type_switch_marks_dirty(qapp, tmp_path, store):
     assert not dlg._dirty
     _set_type(dlg, "Номер", "today")
     assert dlg._dirty
-    assert "preview" in dlg._rows["Номер"]
+    assert "dlabel" in dlg._rows["Номер"]
     dlg.close()
 
 
@@ -347,7 +352,7 @@ def test_empty_counter_blocks_save(qapp, tmp_path, store, monkeypatch):
     )
     dlg = FieldsDialog(str(folder), "Договор", store=store)
     _set_type(dlg, "ФИО", "counter")
-    dlg._rows["ФИО"]["counter"].setText("   ")
+    dlg._rows["ФИО"]["last"].setText("   ")
     dlg._on_save()
     assert any("ФИО" in w for w in warnings)
     dlg.close()
@@ -378,4 +383,125 @@ def test_dirty_close_save_blocked_stays_open(qapp, tmp_path, store, monkeypatch)
     dlg.reject()
     assert any("пустое" in w for w in warnings)
     assert dlg.result() == 0
+    dlg.close()
+
+
+def test_counter_select_existing_loads(qapp, tmp_path, store):
+    folder = make_project(tmp_path / "proj")
+    dlg = FieldsDialog(str(folder), "Договор", store=store)
+    _set_type(dlg, "ФИО", "counter")
+    st = dlg._rows["ФИО"]
+    st["cname"].setCurrentIndex(st["cname"].findData("num"))
+    assert st["last"].text() == "0"
+    st["last"].setText("7")
+    st["fmt"].setCurrentIndex(st["fmt"].findData("01"))
+    assert st["cprev"].text() == "07"
+    dlg._on_save()
+    saved = _saved_pj(store)
+    assert saved["counters"]["num"] == {"last": 7, "format": "01"}
+    dlg.close()
+
+
+def test_counter_new_cancel_reverts(qapp, tmp_path, store, monkeypatch):
+    from PyQt5.QtWidgets import QInputDialog
+
+    folder = make_project(tmp_path / "proj")
+    monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: ("", False))
+    dlg = FieldsDialog(str(folder), "Договор", store=store)
+    _set_type(dlg, "ФИО", "counter")
+    st = dlg._rows["ФИО"]
+    before = st["cname"].currentData()
+    st["cname"].setCurrentIndex(st["cname"].count() - 1)
+    assert st["cname"].currentData() == before
+    dlg.close()
+
+
+def test_date_format_saves_preset(qapp, tmp_path, store):
+    folder = make_project(tmp_path / "proj")
+    _add_today(folder)
+    dlg = FieldsDialog(str(folder), "Договор", store=store)
+    st = dlg._rows["Дата"]
+    assert st["dfmt"].currentData() is None
+    st["dfmt"].setCurrentIndex(st["dfmt"].findData("ru_long"))
+    assert "октября" in st["dlabel"].text()
+    dlg._on_save()
+    saved = _saved_pj(store)["templates"]["Договор"]["fields"]["Дата"]
+    assert saved == {"source": "today", "value": "ru_long", "table": None}
+    dlg.close()
+
+
+def test_table_value_label(qapp, tmp_path, store):
+    folder = make_project(tmp_path / "proj")
+    dlg = FieldsDialog(str(folder), "Договор", store=store)
+    st = dlg._rows["ФИО"]
+    assert st["clabel"].text() == "Иван"
+    st["col"].setCurrentIndex(-1)
+    dlg._update_table_value("ФИО")
+    assert st["clabel"].text() == "Иван"
+    dlg.close()
+
+
+def test_counter_select_other_counter(qapp, tmp_path, store):
+    import json as _json
+
+    folder = make_project(tmp_path / "proj")
+    dlg = FieldsDialog(str(folder), "Договор", store=store)
+    dlg._pj.counters["doc2"] = __import__(
+        "stanok.engine.schema", fromlist=["CounterDef"]
+    ).CounterDef(last=5, format="001")
+    _set_type(dlg, "ФИО", "counter")
+    st = dlg._rows["ФИО"]
+    st["cname"].setCurrentIndex(st["cname"].findData("doc2"))
+    assert st["last"].text() == "5"
+    assert st["cprev"].text() == "005"
+    dlg._on_save()
+    saved = _saved_pj(store)
+    assert saved["counters"]["doc2"] == {"last": 5, "format": "001"}
+    assert saved["counters"]["num"] == {"last": 0, "format": "plain"}
+    dlg.close()
+
+
+def test_date_preset_reopen_selects(qapp, tmp_path, store):
+    folder = make_project(tmp_path / "proj")
+    _add_today(folder)
+    dlg = FieldsDialog(str(folder), "Договор", store=store)
+    st = dlg._rows["Дата"]
+    st["dfmt"].setCurrentIndex(st["dfmt"].findData("iso"))
+    dlg._on_save()
+    dlg.close()
+    dlg2 = FieldsDialog(str(folder), "Договор", store=store)
+    assert dlg2._rows["Дата"]["dfmt"].currentData() == "iso"
+    assert "2026" in dlg2._rows["Дата"]["dlabel"].text()
+    dlg2.close()
+
+
+def test_negative_last_blocks_save(qapp, tmp_path, store, monkeypatch):
+    folder = make_project(tmp_path / "proj")
+    warnings = []
+    monkeypatch.setattr(
+        QMessageBox, "warning", lambda *a: warnings.append(a[-1])
+    )
+    dlg = FieldsDialog(str(folder), "Договор", store=store)
+    _set_type(dlg, "ФИО", "counter")
+    dlg._rows["ФИО"]["last"].setText("-3")
+    dlg._on_save()
+    assert any("целое" in w for w in warnings)
+    dlg.close()
+
+
+def test_counter_no_counters_blocks_save(qapp, tmp_path, store, monkeypatch):
+    import json as _json
+
+    folder = make_project(tmp_path / "proj", with_counter=False)
+    warnings = []
+    monkeypatch.setattr(
+        QMessageBox, "warning", lambda *a: warnings.append(a[-1])
+    )
+    dlg = FieldsDialog(str(folder), "Договор", store=store)
+    _set_type(dlg, "ФИО", "counter")
+    assert dlg._rows["ФИО"]["cname"].count() == 1
+    dlg._on_save()
+    assert any("ФИО" in w for w in warnings)
+    data = _json.loads((store.home_dir / "proj.stanok").read_text())
+    assert data["counters"] == {}
     dlg.close()

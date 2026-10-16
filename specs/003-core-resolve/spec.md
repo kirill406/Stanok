@@ -42,7 +42,7 @@ def resolve_rows(
 |----------|---------|---------|----------------------------|-------|
 | constant | `FieldDef(source=CONSTANT, value=...)` | `fields[name]` | `value` из PJ | — |
 | table    | `FieldDef(source=TABLE, value="col")` | `fields[name]` | `row.get("col")` | — |
-| counter  | `FieldDef(source=COUNTER, value="name")` | `fields[name]` | `counters[name].last + 1` | sequential/month |
+| counter  | `FieldDef(source=COUNTER, value="name")` | `fields[name]` | `counters[name].last + 1`, ширина `1/01/001/0001` (020; legacy plain/month ещё рендерятся) | sequential |
 | today    | `FieldDef(source=TODAY, value=None)` | `fields[name]` | `date.today()` | — |
 | image    | **out of scope** | — | — | — |
 

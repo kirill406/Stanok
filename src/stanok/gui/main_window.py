@@ -67,7 +67,7 @@ class MainWindow(QMainWindow):
         self.generate_all_btn.setStyleSheet("background-color: #2e7d32; color: white;")
         self.generate_all_btn.clicked.connect(self._on_generate_all)
         buttons.addWidget(self.generate_all_btn)
-        self.browse_btn = QPushButton(STRINGS.MAIN_BROWSE, group)
+        self.browse_btn = QPushButton(STRINGS.MAIN_OPEN, group)
         self.browse_btn.clicked.connect(self._on_browse)
         buttons.addWidget(self.browse_btn)
         self.create_btn = QPushButton(STRINGS.MAIN_CREATE, group)
@@ -117,7 +117,7 @@ class MainWindow(QMainWindow):
             self.recent_list.setItemWidget(entry, row)
 
     def _on_browse(self) -> None:
-        folder = QFileDialog.getExistingDirectory(self, STRINGS.MAIN_BROWSE)
+        folder = QFileDialog.getExistingDirectory(self, STRINGS.MAIN_OPEN)
         if not folder:
             return
         try:

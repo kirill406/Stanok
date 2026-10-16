@@ -40,7 +40,7 @@ class STRINGS:
     # Main window (gui/main_window.py)
     MAIN_TITLE = "Станок"
     MAIN_PROJECT_GROUP = "Проект"
-    MAIN_BROWSE = "Обзор..."
+    MAIN_OPEN = "Открыть проект"
     MAIN_TEMPLATE = "Шаблон:"
     MAIN_SOURCE = "Источник:"
     MAIN_RESUME = "Продолжить с места остановки"

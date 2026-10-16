@@ -416,3 +416,33 @@ def test_add_source_reloads_combo(qapp, tmp_path, store, monkeypatch):
     )
     assert dlg.add_src_btn.text() == STRINGS.PROJ_SOURCE_ADD
     dlg.close()
+
+
+def test_add_source_guards(qapp, tmp_path, store, monkeypatch):
+    from PyQt5.QtWidgets import QFileDialog
+
+    folder = make_project(tmp_path / "proj")
+    warnings = []
+    monkeypatch.setattr(
+        QMessageBox, "warning", lambda *a: warnings.append(a[-1])
+    )
+    dlg = ProjectDialog(str(folder), store=store)
+
+    dlg._running = True
+    dlg._on_add_source()
+    dlg._running = False
+
+    monkeypatch.setattr(
+        QFileDialog, "getOpenFileName", lambda *a, **k: ("", "")
+    )
+    dlg._on_add_source()
+    assert dlg.source_combo.count() == 2
+
+    bad = tmp_path / "notes.txt"
+    bad.write_text("hi")
+    monkeypatch.setattr(
+        QFileDialog, "getOpenFileName", lambda *a, **k: (str(bad), "")
+    )
+    dlg._on_add_source()
+    assert warnings and "wrong file type" in warnings[0]
+    dlg.close()

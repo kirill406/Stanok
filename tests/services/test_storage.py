@@ -849,3 +849,22 @@ def test_add_source_duplicate_rejected(store, tmp_path):
     store.add_source(folder, folder / "Данные" / "extra.xlsx", copy_files=False)
     with pytest.raises(StorageError, match="already attached"):
         store.add_source(folder, folder / "Данные" / "extra.xlsx", copy_files=False)
+
+
+def test_add_source_mkdir_failure(store, tmp_path, monkeypatch):
+    import pathlib
+
+    from tests.services.test_storage import _src_files
+
+    folder = _init_simple(store, tmp_path)
+    xlsx, _ = _src_files(tmp_path, "mk")
+
+    def boom(self, *a, **k):
+        raise OSError("denied")
+
+    monkeypatch.setattr(pathlib.Path, "mkdir", boom)
+    try:
+        with pytest.raises(StorageError, match="cannot create folder"):
+            store.add_source(folder, xlsx)
+    finally:
+        monkeypatch.setattr(pathlib.Path, "mkdir", pathlib.Path.mkdir)

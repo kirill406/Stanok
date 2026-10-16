@@ -11,7 +11,7 @@ from pathlib import Path
 def icon_path() -> Path:
     """Filesystem path of the bundled app icon (dev, onedir and onefile)."""
     meipass = getattr(sys, "_MEIPASS", None)
-    if meipass is not None:
+    if meipass is not None:  # pragma: no cover - PyInstaller runtime only
         return Path(meipass) / "stanok" / "gui" / "icon.png"
     return Path(__file__).resolve().parent / "icon.png"
 

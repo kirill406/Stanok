@@ -60,6 +60,17 @@ def test_create_gui_no_exec(qapp, tmp_path, store):
     window.close()
 
 
+def test_app_icon_applied(qapp, tmp_path, store):
+    from stanok.gui.icons import apply_app_icon, icon_path
+
+    assert icon_path().is_file()
+    qt_app, window = create_gui(store)
+    apply_app_icon(qt_app)
+    assert not qt_app.windowIcon().isNull()
+    assert not window.windowIcon().isNull()
+    window.close()
+
+
 def test_window_chain_to_docx(qapp, tmp_path, store, monkeypatch):
     monkeypatch.setattr(QMessageBox, "information", lambda *a: None)
     folder = make_project(tmp_path / "proj")

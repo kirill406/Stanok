@@ -91,7 +91,7 @@
   trufflehog3 secrets scan (excludes `venv/`, `uv.lock`) + `pytest tests/ -q` when tests exist;
   never commit with `--no-verify` without asking
 - Build exe (when GUI lands; `Станок.spec` is gitignored, not in repo): 
-  `pyinstaller --onefile --windowed --name Станок --paths src run.py`
+  `pyinstaller --onefile --windowed --name Станок --paths src --icon src/stanok/gui/icon.ico --add-data "src/stanok/gui/icon.png;stanok/gui" run.py`
 - Open PR: one logical change per PR, link to spec item
 - Merge with `git merge --no-ff` after review (no squash, no fast-forward)
 - Separate refactoring from features into different commits/branches

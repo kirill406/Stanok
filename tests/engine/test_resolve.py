@@ -265,3 +265,11 @@ def test_today_presets():
 def test_today_legacy_none_is_date():
     fjs, _ = resolve_rows(ROWS[:1], _pj(), today=TODAY)
     assert fjs[0].fields["Дата"] == TODAY
+
+
+def test_table_bound_elsewhere_resolves_none():
+    pj = _pj()
+    pj.data_sources[0].file = "Данные/клиенты.xlsx"
+    pj.templates["Д"].fields["ФИО"].table = "Данные/инфа.xlsx"
+    fjs, _ = resolve_rows([{"fio": "Иванов"}], pj, today=TODAY)
+    assert fjs[0].fields["ФИО"] is None

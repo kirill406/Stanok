@@ -527,7 +527,7 @@ def test_missing_column_fails_fast(tmp_path, store):
     assert not (folder / "Результат").exists()
 
 
-def test_bound_column_checked_against_running_source(tmp_path, store):
+def test_bound_column_missing_in_running_generates_empty(tmp_path, store):
     import json as _json
 
     folder = make_project(tmp_path / "proj", rows=(("Иван", 100),))
@@ -536,11 +536,12 @@ def test_bound_column_checked_against_running_source(tmp_path, store):
     data["templates"]["Договор"]["fields"]["ФИО"]["table"] = "Данные/other.xlsx"
     data["templates"]["Договор"]["fields"]["ФИО"]["value"] = "инфа"
     pj_path.write_text(_json.dumps(data, ensure_ascii=False))
-    with pytest.raises(TemplateError, match="column 'инфа'.*Данные/data.xlsx"):
-        generate_documents(GenerateCommand(project_ref=folder), store=store)
+    report = generate_documents(GenerateCommand(project_ref=folder), store=store)
+    assert report.created == 1
+    assert report.errors == []
 
 
-def test_bound_missing_file_still_checked(tmp_path, store):
+def test_bound_missing_file_still_generates(tmp_path, store):
     import json as _json
 
     folder = make_project(tmp_path / "proj", rows=(("Иван", 100),))
@@ -549,5 +550,19 @@ def test_bound_missing_file_still_checked(tmp_path, store):
     data["templates"]["Договор"]["fields"]["ФИО"]["table"] = "Данные/gone.xlsx"
     data["templates"]["Договор"]["fields"]["ФИО"]["value"] = "нетакой"
     pj_path.write_text(_json.dumps(data, ensure_ascii=False))
-    with pytest.raises(TemplateError, match="column 'нетакой'.*Данные/data.xlsx"):
-        generate_documents(GenerateCommand(project_ref=folder), store=store)
+    report = generate_documents(GenerateCommand(project_ref=folder), store=store)
+    assert report.created == 1
+    assert report.errors == []
+
+
+def test_bound_elsewhere_generates_empty(tmp_path, store):
+    import json as _json
+
+    folder = make_project(tmp_path / "proj", rows=(("Иван", 100),))
+    pj_path = folder / "project.stanok"
+    data = _json.loads(pj_path.read_text())
+    data["templates"]["Договор"]["fields"]["Сумма"]["table"] = "Данные/other.xlsx"
+    pj_path.write_text(_json.dumps(data, ensure_ascii=False))
+    report = generate_documents(GenerateCommand(project_ref=folder), store=store)
+    assert report.created == 1
+    assert report.errors == []

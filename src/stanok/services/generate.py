@@ -113,6 +113,8 @@ def _check_table_columns(
     for field_name, fdef in template_def.fields.items():
         if fdef.source.value != "table":
             continue
+        if fdef.table is not None and fdef.table != ds.file:
+            continue  # bound elsewhere: resolves to None, no check
         column = str(fdef.value)
         if column not in headers:
             raise TemplateError(

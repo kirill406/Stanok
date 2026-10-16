@@ -85,6 +85,12 @@ def _resolve_field(
     if field_def.source == FieldSource.CONSTANT:
         return field_def.value
     if field_def.source == FieldSource.TABLE:
+        if (
+            field_def.table is not None
+            and pj.data_sources
+            and field_def.table != pj.data_sources[0].file
+        ):
+            return None  # bound elsewhere: empty in this source's run (020)
         col_name = field_def.value
         if col_name not in row:
             raise ResolveError(

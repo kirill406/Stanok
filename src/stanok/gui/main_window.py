@@ -105,6 +105,13 @@ class MainWindow(QMainWindow):
                 lambda _checked=False, ref=item.folder: self._on_generate_one(ref)
             )
             row_layout.addWidget(btn)
+            rm_btn = QPushButton(STRINGS.MAIN_REMOVE, row)
+            rm_btn.clicked.connect(
+                lambda _checked=False, folder=item.folder, config=item.config: self._on_remove_recent(
+                    folder, config
+                )
+            )
+            row_layout.addWidget(rm_btn)
             entry.setSizeHint(row.sizeHint())
             self.recent_list.addItem(entry)
             self.recent_list.setItemWidget(entry, row)
@@ -135,6 +142,11 @@ class MainWindow(QMainWindow):
 
     def _on_row_clicked(self, item: QListWidgetItem) -> None:
         self._open_project_dialog(item.data(Qt.UserRole))
+
+    def _on_remove_recent(self, folder: str, config: str) -> None:
+        """Drop one entry from recent list (project itself untouched)."""
+        self._store.remove_recent(folder, config)
+        self.refresh_recent()
 
     def _open_project_dialog(self, ref: str) -> None:
         """Open window 2 (ProjectDialog, 009)."""

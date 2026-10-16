@@ -46,6 +46,7 @@ class STRINGS:
     MAIN_RESUME = "Продолжить с места остановки"
     MAIN_LIMIT = "Лимит документов (0 — без лимита):"
     MAIN_GENERATE = "Сгенерировать"
+    MAIN_REMOVE = "Убрать"
     MAIN_GENERATE_ALL = "Сгенерировать все"
     MAIN_SETTINGS = "Настройки"
 

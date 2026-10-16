@@ -409,3 +409,15 @@ def test_browse_storage_error_raw(qapp, tmp_path, store, monkeypatch):
     win._on_browse()
     assert shown and "badness" in shown[0]
     win.close()
+
+
+def test_remove_recent_row(qapp, tmp_path, store):
+    win = MainWindow(store=store)
+    store.add_recent(str(tmp_path / "a"), "a")
+    store.add_recent(str(tmp_path / "b"), "b")
+    win.refresh_recent()
+    assert win.recent_list.count() == 2
+    win._on_remove_recent(str(tmp_path / "a"), "a")
+    assert win.recent_list.count() == 1
+    assert [r.config for r in store.get_recent()] == ["b"]
+    win.close()

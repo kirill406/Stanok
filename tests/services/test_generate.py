@@ -566,3 +566,17 @@ def test_bound_elsewhere_generates_empty(tmp_path, store):
     report = generate_documents(GenerateCommand(project_ref=folder), store=store)
     assert report.created == 1
     assert report.errors == []
+
+
+def test_dist_without_extension_gets_docx(tmp_path, store):
+    import json as _json
+
+    folder = make_project(tmp_path / "proj", rows=(("Иван", 100),))
+    pj_path = folder / "project.stanok"
+    data = _json.loads(pj_path.read_text())
+    data["filename_template"] = "Договор_{ФИО}_{i}"
+    pj_path.write_text(_json.dumps(data, ensure_ascii=False))
+    report = generate_documents(GenerateCommand(project_ref=folder), store=store)
+    assert report.created == 1
+    assert report.output_paths[0].suffix == ".docx"
+    assert report.output_paths[0].name == "Договор_Иван_1.docx"

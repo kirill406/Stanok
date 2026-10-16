@@ -37,7 +37,6 @@ def _format_dist(template: str, fields: dict[str, Any], index: int, template_nam
 from ..gui.strings import STRINGS
 
 RU_MONTHS_GENITIVE = STRINGS.RU_MONTHS_GENITIVE.split("|")
-RU_MONTHS_NOMINATIVE = STRINGS.RU_MONTHS_NOMINATIVE.split("|")
 
 #: today presets (FieldDef.value) → formatter; None/unknown = legacy date object.
 TODAY_PRESETS = ("dmy", "day", "month_ru", "year", "ru_long")
@@ -66,7 +65,7 @@ def format_today(value: Any, today: date) -> Any:
     if value == "day":
         return str(today.day)
     if value == "month_ru":
-        return RU_MONTHS_NOMINATIVE[today.month - 1]
+        return RU_MONTHS_GENITIVE[today.month - 1]
     if value == "year":
         return str(today.year)
     if value == "ru_long":

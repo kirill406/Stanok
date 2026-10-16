@@ -366,9 +366,7 @@ class FieldsDialog(QDialog):
     def _update_today_preview(self, name: str) -> None:
         st = self._rows[name]
         value = format_today(st["dfmt"].currentData(), date.today())
-        st["dlabel"].setText(
-            STRINGS.FLD_PREVIEW_TODAY.format(today=value)
-        )
+        st["dlabel"].setText(str(value))
 
     def _update_table_value(self, name: str) -> None:
         st = self._rows[name]

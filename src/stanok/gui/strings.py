@@ -101,6 +101,7 @@ class STRINGS:
     FLD_COL_FIELD = "Поле"
     FLD_COL_SOURCE = "Источник"
     FLD_COL_VALUE = "Значение"
+    FLD_COL_DATA = "Данные"
     FLD_SAVE = "Сохранить"
     FLD_HINT = "Источник меняется комбобоксом, значение — редактором по типу."
     FLD_DIRTY_ASK = "Есть несохранённые изменения. Сохранить?"

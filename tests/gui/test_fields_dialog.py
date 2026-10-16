@@ -505,3 +505,21 @@ def test_counter_no_counters_blocks_save(qapp, tmp_path, store, monkeypatch):
     data = _json.loads((store.home_dir / "proj.stanok").read_text())
     assert data["counters"] == {}
     dlg.close()
+
+
+def test_result_column(qapp, tmp_path, store):
+    folder = make_project(tmp_path / "proj")
+    _add_constant(folder)
+    _add_today(folder)
+    dlg = FieldsDialog(str(folder), "Договор", store=store)
+    headers = [
+        dlg.table.horizontalHeaderItem(c).text()
+        for c in range(dlg.table.columnCount())
+    ]
+    assert headers == ["Поле", "Источник", "Данные", "Значение"]
+    assert dlg._rows["ФИО"]["clabel"].text() == "Иван"
+    assert dlg._rows["Город"]["result"].text() == "Москва"
+    dlg._rows["Город"]["const"].setText("Казань")
+    assert dlg._rows["Город"]["result"].text() == "Казань"
+    assert "Дата" in dlg._rows
+    dlg.close()

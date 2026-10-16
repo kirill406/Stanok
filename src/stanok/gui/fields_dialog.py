@@ -139,12 +139,17 @@ class FieldsDialog(QDialog):
         self.resize(900, 650)
         layout = QVBoxLayout(self)
         self.table = QTableWidget(self)
-        self.table.setColumnCount(3)
+        self.table.setColumnCount(4)
         self.table.setHorizontalHeaderLabels(
-            [STRINGS.FLD_COL_FIELD, STRINGS.FLD_COL_SOURCE, STRINGS.FLD_COL_VALUE]
+            [
+                STRINGS.FLD_COL_FIELD,
+                STRINGS.FLD_COL_SOURCE,
+                STRINGS.FLD_COL_DATA,
+                STRINGS.FLD_COL_VALUE,
+            ]
         )
         self.table.horizontalHeader().setSectionResizeMode(
-            2, QHeaderView.Stretch
+            3, QHeaderView.Stretch
         )
         fields = list(self._template_def.fields.items())
         self.table.setRowCount(len(fields))
@@ -191,7 +196,7 @@ class FieldsDialog(QDialog):
         for key in (
             "const", "file", "col", "clabel",
             "cname", "fmt", "last", "cprev",
-            "dfmt", "dlabel", "preview",
+            "dfmt", "dlabel", "preview", "result",
         ):
             st.pop(key, None)
         if kind == "constant":
@@ -201,6 +206,10 @@ class FieldsDialog(QDialog):
             editor.textChanged.connect(self._mark_dirty)
             layout.addWidget(editor)
             st["const"] = editor
+            result = QLabel(editor.text(), self.table)
+            editor.textChanged.connect(result.setText)
+            self.table.setCellWidget(row, 3, result)
+            st["result"] = result
         elif kind == "table":
             file_combo = QComboBox(box)
             file_combo.addItem(STRINGS.FLD_TABLE_ANY, None)
@@ -221,8 +230,8 @@ class FieldsDialog(QDialog):
                 lambda _i=0, field=name: self._update_table_value(field)
             )
             col_combo.currentIndexChanged.connect(self._mark_dirty)
-            clabel = QLabel(box)
-            layout.addWidget(clabel)
+            clabel = QLabel(self.table)
+            self.table.setCellWidget(row, 3, clabel)
             st["clabel"] = clabel
             self._refill_columns(name, select=stored.value)
             self._update_table_value(name)
@@ -262,8 +271,8 @@ class FieldsDialog(QDialog):
             )
             layout.addWidget(last_edit)
             st["last"] = last_edit
-            cprev = QLabel(box)
-            layout.addWidget(cprev)
+            cprev = QLabel(self.table)
+            self.table.setCellWidget(row, 3, cprev)
             st["cprev"] = cprev
             self._update_counter_preview(name)
             last_edit.textChanged.connect(
@@ -290,8 +299,8 @@ class FieldsDialog(QDialog):
             dfmt.currentIndexChanged.connect(self._mark_dirty)
             layout.addWidget(dfmt)
             st["dfmt"] = dfmt
-            dlabel = QLabel(box)
-            layout.addWidget(dlabel)
+            dlabel = QLabel(self.table)
+            self.table.setCellWidget(row, 3, dlabel)
             st["dlabel"] = dlabel
             self._update_today_preview(name)
         self.table.setCellWidget(row, 2, box)
@@ -367,9 +376,12 @@ class FieldsDialog(QDialog):
     def _on_type_changed(self, name: str) -> None:
         row = list(self._rows).index(name)
         old = self.table.cellWidget(row, 2)
+        old_result = self.table.cellWidget(row, 3)
         self._build_value_cell(row, name, fdef=None)
         if old is not None:
             old.deleteLater()
+        if old_result is not None:
+            old_result.deleteLater()
         self._mark_row_touched(name)
 
     def _on_table_file_changed(self, name: str) -> None:

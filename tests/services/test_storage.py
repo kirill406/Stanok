@@ -788,3 +788,11 @@ def test_sync_unreadable_template_skipped(store, tmp_path):
     folder = _migrated(store, tmp_path)
     (folder / "Шаблоны" / "tpl.docx").write_text("not a zip")
     assert store.sync_template_fields(folder) == {}
+
+
+def test_init_filename_defaults_to_name(store, tmp_path):
+    from tests.services.test_storage import _src_files
+
+    xlsx, tpl = _src_files(tmp_path)
+    pj = store.init_project(tmp_path / "proj", "Договоры", [xlsx], [tpl])
+    assert pj.filename_template == "Договоры"

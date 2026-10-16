@@ -18,6 +18,7 @@ from PyQt5.QtWidgets import (
     QInputDialog,
     QLabel,
     QLineEdit,
+    QMenu,
     QMessageBox,
     QPushButton,
     QScrollArea,
@@ -208,9 +209,14 @@ class FieldsDialog(QDialog):
         layout.addWidget(self.counter_add_btn)
 
         layout.addWidget(self._section_title(STRINGS.FLD_FNAME_TITLE))
+        fname_row = QHBoxLayout()
         self.fname_edit = QLineEdit(self._pj.filename_template or "", self)
         self.fname_edit.textChanged.connect(self._mark_dirty)
-        layout.addWidget(self.fname_edit)
+        fname_row.addWidget(self.fname_edit, 1)
+        self.fname_insert_btn = QPushButton(STRINGS.FLD_INSERT_FIELD, self)
+        self.fname_insert_btn.clicked.connect(self._on_insert_field)
+        fname_row.addWidget(self.fname_insert_btn)
+        layout.addLayout(fname_row)
         self._fit_tables()
 
         buttons = QDialogButtonBox(self)
@@ -420,6 +426,25 @@ class FieldsDialog(QDialog):
             self._crows[cname] = {
                 "bind": bind_combo, "last": last_edit, "touched": False,
             }
+
+    def _on_insert_field(self) -> None:
+        menu = QMenu(self)
+        for field_name in self._template_def.fields:
+            menu.addAction(
+                field_name,
+                lambda _checked=False, name=field_name: self.fname_edit.insert(
+                    f"{{{name}}}"
+                ),
+            )
+        menu.addSeparator()
+        for var in ("{i}", "{template}"):
+            menu.addAction(
+                var,
+                lambda _checked=False, text=var: self.fname_edit.insert(text),
+            )
+        menu.exec_(self.fname_insert_btn.mapToGlobal(
+            self.fname_insert_btn.rect().bottomLeft()
+        ))
 
     def _mark_counter_touched(self, cname: str) -> None:
         self._crows[cname]["touched"] = True

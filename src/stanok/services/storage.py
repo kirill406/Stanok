@@ -363,7 +363,7 @@ class ProjectStore:
                         for r in rel_xlsx
                     ],
                     "counters": {},
-                    "filename_template": "{template}_{i}",
+                    "filename_template": name,
                 }
             )
             self.save(pj, name=name)

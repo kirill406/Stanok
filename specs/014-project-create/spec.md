@@ -43,7 +43,8 @@ def init_project(
 - Строит PJ: `templates = {stem: {file, fields}}`,
   где `fields` — плейсхолдеры docx (`PLACEHOLDER_RE`) каждый → table-источник
   с именем колонки = именем плейсхолдера; `data_sources` — по одному
-  sequential на xlsx; `counters = {}`; `filename_template = "{template}_{i}"`.
+  sequential на xlsx; `counters = {}`; `filename_template` = имя проекта
+  (020: было `"{template}_{i}"`).
 - Пишет PJ через `save()` (атомарно, 005), добавляет в recent, возвращает PJ.
 - Ошибки — `StorageError` с понятным текстом (диалог показывает, не падает).
 

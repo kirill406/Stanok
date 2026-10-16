@@ -699,3 +699,23 @@ def test_filename_template_edits(qapp, tmp_path, store, monkeypatch):
     dlg._on_save()
     assert warnings
     dlg.close()
+
+
+def test_insert_field_menu(qapp, tmp_path, store, monkeypatch):
+    from PyQt5.QtWidgets import QMenu
+
+    folder = make_project(tmp_path / "proj")
+    dlg = FieldsDialog(str(folder), "Договор", store=store)
+    assert dlg.fname_insert_btn.text() == STRINGS.FLD_INSERT_FIELD
+    shown = []
+    monkeypatch.setattr(QMenu, "exec_", lambda self, *a: shown.append(self))
+    dlg._on_insert_field()
+    assert shown
+    actions = [a.text() for a in shown[0].actions() if a.text()]
+    assert "ФИО" in actions
+    assert "{i}" in actions and "{template}" in actions
+    fio = next(a for a in shown[0].actions() if a.text() == "ФИО")
+    dlg.fname_edit.clear()
+    fio.trigger()
+    assert dlg.fname_edit.text() == "{ФИО}"
+    dlg.close()

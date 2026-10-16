@@ -212,3 +212,12 @@ def test_field_table_binding():
     }
     with pytest.raises(Exception, match="относительным"):
         validate_pj(bad)
+
+
+def test_counter_table_binding_validate():
+    from stanok.engine.schema import CounterDef
+
+    assert CounterDef(last=0, table="Данные/d.xlsx").table == "Данные/d.xlsx"
+    assert CounterDef().table is None
+    with pytest.raises(Exception, match="относительным"):
+        CounterDef(table="../evil.xlsx")

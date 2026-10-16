@@ -38,7 +38,8 @@ class FieldDef(BaseModel):
 
 class CounterDef(BaseModel):
     last: int = 0
-    format: str = "plain"    # plain | month (ГГГГ-ММ-###)
+    format: str = "1"        # 020: ширина 1|01|001|0001
+    table: str | None = None # 020: привязка к источнику; None — везде
 
 class TemplateDef(BaseModel):
     file: str                # относительный путь в Шаблоны/

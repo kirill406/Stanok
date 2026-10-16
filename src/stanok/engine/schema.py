@@ -114,6 +114,14 @@ class FieldDef(_WarnExtra):
 class CounterDef(_WarnExtra):
     last: int = 0
     format: str = "1"  # 020: width 1 | 01 | 001 | 0001 (zero-pad); legacy plain/month still render
+    table: str | None = None  # bound source file (020); None = counts everywhere
+
+    @field_validator("table")
+    @classmethod
+    def _relative_counter_table(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        return _check_relative_path(v, "counters.<name>.table")
 
 
 class TemplateDef(_WarnExtra):

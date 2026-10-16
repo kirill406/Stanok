@@ -105,10 +105,17 @@ def _resolve_field(
                 f"fields.{field_name}",
                 [f"counter '{counter_name}' not defined in project"],
             )
-        new_value = counters.get(counter_name, pj.counters[counter_name].last) + 1
+        counter_def = pj.counters[counter_name]
+        if (
+            counter_def.table is not None
+            and pj.data_sources
+            and counter_def.table != pj.data_sources[0].file
+        ):
+            return None  # bound elsewhere: empty in this source's run (020)
+        new_value = counters.get(counter_name, counter_def.last) + 1
         counters[counter_name] = new_value
         return _format_counter(
-            new_value, pj.counters[counter_name].format, counter_name, today
+            new_value, counter_def.format, counter_name, today
         )
     if field_def.source == FieldSource.TODAY:
         return format_today(field_def.value, today)

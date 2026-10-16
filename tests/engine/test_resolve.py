@@ -273,3 +273,12 @@ def test_table_bound_elsewhere_resolves_none():
     pj.templates["Д"].fields["ФИО"].table = "Данные/инфа.xlsx"
     fjs, _ = resolve_rows([{"fio": "Иванов"}], pj, today=TODAY)
     assert fjs[0].fields["ФИО"] is None
+
+
+def test_counter_bound_elsewhere_resolves_none():
+    pj = _pj()
+    pj.data_sources[0].file = "Данные/клиенты.xlsx"
+    pj.counters["n"].table = "Данные/инфа.xlsx"
+    fjs, counters = resolve_rows(ROWS[:1], pj, today=TODAY)
+    assert fjs[0].fields["Номер"] is None
+    assert counters == {"n": 42}

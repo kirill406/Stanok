@@ -19,6 +19,7 @@ from PyQt5.QtWidgets import (
     QLabel,
     QLineEdit,
     QMessageBox,
+    QPushButton,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -49,7 +50,6 @@ DATE_PRESETS = (
     ("year", STRINGS.FLD_DATE_YEAR),
     ("ru_long", STRINGS.FLD_DATE_RU),
 )
-NEW_COUNTER_TAG = "__new__"
 
 
 class _FieldError(Exception):
@@ -184,6 +184,19 @@ class FieldsDialog(QDialog):
             self._build_value_cell(row, name, fdef)
         layout.addWidget(self.table)
 
+        self.ctable = QTableWidget(self)
+        self.ctable.setColumnCount(3)
+        self.ctable.setHorizontalHeaderLabels(
+            [STRINGS.FLD_CNT_NAME, STRINGS.FLD_CNT_BIND, STRINGS.FLD_CNT_LAST]
+        )
+        self._crows: dict[str, dict] = {}
+        self._build_counters_table()
+        layout.addWidget(self.ctable)
+
+        self.counter_add_btn = QPushButton(STRINGS.FLD_COUNTER_CREATE, self)
+        self.counter_add_btn.clicked.connect(self._on_counter_create)
+        layout.addWidget(self.counter_add_btn)
+
         buttons = QDialogButtonBox(self)
         self.save_btn = buttons.addButton(
             STRINGS.FLD_SAVE, QDialogButtonBox.ActionRole
@@ -253,9 +266,16 @@ class FieldsDialog(QDialog):
             name_combo = QComboBox(box)
             for cname in self._pj.counters:
                 name_combo.addItem(cname, cname)
-            name_combo.addItem(STRINGS.FLD_COUNTER_NEW, NEW_COUNTER_TAG)
-            wanted = str(stored.value or "")
+            wanted = (
+                str(stored.value)
+                if stored.source.value == "counter" and stored.value
+                else ""
+            )
             idx = name_combo.findData(wanted)
+            if idx < 0 and wanted:
+                name_combo.addItem(wanted, wanted)
+                idx = name_combo.findData(wanted)
+                st["touched"] = True
             name_combo.setCurrentIndex(idx if idx >= 0 else 0)
             name_combo.currentIndexChanged.connect(
                 lambda _i=0, field=name: self._on_counter_name_changed(field)
@@ -316,38 +336,75 @@ class FieldsDialog(QDialog):
         self.table.setCellWidget(row, 2, box)
         st["box"] = box
 
+    def _on_counter_create(self) -> None:
+        text, ok = QInputDialog.getText(
+            self, STRINGS.FLD_COUNTER_CREATE, STRINGS.FLD_COUNTER_NAME
+        )
+        cname = text.strip()
+        if not ok or not cname:
+            return
+        if cname in self._pj.counters:
+            QMessageBox.warning(
+                self,
+                STRINGS.MAIN_ERROR_TITLE,
+                STRINGS.FLD_DUP_COUNTER.format(name=cname),
+            )
+            return
+        self._pj.counters[cname] = CounterDef(last=0, format="1")
+        self._build_counters_table()
+        for st in self._rows.values():
+            if "cname" in st:
+                combo = st["cname"]
+                combo.blockSignals(True)
+                combo.addItem(cname, cname)
+                combo.blockSignals(False)
+        self._mark_dirty()
+
+    def _build_counters_table(self) -> None:
+        self._crows = {}
+        names = list(self._pj.counters)
+        self.ctable.setRowCount(len(names))
+        for row, cname in enumerate(names):
+            cdef = self._pj.counters[cname]
+            name_item = QTableWidgetItem(cname)
+            name_item.setFlags(name_item.flags() & ~Qt.ItemIsEditable)
+            self.ctable.setItem(row, 0, name_item)
+            bind_combo = QComboBox(self.ctable)
+            bind_combo.addItem(STRINGS.FLD_NONE, None)
+            for ds in self._pj.data_sources:
+                bind_combo.addItem(ds.file, ds.file)
+            idx = bind_combo.findData(cdef.table)
+            bind_combo.setCurrentIndex(idx if idx >= 0 else 0)
+            bind_combo.currentIndexChanged.connect(
+                lambda _i=0, counter=cname: self._mark_counter_touched(counter)
+            )
+            self.ctable.setCellWidget(row, 1, bind_combo)
+            last_edit = QLineEdit(str(cdef.last), self.ctable)
+            last_edit.textChanged.connect(
+                lambda _t="", counter=cname: self._mark_counter_touched(counter)
+            )
+            self.ctable.setCellWidget(row, 2, last_edit)
+            self._crows[cname] = {
+                "bind": bind_combo, "last": last_edit, "touched": False,
+            }
+
+    def _mark_counter_touched(self, cname: str) -> None:
+        self._crows[cname]["touched"] = True
+        self._mark_dirty()
+
     def _selected_counter(self, name: str) -> str | None:
-        data = self._rows[name]["cname"].currentData()
-        return None if data == NEW_COUNTER_TAG else data
+        return self._rows[name]["cname"].currentData()
 
     def _on_counter_name_changed(self, name: str) -> None:
         st = self._rows[name]
-        if st["cname"].currentData() != NEW_COUNTER_TAG:
-            current = self._pj.counters.get(st["cname"].currentData())
-            st["last"].blockSignals(True)
-            st["last"].setText(str(current.last if current else 0))
-            st["last"].blockSignals(False)
-            if current is not None:
-                st["fmt"].blockSignals(True)
-                st["fmt"].setCurrentIndex(st["fmt"].findData(current.format))
-                st["fmt"].blockSignals(False)
-            self._update_counter_preview(name)
-            self._mark_row_touched(name)
-            return
-        text, ok = QInputDialog.getText(
-            self, STRINGS.FLD_NEW_COUNTER_TITLE, STRINGS.FLD_NEW_COUNTER_LABEL
-        )
-        cname = text.strip()
-        combo = st["cname"]
-        combo.blockSignals(True)
-        if ok and cname and cname not in self._pj.counters:
-            combo.insertItem(combo.count() - 1, cname, cname)
-            combo.setCurrentIndex(combo.findData(cname))
-            st["last"].setText("0")
-            st["fmt"].setCurrentIndex(st["fmt"].findData("1"))
-        else:
-            combo.setCurrentIndex(0)
-        combo.blockSignals(False)
+        current = self._pj.counters.get(st["cname"].currentData())
+        st["last"].blockSignals(True)
+        st["last"].setText(str(current.last if current else 0))
+        st["last"].blockSignals(False)
+        if current is not None:
+            st["fmt"].blockSignals(True)
+            st["fmt"].setCurrentIndex(st["fmt"].findData(current.format))
+            st["fmt"].blockSignals(False)
         self._update_counter_preview(name)
         self._mark_row_touched(name)
 
@@ -477,6 +534,18 @@ class FieldsDialog(QDialog):
                 f.source = FieldSource.TODAY
                 f.value = value
                 f.table = None
+        for cname, cst in self._crows.items():
+            if not cst.get("touched"):
+                continue
+            try:
+                last = int(cst["last"].text())
+            except ValueError:
+                raise _FieldError(cname, "FLD_CNT_BAD") from None
+            if last < 0:
+                raise _FieldError(cname, "FLD_CNT_BAD")
+            cdef = self._pj.counters[cname]
+            cdef.table = cst["bind"].currentData()
+            cdef.last = last
         self._store.save(self._pj, name=self._config_name)
         self._dirty = False
         self.save_btn.setVisible(False)

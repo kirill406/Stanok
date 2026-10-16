@@ -39,7 +39,7 @@ from ..gui.strings import STRINGS
 RU_MONTHS_GENITIVE = STRINGS.RU_MONTHS_GENITIVE.split("|")
 
 #: today presets (FieldDef.value) → formatter; None/unknown = legacy date object.
-TODAY_PRESETS = ("dmy", "day", "month_ru", "year", "ru_long")
+TODAY_PRESETS = ("dmy", "day", "month_ru", "month_num", "year", "ru_long")
 
 COUNTER_WIDTHS = ("1", "01", "001", "0001")
 
@@ -66,6 +66,8 @@ def format_today(value: Any, today: date) -> Any:
         return str(today.day)
     if value == "month_ru":
         return RU_MONTHS_GENITIVE[today.month - 1]
+    if value == "month_num":
+        return today.strftime("%m")
     if value == "year":
         return str(today.year)
     if value == "ru_long":

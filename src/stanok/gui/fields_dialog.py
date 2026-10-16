@@ -49,6 +49,7 @@ DATE_PRESETS = (
     ("dmy", STRINGS.FLD_DATE_DMY),
     ("day", STRINGS.FLD_DATE_DAY),
     ("month_ru", STRINGS.FLD_DATE_MONTH),
+    ("month_num", STRINGS.FLD_DATE_MONTHNUM),
     ("year", STRINGS.FLD_DATE_YEAR),
     ("ru_long", STRINGS.FLD_DATE_RU),
 )

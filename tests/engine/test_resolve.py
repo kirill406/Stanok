@@ -254,6 +254,9 @@ def test_today_presets():
     pj.templates["Д"].fields["Дата"].value = "month_ru"
     fjs, _ = resolve_rows(ROWS[:1], pj, today=TODAY)
     assert fjs[0].fields["Дата"] == "октября"
+    pj.templates["Д"].fields["Дата"].value = "month_num"
+    fjs, _ = resolve_rows(ROWS[:1], pj, today=TODAY)
+    assert fjs[0].fields["Дата"] == "10"
     pj.templates["Д"].fields["Дата"].value = "year"
     fjs, _ = resolve_rows(ROWS[:1], pj, today=TODAY)
     assert fjs[0].fields["Дата"] == "2026"

@@ -71,8 +71,8 @@
 - Подпись типа — `Дата` (`FLD_SRC_TODAY` переименовано значением, ключ тот же).
 - Формат хранится в `FieldDef.value` (ранее всегда `None`): ключи `dmy`
   (`16.10.2026`), `day` (`16`), `month_ru` (`октября`),
-  `year` (`2026`), `ru_long` (`16 октября 2026`; месяцы родительным падежом
-  вручную — без зависимости от локали ОС).
+  `month_num` (`10`), `year` (`2026`), `ru_long` (`16 октября 2026`;
+  месяцы родительным падежом вручную — без зависимости от локали ОС).
 - `value=None` (legacy) — движок отдаёт объект `date` как раньше; пункт
   «Как в проекте» есть только у таких полей; новые поля его не получают
   (сразу `dmy`); пустой формат блокирует Save (§3).
@@ -105,8 +105,8 @@ gui → services → engine зафиксировано сознательно.
 `FLD_NONE` («отсутствует»), `FLD_COUNTER_CREATE` («Создать»),
 `FLD_COUNTER_NAME` (промпт имени), `FLD_DUP_COUNTER`, `FLD_CNT_BAD`,
 `FLD_DATE_KEEP` («как в проекте» для legacy-`None`),
-`FLD_DATE_DMY` / `FLD_DATE_DAY` / `FLD_DATE_MONTH` / `FLD_DATE_YEAR` /
-`FLD_DATE_RU` (подписи пресетов),
+`FLD_DATE_DMY` / `FLD_DATE_DAY` / `FLD_DATE_MONTH` / `FLD_DATE_MONTHNUM` /
+`FLD_DATE_YEAR` / `FLD_DATE_RU` (подписи пресетов),
 `FLD_BAD_VALUE` («не целое число» для `last`); `FLD_SRC_TODAY` = `Дата`.
 `FLD_FMT_PLAIN` / `FLD_FMT_MONTH` удаляются (заменены шириной).
 

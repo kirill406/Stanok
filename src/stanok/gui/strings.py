@@ -125,6 +125,7 @@ class STRINGS:
     FLD_DATE_DMY = "16.10.2026"
     FLD_DATE_DAY = "16"
     FLD_DATE_MONTH = "октября"
+    FLD_DATE_MONTHNUM = "10"
     FLD_DATE_YEAR = "2026"
     FLD_DATE_RU = "16 октября 2026"
     FLD_EMPTY_VALUE = "Поле «{name}»: пустое значение — запись заблокирована"

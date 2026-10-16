@@ -148,7 +148,7 @@ class FieldsDialog(QDialog):
         layout.addWidget(scroll, 1)
         scroll.setWidget(content)
         layout = body
-        layout.addWidget(QLabel(STRINGS.FLD_FIELDS_TITLE, self))
+        layout.addWidget(self._section_title(STRINGS.FLD_FIELDS_TITLE))
         self.table = QTableWidget(self)
         self.table.setColumnCount(4)
         self.table.setHorizontalHeaderLabels(
@@ -193,7 +193,7 @@ class FieldsDialog(QDialog):
             self._build_value_cell(row, name, fdef)
         layout.addWidget(self.table)
 
-        layout.addWidget(QLabel(STRINGS.FLD_COUNTERS_TITLE, self))
+        layout.addWidget(self._section_title(STRINGS.FLD_COUNTERS_TITLE))
         self.ctable = QTableWidget(self)
         self.ctable.setColumnCount(3)
         self.ctable.setHorizontalHeaderLabels(
@@ -386,6 +386,12 @@ class FieldsDialog(QDialog):
                 combo.addItem(cname, cname)
                 combo.blockSignals(False)
         self._mark_dirty()
+
+    @staticmethod
+    def _section_title(text: str) -> QLabel:
+        label = QLabel(text)
+        label.setStyleSheet("font-weight: bold; font-size: 11pt;")
+        return label
 
     def _build_counters_table(self) -> None:
         self._crows = {}

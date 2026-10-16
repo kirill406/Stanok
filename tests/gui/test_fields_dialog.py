@@ -664,3 +664,17 @@ def test_counters_table_negative_blocks(qapp, tmp_path, store, monkeypatch):
     dlg._on_save()
     assert any("num" in w for w in warnings)
     dlg.close()
+
+
+def test_single_scroll_area(qapp, tmp_path, store):
+    from PyQt5.QtCore import Qt
+    from PyQt5.QtWidgets import QScrollArea
+
+    folder = make_project(tmp_path / "proj")
+    dlg = FieldsDialog(str(folder), "Договор", store=store)
+    areas = dlg.findChildren(QScrollArea)
+    assert len(areas) == 1
+    assert dlg.table.verticalScrollBarPolicy() == Qt.ScrollBarAlwaysOff
+    assert dlg.ctable.verticalScrollBarPolicy() == Qt.ScrollBarAlwaysOff
+    assert dlg.table.height() > 0
+    dlg.close()

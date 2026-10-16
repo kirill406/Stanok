@@ -20,6 +20,7 @@ from PyQt5.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -140,6 +141,13 @@ class FieldsDialog(QDialog):
         self.setWindowTitle(STRINGS.FLD_TITLE.format(name=self._template_name))
         self.resize(900, 650)
         layout = QVBoxLayout(self)
+        scroll = QScrollArea(self)
+        scroll.setWidgetResizable(True)
+        content = QWidget(scroll)
+        body = QVBoxLayout(content)
+        layout.addWidget(scroll, 1)
+        scroll.setWidget(content)
+        layout = body
         layout.addWidget(QLabel(STRINGS.FLD_FIELDS_TITLE, self))
         self.table = QTableWidget(self)
         self.table.setColumnCount(4)
@@ -198,6 +206,7 @@ class FieldsDialog(QDialog):
         self.counter_add_btn = QPushButton(STRINGS.FLD_COUNTER_CREATE, self)
         self.counter_add_btn.clicked.connect(self._on_counter_create)
         layout.addWidget(self.counter_add_btn)
+        self._fit_tables()
 
         buttons = QDialogButtonBox(self)
         self.save_btn = buttons.addButton(
@@ -210,8 +219,18 @@ class FieldsDialog(QDialog):
         close_btn.clicked.connect(self.reject)
         # Hide AFTER all buttons are added: QDialogButtonBox unhides on add.
         self.save_btn.setVisible(False)
-        layout.addWidget(buttons)
-        layout.addWidget(QLabel(STRINGS.FLD_HINT, self))
+        self.layout().addWidget(buttons)
+        self.layout().addWidget(QLabel(STRINGS.FLD_HINT, self))
+
+    def _fit_tables(self) -> None:
+        """Size tables to content; scrolling is owned by the outer QScrollArea."""
+        for table in (self.table, self.ctable):
+            table.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+            height = table.horizontalHeader().height()
+            for row in range(table.rowCount()):
+                height += max(table.rowHeight(row), 24)
+            height += 2 * table.frameWidth() + 2
+            table.setFixedHeight(height)
 
     def _build_value_cell(
         self, row: int, name: str, fdef: FieldDef | None = None
@@ -354,6 +373,7 @@ class FieldsDialog(QDialog):
             return
         self._pj.counters[cname] = CounterDef(last=0, format="1")
         self._build_counters_table()
+        self._fit_tables()
         for st in self._rows.values():
             if "cname" in st:
                 combo = st["cname"]
@@ -449,6 +469,7 @@ class FieldsDialog(QDialog):
             old.deleteLater()
         if old_result is not None:
             old_result.deleteLater()
+        self._fit_tables()
         self._mark_row_touched(name)
 
     def _on_table_file_changed(self, name: str) -> None:

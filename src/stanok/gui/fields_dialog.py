@@ -206,6 +206,11 @@ class FieldsDialog(QDialog):
         self.counter_add_btn = QPushButton(STRINGS.FLD_COUNTER_CREATE, self)
         self.counter_add_btn.clicked.connect(self._on_counter_create)
         layout.addWidget(self.counter_add_btn)
+
+        layout.addWidget(QLabel(STRINGS.FLD_FNAME_TITLE, self))
+        self.fname_edit = QLineEdit(self._pj.filename_template or "", self)
+        self.fname_edit.textChanged.connect(self._mark_dirty)
+        layout.addWidget(self.fname_edit)
         self._fit_tables()
 
         buttons = QDialogButtonBox(self)
@@ -569,6 +574,10 @@ class FieldsDialog(QDialog):
             cdef = self._pj.counters[cname]
             cdef.table = cst["bind"].currentData()
             cdef.last = last
+        fname = self.fname_edit.text().strip()
+        if not fname:
+            raise _FieldError(self._template_name, "FLD_EMPTY_VALUE")
+        self._pj.filename_template = fname
         self._store.save(self._pj, name=self._config_name)
         self._dirty = False
         self.save_btn.setVisible(False)

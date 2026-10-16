@@ -100,6 +100,7 @@ class STRINGS:
     FLD_TITLE = "Шаблон: {name}"
     FLD_FIELDS_TITLE = "Поля"
     FLD_COUNTERS_TITLE = "Счётчики"
+    FLD_FNAME_TITLE = "Имя файла:"
     FLD_COL_FIELD = "Поле"
     FLD_COL_SOURCE = "Тип"
     FLD_COL_VALUE = "Значение"

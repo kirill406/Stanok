@@ -678,3 +678,24 @@ def test_single_scroll_area(qapp, tmp_path, store):
     assert dlg.ctable.verticalScrollBarPolicy() == Qt.ScrollBarAlwaysOff
     assert dlg.table.height() > 0
     dlg.close()
+
+
+def test_filename_template_edits(qapp, tmp_path, store, monkeypatch):
+    folder = make_project(tmp_path / "proj")
+    warnings = []
+    monkeypatch.setattr(
+        QMessageBox, "warning", lambda *a: warnings.append(a[-1])
+    )
+    dlg = FieldsDialog(str(folder), "Договор", store=store)
+    assert dlg.fname_edit.text() == "Договор_{ФИО}_{i}.docx"
+    dlg.fname_edit.setText("Акт_{Номер}")
+    dlg._on_save()
+    import json as _json
+
+    data = _json.loads((store.home_dir / "proj.stanok").read_text())
+    assert data["filename_template"] == "Акт_{Номер}"
+    assert dlg.save_btn.isHidden()
+    dlg.fname_edit.setText("   ")
+    dlg._on_save()
+    assert warnings
+    dlg.close()

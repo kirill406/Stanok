@@ -85,6 +85,9 @@ class ProjectDialog(QDialog):
         layout.addWidget(self.delete_btn)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Close, self)
+        close_btn = buttons.button(QDialogButtonBox.Close)
+        if close_btn is not None:
+            close_btn.setText(STRINGS.FLD_CLOSE)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
 

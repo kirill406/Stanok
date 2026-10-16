@@ -360,3 +360,17 @@ def test_run_stale_source_shows_error(qapp, tmp_path, store, monkeypatch):
     _await_run(dlg)
     assert shown
     dlg.close()
+
+
+def test_close_button_russian(qapp, tmp_path, store):
+    from PyQt5.QtWidgets import QPushButton
+
+    folder = make_project(tmp_path / "proj")
+    dlg = ProjectDialog(str(folder), store=store)
+    texts = [
+        b.text()
+        for b in dlg.findChildren(QPushButton)
+        if b.text() == STRINGS.FLD_CLOSE
+    ]
+    assert len(texts) == 1
+    dlg.close()

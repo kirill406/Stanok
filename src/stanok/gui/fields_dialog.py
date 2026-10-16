@@ -186,7 +186,7 @@ class FieldsDialog(QDialog):
         self.save_btn = buttons.addButton(
             STRINGS.FLD_SAVE, QDialogButtonBox.ActionRole
         )
-        self.save_btn.setStyleSheet("color: #b71c1c;")
+        self.save_btn.setStyleSheet("background-color: #2e7d32; color: black;")
         self.save_btn.clicked.connect(self._on_save)
         close_btn = buttons.addButton(QDialogButtonBox.Close)
         close_btn.setText(STRINGS.FLD_CLOSE)

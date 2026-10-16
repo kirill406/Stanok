@@ -207,7 +207,7 @@ class FieldsDialog(QDialog):
         self.counter_add_btn.clicked.connect(self._on_counter_create)
         layout.addWidget(self.counter_add_btn)
 
-        layout.addWidget(QLabel(STRINGS.FLD_FNAME_TITLE, self))
+        layout.addWidget(self._section_title(STRINGS.FLD_FNAME_TITLE))
         self.fname_edit = QLineEdit(self._pj.filename_template or "", self)
         self.fname_edit.textChanged.connect(self._mark_dirty)
         layout.addWidget(self.fname_edit)

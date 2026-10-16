@@ -501,7 +501,7 @@ def test_counter_no_counters_blocks_save(qapp, tmp_path, store, monkeypatch):
     _set_type(dlg, "ФИО", "counter")
     assert dlg._rows["ФИО"]["cname"].count() == 1
     dlg._on_save()
-    assert any("ФИО" in w for w in warnings)
+    assert any("выберите счётчик" in w for w in warnings)
     data = _json.loads((store.home_dir / "proj.stanok").read_text())
     assert data["counters"] == {}
     dlg.close()

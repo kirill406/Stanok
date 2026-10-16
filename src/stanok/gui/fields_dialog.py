@@ -452,7 +452,7 @@ class FieldsDialog(QDialog):
             elif kind == "counter":
                 cname = self._selected_counter(name)
                 if cname is None:
-                    raise _FieldError(name, "FLD_EMPTY_VALUE")
+                    raise _FieldError(name, "FLD_NO_COUNTER")
                 try:
                     last = int(st["last"].text())
                 except ValueError:

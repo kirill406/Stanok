@@ -121,6 +121,7 @@ class STRINGS:
     FLD_DATE_RU = "16 октября 2026"
     FLD_EMPTY_VALUE = "Поле «{name}»: пустое значение — запись заблокирована"
     FLD_BAD_VALUE = "Поле «{name}»: значение счётчика — целое число ≥ 0"
+    FLD_NO_COUNTER = "Поле «{name}»: выберите счётчик из списка или создайте новый"
 
     # Month names, genitive case for dates (engine splits on "|")
     RU_MONTHS_GENITIVE = (

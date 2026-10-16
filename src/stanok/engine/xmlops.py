@@ -18,6 +18,25 @@ PLACEHOLDER_RE = re.compile(r"\{\{\s*([^}{]+?)\s*\}\}")
 UNCLOSED_RE = re.compile(r"\{\{(?![^}]*\}\})")
 
 
+def _iter_table_paragraphs(table) -> Any:
+    for row in table.rows:
+        for cell in row.cells:
+            yield from cell.paragraphs
+            for nested in cell.tables:
+                yield from _iter_table_paragraphs(nested)
+
+
+def iter_paragraphs(doc) -> Any:
+    """Every body paragraph: top-level + (nested) tables.
+
+    Single traversal for render and placeholder scan — one place to extend
+    (headers/footers later). Yielded objects are docx Paragraphs.
+    """
+    yield from doc.paragraphs
+    for table in doc.tables:
+        yield from _iter_table_paragraphs(table)
+
+
 def _stringify(value: Any) -> str:
     from datetime import date, datetime
 

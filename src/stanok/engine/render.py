@@ -8,23 +8,9 @@ from pathlib import Path
 from docx import Document
 
 from .schema import FillingJSON, RenderError
-from .xmlops import _stringify, substitute_paragraph
+from .xmlops import _stringify, iter_paragraphs, substitute_paragraph
 
 logger = logging.getLogger(__name__)
-
-
-def _iter_paragraphs(doc: Document):
-    yield from doc.paragraphs
-    for table in doc.tables:
-        yield from _iter_table_paragraphs(table)
-
-
-def _iter_table_paragraphs(table):
-    for row in table.rows:
-        for cell in row.cells:
-            yield from cell.paragraphs
-            for nested in cell.tables:
-                yield from _iter_table_paragraphs(nested)
 
 
 def render(fj: FillingJSON, template_path: Path) -> Document:
@@ -37,7 +23,7 @@ def render(fj: FillingJSON, template_path: Path) -> Document:
 
     mapping = {k: _stringify(v) for k, v in fj.fields.items()}
     try:
-        for paragraph in _iter_paragraphs(doc):
+        for paragraph in iter_paragraphs(doc):
             substitute_paragraph(paragraph, mapping)
     except RenderError:
         raise

@@ -796,3 +796,18 @@ def test_init_filename_defaults_to_name(store, tmp_path):
     xlsx, tpl = _src_files(tmp_path)
     pj = store.init_project(tmp_path / "proj", "Договоры", [xlsx], [tpl])
     assert pj.filename_template == "Договоры"
+
+
+def test_scan_finds_nested_table_placeholders(store, tmp_path):
+    from docx import Document as DocxDocument
+
+    from stanok.services.storage import _scan_placeholders
+
+    doc = DocxDocument()
+    doc.add_paragraph("Hi {{Имя}}")
+    outer = doc.add_table(rows=1, cols=1)
+    inner = outer.cell(0, 0).add_table(rows=1, cols=1)
+    inner.cell(0, 0).text = "Deep {{Глубина}}"
+    tpl = tmp_path / "nest.docx"
+    doc.save(tpl)
+    assert _scan_placeholders(tpl) == ["Имя", "Глубина"]

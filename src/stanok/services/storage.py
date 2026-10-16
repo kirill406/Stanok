@@ -23,7 +23,7 @@ from ..engine.schema import (
     validate_aj,
     validate_pj,
 )
-from ..engine.xmlops import PLACEHOLDER_RE
+from ..engine.xmlops import PLACEHOLDER_RE, iter_paragraphs
 from ..gui.strings import STRINGS
 
 logger = logging.getLogger(__name__)
@@ -59,13 +59,8 @@ def _scan_placeholders(docx_path: Path) -> list[str]:
         raise StorageError(
             "init", [f"cannot read template {docx_path.name}: {e}"]
         ) from e
-    blocks = list(doc.paragraphs)
-    for table in doc.tables:
-        for row in table.rows:
-            for cell in row.cells:
-                blocks.extend(cell.paragraphs)
     names: list[str] = []
-    for p in blocks:
+    for p in iter_paragraphs(doc):
         for m in PLACEHOLDER_RE.finditer(p.text):
             name = m.group(1).strip()
             if name and name not in names:

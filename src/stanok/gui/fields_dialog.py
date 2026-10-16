@@ -140,6 +140,7 @@ class FieldsDialog(QDialog):
         self.setWindowTitle(STRINGS.FLD_TITLE.format(name=self._template_name))
         self.resize(900, 650)
         layout = QVBoxLayout(self)
+        layout.addWidget(QLabel(STRINGS.FLD_FIELDS_TITLE, self))
         self.table = QTableWidget(self)
         self.table.setColumnCount(4)
         self.table.setHorizontalHeaderLabels(
@@ -184,6 +185,7 @@ class FieldsDialog(QDialog):
             self._build_value_cell(row, name, fdef)
         layout.addWidget(self.table)
 
+        layout.addWidget(QLabel(STRINGS.FLD_COUNTERS_TITLE, self))
         self.ctable = QTableWidget(self)
         self.ctable.setColumnCount(3)
         self.ctable.setHorizontalHeaderLabels(

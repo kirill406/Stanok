@@ -98,6 +98,8 @@ class STRINGS:
     PROJ_DELETED = "Проект «{name}» удалён"
     # Fields dialog (gui/fields_dialog.py, window 3)
     FLD_TITLE = "Шаблон: {name}"
+    FLD_FIELDS_TITLE = "Поля"
+    FLD_COUNTERS_TITLE = "Счётчики"
     FLD_COL_FIELD = "Поле"
     FLD_COL_SOURCE = "Тип"
     FLD_COL_VALUE = "Значение"
@@ -114,7 +116,7 @@ class STRINGS:
     FLD_CNT_BIND = "Привязка"
     FLD_CNT_LAST = "Текущее значение"
     FLD_NONE = "отсутствует"
-    FLD_COUNTER_CREATE = "Создать"
+    FLD_COUNTER_CREATE = "Создать счётчик"
     FLD_COUNTER_NAME = "Имя счётчика:"
     FLD_DUP_COUNTER = "Счётчик «{name}» уже существует"
     FLD_DATE_KEEP = "как в проекте"

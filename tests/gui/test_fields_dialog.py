@@ -364,7 +364,7 @@ def test_today_type_saves(qapp, tmp_path, store):
     _set_type(dlg, "Номер", "today")
     dlg._on_save()
     saved = _saved_pj(store)["templates"]["Договор"]["fields"]["Номер"]
-    assert saved == {"source": "today", "value": None, "table": None}
+    assert saved == {"source": "today", "value": "dmy", "table": None}
     dlg.close()
 
 
@@ -554,4 +554,35 @@ def test_headers_and_close_button(qapp, tmp_path, store):
         if b.text() == STRINGS.FLD_CLOSE
     ]
     assert len(close_btns) == 1
+    dlg.close()
+
+
+def test_today_keep_only_for_legacy(qapp, tmp_path, store):
+    folder = make_project(tmp_path / "proj")
+    dlg = FieldsDialog(str(folder), "Договор", store=store)
+    _set_type(dlg, "ФИО", "today")
+    items = [
+        dlg._rows["ФИО"]["dfmt"].itemData(i)
+        for i in range(dlg._rows["ФИО"]["dfmt"].count())
+    ]
+    assert None not in items
+    assert dlg._rows["ФИО"]["dfmt"].currentData() == "dmy"
+    dlg.close()
+
+
+def test_today_empty_format_blocks_save(qapp, tmp_path, store, monkeypatch):
+    folder = make_project(tmp_path / "proj")
+    _add_today(folder)
+    warnings = []
+    monkeypatch.setattr(
+        QMessageBox, "warning", lambda *a: warnings.append(a[-1])
+    )
+    dlg = FieldsDialog(str(folder), "Договор", store=store)
+    assert dlg._rows["Дата"]["dfmt"].currentData() is None
+    dlg._on_save()
+    assert any("Дата" in w for w in warnings)
+    import json as _json
+
+    data = _json.loads((store.home_dir / "proj.stanok").read_text())
+    assert data["templates"]["Договор"]["fields"]["Дата"]["value"] is None
     dlg.close()

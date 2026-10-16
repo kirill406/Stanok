@@ -298,7 +298,7 @@ class FieldsDialog(QDialog):
             )
         else:  # today ("Дата"): format combo + preview
             dfmt = QComboBox(box)
-            if stored.source.value != "today" or stored.value is None:
+            if stored.source.value == "today" and stored.value is None:
                 dfmt.addItem(STRINGS.FLD_DATE_KEEP, None)
             for key, label in DATE_PRESETS:
                 dfmt.addItem(label, key)
@@ -471,8 +471,11 @@ class FieldsDialog(QDialog):
                 f.value = cname
                 f.table = None
             else:
+                value = st["dfmt"].currentData()
+                if value is None:
+                    raise _FieldError(name, "FLD_EMPTY_VALUE")
                 f.source = FieldSource.TODAY
-                f.value = st["dfmt"].currentData()
+                f.value = value
                 f.table = None
         self._store.save(self._pj, name=self._config_name)
         self._dirty = False

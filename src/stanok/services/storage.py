@@ -412,6 +412,42 @@ class ProjectStore:
         return rel.as_posix()
 
 
+    def sync_template_fields(self, ref: str | Path) -> dict[str, list[str]]:
+        """Add docx placeholders missing from PJ (020); return template → added.
+
+        Only adds; never removes (user mappings are kept). Unreadable or
+        missing template files are skipped with a warning.
+        """
+        with self._lock:
+            pj, config_path = self.resolve_project(ref)
+            try:
+                folder = project_folder(ref, pj, config_path, self)
+            except StorageError as e:
+                logger.warning(f"sync skipped, no folder: {e}")
+                return {}
+            added: dict[str, list[str]] = {}
+            for name, tpl in pj.templates.items():
+                tpl_path = folder / tpl.file
+                if not tpl_path.is_file():
+                    logger.warning(f"sync skipped, missing template file: {tpl.file}")
+                    continue
+                try:
+                    placeholders = _scan_placeholders(tpl_path)
+                except StorageError as e:
+                    logger.warning(f"sync skipped, unreadable template: {e}")
+                    continue
+                new = [ph for ph in placeholders if ph not in tpl.fields]
+                for ph in new:
+                    tpl.fields[ph] = FieldDef(
+                        source=FieldSource.TABLE, value=ph
+                    )
+                if new:
+                    added[name] = new
+            if added:
+                self.save(pj, name=config_path.stem)
+                logger.info("synced template fields: %s", added)
+            return added
+
     def remove_recent(self, folder: str, config: str) -> None:
         """Remove one recent project entry (no-op when absent)."""
         with self._lock:

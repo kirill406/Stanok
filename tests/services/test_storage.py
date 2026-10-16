@@ -725,3 +725,66 @@ def test_migrate_double_collision(store, tmp_path, sample_pj):
     )
     store.migrate_from_project(legacy)
     assert (store.home_dir / "proj (2).stanok").is_file()
+
+
+def _add_placeholder(folder, text="Новый {{Штрихкод}}"):
+    from docx import Document as DocxDocument
+
+    tpl = folder / "Шаблоны" / "tpl.docx"
+    doc = DocxDocument(str(tpl))
+    doc.add_paragraph(text)
+    doc.save(str(tpl))
+
+
+def _migrated(store, tmp_path, name="proj"):
+    """make_project folder migrated to Home; return folder."""
+    from tests.services.test_generate import make_project
+
+    folder = make_project(tmp_path / name)
+    store.migrate_from_project(folder)
+    return folder
+
+
+def test_sync_adds_new_placeholders(store, tmp_path):
+    folder = _migrated(store, tmp_path)
+    _add_placeholder(folder)
+    added = store.sync_template_fields(folder)
+    assert added == {"Договор": ["Штрихкод"]}
+    pj = store.load("proj")
+    assert pj.templates["Договор"].fields["Штрихкод"].source.value == "table"
+
+
+def test_sync_noop_without_changes(store, tmp_path):
+    folder = _migrated(store, tmp_path)
+    assert store.sync_template_fields(folder) == {}
+
+
+def test_sync_keeps_removed_placeholder(store, tmp_path):
+    import json as _json
+
+    folder = _migrated(store, tmp_path)
+    pj_path = store.home_dir / "proj.stanok"
+    data = _json.loads(pj_path.read_text())
+    data["templates"]["Договор"]["fields"]["Призрак"] = {
+        "source": "constant", "value": "x"
+    }
+    pj_path.write_text(_json.dumps(data, ensure_ascii=False))
+    assert store.sync_template_fields(folder) == {}
+    assert "Призрак" in store.load("proj").templates["Договор"].fields
+
+
+def test_sync_missing_template_file_skipped(store, tmp_path):
+    folder = _migrated(store, tmp_path)
+    (folder / "Шаблоны" / "tpl.docx").unlink()
+    assert store.sync_template_fields(folder) == {}
+
+
+def test_sync_no_folder_returns_empty(store, tmp_path, sample_pj):
+    store.save(sample_pj, name="ghost")
+    assert store.sync_template_fields("ghost") == {}
+
+
+def test_sync_unreadable_template_skipped(store, tmp_path):
+    folder = _migrated(store, tmp_path)
+    (folder / "Шаблоны" / "tpl.docx").write_text("not a zip")
+    assert store.sync_template_fields(folder) == {}

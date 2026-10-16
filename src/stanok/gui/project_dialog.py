@@ -45,6 +45,7 @@ class ProjectDialog(QDialog):
         self._worker: GenerateWorker | None = None
         self._progress_dialog: QProgressDialog | None = None
         self._running = False
+        self._store.sync_template_fields(project_ref)
         pj, _ = self._store.resolve_project(project_ref)
         self._pj = pj
         self._template_names = list(pj.templates)

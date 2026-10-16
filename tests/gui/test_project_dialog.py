@@ -374,3 +374,21 @@ def test_close_button_russian(qapp, tmp_path, store):
     ]
     assert len(texts) == 1
     dlg.close()
+
+
+def test_open_syncs_new_fields(qapp, tmp_path, store):
+    from docx import Document as DocxDocument
+
+    from stanok.gui.fields_dialog import FieldsDialog
+    from tests.services.test_generate import make_project
+
+    folder = make_project(tmp_path / "proj")
+    tpl = folder / "Шаблоны" / "tpl.docx"
+    doc = DocxDocument(str(tpl))
+    doc.add_paragraph("Штрихкод {{Штрихкод}}")
+    doc.save(str(tpl))
+    dlg = ProjectDialog(str(folder), store=store)
+    dlg.close()
+    fld = FieldsDialog(str(folder), "Договор", store=store)
+    assert "Штрихкод" in fld._rows
+    fld.close()

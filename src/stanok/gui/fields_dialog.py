@@ -44,7 +44,9 @@ SOURCE_ORDER = ("constant", "table", "counter", "today")
 COUNTER_WIDTHS = ("1", "01", "001", "0001")
 DATE_PRESETS = (
     ("dmy", STRINGS.FLD_DATE_DMY),
-    ("iso", STRINGS.FLD_DATE_ISO),
+    ("day", STRINGS.FLD_DATE_DAY),
+    ("month_ru", STRINGS.FLD_DATE_MONTH),
+    ("year", STRINGS.FLD_DATE_YEAR),
     ("ru_long", STRINGS.FLD_DATE_RU),
 )
 NEW_COUNTER_TAG = "__new__"
@@ -298,11 +300,7 @@ class FieldsDialog(QDialog):
             dfmt = QComboBox(box)
             if stored.source.value != "today" or stored.value is None:
                 dfmt.addItem(STRINGS.FLD_DATE_KEEP, None)
-            for key, label in (
-                ("dmy", STRINGS.FLD_DATE_DMY),
-                ("iso", STRINGS.FLD_DATE_ISO),
-                ("ru_long", STRINGS.FLD_DATE_RU),
-            ):
+            for key, label in DATE_PRESETS:
                 dfmt.addItem(label, key)
             if stored.source.value == "today" and stored.value in TODAY_PRESETS:
                 dfmt.setCurrentIndex(dfmt.findData(stored.value))

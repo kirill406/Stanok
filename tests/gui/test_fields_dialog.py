@@ -422,11 +422,11 @@ def test_date_format_saves_preset(qapp, tmp_path, store):
     dlg = FieldsDialog(str(folder), "Договор", store=store)
     st = dlg._rows["Дата"]
     assert st["dfmt"].currentData() is None
-    st["dfmt"].setCurrentIndex(st["dfmt"].findData("ru_long"))
-    assert "октября" in st["dlabel"].text()
+    st["dfmt"].setCurrentIndex(st["dfmt"].findData("month_ru"))
+    assert "октябрь" in st["dlabel"].text() and "2026" not in st["dlabel"].text()
     dlg._on_save()
     saved = _saved_pj(store)["templates"]["Договор"]["fields"]["Дата"]
-    assert saved == {"source": "today", "value": "ru_long", "table": None}
+    assert saved == {"source": "today", "value": "month_ru", "table": None}
     dlg.close()
 
 
@@ -466,12 +466,12 @@ def test_date_preset_reopen_selects(qapp, tmp_path, store):
     _add_today(folder)
     dlg = FieldsDialog(str(folder), "Договор", store=store)
     st = dlg._rows["Дата"]
-    st["dfmt"].setCurrentIndex(st["dfmt"].findData("iso"))
+    st["dfmt"].setCurrentIndex(st["dfmt"].findData("month_ru"))
     dlg._on_save()
     dlg.close()
     dlg2 = FieldsDialog(str(folder), "Договор", store=store)
-    assert dlg2._rows["Дата"]["dfmt"].currentData() == "iso"
-    assert "2026" in dlg2._rows["Дата"]["dlabel"].text()
+    assert dlg2._rows["Дата"]["dfmt"].currentData() == "month_ru"
+    assert "октябрь" in dlg2._rows["Дата"]["dlabel"].text()
     dlg2.close()
 
 

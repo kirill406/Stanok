@@ -116,7 +116,9 @@ class STRINGS:
     FLD_NEW_COUNTER_LABEL = "Имя счётчика:"
     FLD_DATE_KEEP = "как в проекте"
     FLD_DATE_DMY = "16.10.2026"
-    FLD_DATE_ISO = "2026-10-16"
+    FLD_DATE_DAY = "16"
+    FLD_DATE_MONTH = "октябрь"
+    FLD_DATE_YEAR = "2026"
     FLD_DATE_RU = "16 октября 2026"
     FLD_EMPTY_VALUE = "Поле «{name}»: пустое значение — запись заблокирована"
     FLD_BAD_VALUE = "Поле «{name}»: значение счётчика — целое число ≥ 0"
@@ -125,6 +127,10 @@ class STRINGS:
     RU_MONTHS_GENITIVE = (
         "января|февраля|марта|апреля|мая|июня|"
         "июля|августа|сентября|октября|ноября|декабря"
+    )
+    RU_MONTHS_NOMINATIVE = (
+        "январь|февраль|март|апрель|май|июнь|"
+        "июль|август|сентябрь|октябрь|ноябрь|декабрь"
     )
     MAIN_STATUS_READY = "Готов"
     MAIN_STATUS_RUNNING = "Генерация... {created} из {total}"

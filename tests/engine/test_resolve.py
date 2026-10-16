@@ -248,9 +248,15 @@ def test_today_presets():
     pj.templates["Д"].fields["Дата"].value = "dmy"
     fjs, _ = resolve_rows(ROWS[:1], pj, today=TODAY)
     assert fjs[0].fields["Дата"] == "05.10.2026"
-    pj.templates["Д"].fields["Дата"].value = "iso"
+    pj.templates["Д"].fields["Дата"].value = "day"
     fjs, _ = resolve_rows(ROWS[:1], pj, today=TODAY)
-    assert fjs[0].fields["Дата"] == "2026-10-05"
+    assert fjs[0].fields["Дата"] == "5"
+    pj.templates["Д"].fields["Дата"].value = "month_ru"
+    fjs, _ = resolve_rows(ROWS[:1], pj, today=TODAY)
+    assert fjs[0].fields["Дата"] == "октябрь"
+    pj.templates["Д"].fields["Дата"].value = "year"
+    fjs, _ = resolve_rows(ROWS[:1], pj, today=TODAY)
+    assert fjs[0].fields["Дата"] == "2026"
     pj.templates["Д"].fields["Дата"].value = "ru_long"
     fjs, _ = resolve_rows(ROWS[:1], pj, today=TODAY)
     assert fjs[0].fields["Дата"] == "5 октября 2026"

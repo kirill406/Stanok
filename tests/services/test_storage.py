@@ -811,3 +811,16 @@ def test_scan_finds_nested_table_placeholders(store, tmp_path):
     tpl = tmp_path / "nest.docx"
     doc.save(tpl)
     assert _scan_placeholders(tpl) == ["Имя", "Глубина"]
+
+
+def test_scan_finds_header_placeholders(tmp_path):
+    from docx import Document as DocxDocument
+
+    from stanok.services.storage import _scan_placeholders
+
+    doc = DocxDocument()
+    doc.add_paragraph("Тело")
+    doc.sections[0].header.paragraphs[0].text = "Шапка {{Код}}"
+    tpl = tmp_path / "hdr.docx"
+    doc.save(tpl)
+    assert _scan_placeholders(tpl) == ["Код"]

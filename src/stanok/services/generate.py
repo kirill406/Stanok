@@ -97,6 +97,46 @@ def _pick_data_sources(
     raise TemplateError(f"data source not found: {name}")
 
 
+def _headers_of(
+    project_dir: Path, source_file: str, cache: dict[str, list[str]]
+) -> list[str]:
+    """Headers of one xlsx (cached); [] when unreadable (error reported by caller)."""
+    if source_file not in cache:
+        try:
+            rows = ExcelReader().read(project_dir / source_file)
+            cache[source_file] = list(rows[0].keys()) if rows else []
+        except Exception as e:
+            logger.warning(f"headers for {source_file} failed: {e}", exc_info=True)
+            cache[source_file] = []
+    return cache[source_file]
+
+
+def _check_table_columns(
+    project_dir: Path,
+    template_def: TemplateDef,
+    ds: DataSourceDef,
+    cache: dict[str, list[str]],
+) -> None:
+    """Fail fast when a table field's column is missing (020).
+
+    Honors the FieldDef.table binding; unbound fields check the running source.
+    Unreadable bound files are skipped here — their read error aborts elsewhere.
+    """
+    for field_name, fdef in template_def.fields.items():
+        if fdef.source.value != "table":
+            continue
+        column = str(fdef.value)
+        target = fdef.table or ds.file
+        headers = _headers_of(project_dir, target, cache)
+        if not headers and target != ds.file:
+            continue
+        if column not in headers:
+            raise TemplateError(
+                f"field '{field_name}': column '{column}' "
+                f"not found in {target}"
+            )
+
+
 def _save_document(doc: Document, out_dir: Path, dist: str, row_index: int) -> Path:
     """Save rendered doc under out_dir/dist with unique name (FR-11)."""
     target = (out_dir / dist).resolve()
@@ -152,6 +192,7 @@ def generate_documents(
     report.resumed_from = first_start or None
 
     cancelled = False
+    headers_cache: dict[str, list[str]] = {}
     for ds_index, ds in sources:
         if cancelled:
             break
@@ -167,6 +208,9 @@ def generate_documents(
         if not rows:
             logger.info(f"generate: empty data source {ds.file}")
             continue
+        headers_cache[ds.file] = (
+            list(rows[0].keys()) if rows else []
+        )
 
         # Work copy: single template + THIS source only (013: resolve reads [0]).
         work = pj.model_copy(deep=True)
@@ -187,6 +231,9 @@ def generate_documents(
         limit = cmd.max_docs
         if limit is not None and limit <= 0:
             continue
+
+        # Pre-flight: table columns must exist (clear error before any doc).
+        _check_table_columns(project_dir, template_def, ds, headers_cache)
 
         # Mode selection (incl. circular cycling) lives in the engine;
         # here only clean rows + limit go in, cursor math stays here.

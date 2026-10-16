@@ -510,3 +510,58 @@ def test_progress_callback_no_cancel(tmp_path, store):
     )
     assert report.created == 2
     assert calls == [(1, 2), (2, 2)]
+
+
+def test_missing_column_fails_fast(tmp_path, store):
+    import json as _json
+
+    folder = make_project(tmp_path / "proj", rows=(("Иван", 100),))
+    pj_path = folder / "project.stanok"
+    data = _json.loads(pj_path.read_text())
+    data["templates"]["Договор"]["fields"]["Инфа"] = {
+        "source": "table", "value": "инфа"
+    }
+    pj_path.write_text(_json.dumps(data, ensure_ascii=False))
+    with pytest.raises(TemplateError, match="column 'инфа'.*Данные/data.xlsx"):
+        generate_documents(GenerateCommand(project_ref=folder), store=store)
+    assert not (folder / "Результат").exists()
+
+
+def test_bound_column_checked_in_own_file(tmp_path, store):
+    import json as _json
+
+    from tests.services.test_storage import _src_files
+
+    folder = make_project(tmp_path / "proj", rows=(("Иван", 100),))
+    xlsx, _ = _src_files(tmp_path, "s2")
+    (folder / "Данные").mkdir(parents=True, exist_ok=True)
+    import shutil
+
+    shutil.copy(xlsx, folder / "Данные" / "data2.xlsx")
+    pj_path = folder / "project.stanok"
+    data = _json.loads(pj_path.read_text())
+    data["data_sources"].append(
+        {"file": "Данные/data2.xlsx", "mode": "sequential", "start_row": 0}
+    )
+    data["templates"]["Договор"]["fields"]["ФИО"]["table"] = "Данные/data2.xlsx"
+    data["templates"]["Договор"]["fields"]["Инфа"] = {
+        "source": "table", "value": "инфа", "table": "Данные/data2.xlsx",
+    }
+    pj_path.write_text(_json.dumps(data, ensure_ascii=False))
+    with pytest.raises(TemplateError, match="column 'инфа'.*data2.xlsx"):
+        generate_documents(GenerateCommand(project_ref=folder), store=store)
+
+
+def test_bound_missing_file_falls_back_to_engine(tmp_path, store):
+    import json as _json
+
+    from stanok.engine.schema import ResolveError
+
+    folder = make_project(tmp_path / "proj", rows=(("Иван", 100),))
+    pj_path = folder / "project.stanok"
+    data = _json.loads(pj_path.read_text())
+    data["templates"]["Договор"]["fields"]["ФИО"]["table"] = "Данные/gone.xlsx"
+    data["templates"]["Договор"]["fields"]["ФИО"]["value"] = "нетакой"
+    pj_path.write_text(_json.dumps(data, ensure_ascii=False))
+    with pytest.raises(ResolveError, match="column 'нетакой' not found"):
+        generate_documents(GenerateCommand(project_ref=folder), store=store)

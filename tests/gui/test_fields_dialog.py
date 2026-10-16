@@ -277,8 +277,8 @@ def test_table_file_and_column_saved(qapp, tmp_path, store):
     pj_path.write_text(json.dumps(data, ensure_ascii=False))
     dlg = FieldsDialog(str(folder), "Договор", store=store)
     st = dlg._rows["ФИО"]
-    assert st["file"].count() == 3
-    st["file"].setCurrentIndex(2)
+    assert st["file"].count() == 2
+    st["file"].setCurrentIndex(1)
     assert st["col"].count() == 2
     st["col"].setCurrentIndex(0)
     dlg._on_save()
@@ -292,8 +292,8 @@ def test_legacy_table_without_file(qapp, tmp_path, store):
     folder = make_project(tmp_path / "proj")
     dlg = FieldsDialog(str(folder), "Договор", store=store)
     st = dlg._rows["ФИО"]
-    assert st["file"].currentData() is None
-    assert st["file"].currentText() == STRINGS.FLD_TABLE_ANY
+    assert st["file"].currentData() == "Данные/data.xlsx"
+    assert st["file"].count() == 1
     assert st["col"].currentText() == "ФИО"
     dlg.close()
 

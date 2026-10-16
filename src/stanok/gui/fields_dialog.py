@@ -227,7 +227,6 @@ class FieldsDialog(QDialog):
             st["result"] = result
         elif kind == "table":
             file_combo = QComboBox(box)
-            file_combo.addItem(STRINGS.FLD_TABLE_ANY, None)
             for ds in self._pj.data_sources:
                 file_combo.addItem(ds.file, ds.file)
             wanted = stored.table if stored.source.value == "table" else None
@@ -444,11 +443,12 @@ class FieldsDialog(QDialog):
                 f.table = None
             elif kind == "table":
                 column = st["col"].currentText()
-                if not column:
+                source_file = st["file"].currentData()
+                if not column or not source_file:
                     raise _FieldError(name, "FLD_EMPTY_VALUE")
                 f.source = FieldSource.TABLE
                 f.value = column
-                f.table = st["file"].currentData()
+                f.table = source_file
             elif kind == "counter":
                 cname = self._selected_counter(name)
                 if cname is None:

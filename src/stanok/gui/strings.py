@@ -110,7 +110,6 @@ class STRINGS:
     FLD_SRC_TABLE = "Таблица"
     FLD_SRC_COUNTER = "Счётчик"
     FLD_SRC_TODAY = "Дата"
-    FLD_TABLE_ANY = "любой"
     FLD_COUNTER_NEW = "+ Новый…"
     FLD_NEW_COUNTER_TITLE = "Новый счётчик"
     FLD_NEW_COUNTER_LABEL = "Имя счётчика:"

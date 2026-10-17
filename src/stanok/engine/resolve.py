@@ -15,6 +15,7 @@ from .schema import (
     ResolveError,
     TemplateDef,
 )
+from ..gui.strings import STRINGS
 
 logger = logging.getLogger(__name__)
 
@@ -33,16 +34,45 @@ def _format_dist(template: str, fields: dict[str, Any], index: int, template_nam
     return result
 
 
+from ..gui.strings import STRINGS
+
+RU_MONTHS_GENITIVE = STRINGS.RU_MONTHS_GENITIVE.split("|")
+
+#: today presets (FieldDef.value) → formatter; None/unknown = legacy date object.
+TODAY_PRESETS = ("dmy", "day", "month_ru", "month_num", "year", "ru_long")
+
+COUNTER_WIDTHS = ("1", "01", "001", "0001")
+
+
 def _format_counter(value: int, fmt: str, counter_name: str, today: date) -> str:
     """Format counter value according to format."""
-    if fmt == "month":
+    if fmt == "month":  # legacy (020: GUI no longer offers it)
         if value > 999:
             raise ResolveError(
                 f"counters.{counter_name}",
                 ["counter overflow: month counter exceeded 999"],
             )
         return f"{today.strftime('%Y-%m')}-{value:03d}"
-    return str(value)
+    if fmt in COUNTER_WIDTHS:
+        return str(value).zfill(len(fmt))
+    return str(value)  # "1", "plain" (legacy), unknown
+
+
+def format_today(value: Any, today: date) -> Any:
+    """Format today field by preset; legacy None/unknown → date object."""
+    if value == "dmy":
+        return today.strftime("%d.%m.%Y")
+    if value == "day":
+        return str(today.day)
+    if value == "month_ru":
+        return RU_MONTHS_GENITIVE[today.month - 1]
+    if value == "month_num":
+        return today.strftime("%m")
+    if value == "year":
+        return str(today.year)
+    if value == "ru_long":
+        return f"{today.day} {RU_MONTHS_GENITIVE[today.month - 1]} {today.year}"
+    return today
 
 
 def _resolve_field(
@@ -57,6 +87,12 @@ def _resolve_field(
     if field_def.source == FieldSource.CONSTANT:
         return field_def.value
     if field_def.source == FieldSource.TABLE:
+        if (
+            field_def.table is not None
+            and pj.data_sources
+            and field_def.table != pj.data_sources[0].file
+        ):
+            return None  # bound elsewhere: empty in this source's run (020)
         col_name = field_def.value
         if col_name not in row:
             raise ResolveError(
@@ -71,13 +107,20 @@ def _resolve_field(
                 f"fields.{field_name}",
                 [f"counter '{counter_name}' not defined in project"],
             )
-        new_value = counters.get(counter_name, pj.counters[counter_name].last) + 1
+        counter_def = pj.counters[counter_name]
+        if (
+            counter_def.table is not None
+            and pj.data_sources
+            and counter_def.table != pj.data_sources[0].file
+        ):
+            return None  # bound elsewhere: empty in this source's run (020)
+        new_value = counters.get(counter_name, counter_def.last) + 1
         counters[counter_name] = new_value
         return _format_counter(
-            new_value, pj.counters[counter_name].format, counter_name, today
+            new_value, counter_def.format, counter_name, today
         )
     if field_def.source == FieldSource.TODAY:
-        return today
+        return format_today(field_def.value, today)
     raise ResolveError(
         f"fields.{field_name}",
         [f"unknown field source: {field_def.source}"],

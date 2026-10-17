@@ -14,6 +14,7 @@ from pathlib import Path
 
 from ..engine.schema import (
     ApplicationJSON,
+    DataSourceDef,
     FieldDef,
     FieldSource,
     ProjectJSON,
@@ -23,7 +24,7 @@ from ..engine.schema import (
     validate_aj,
     validate_pj,
 )
-from ..engine.xmlops import PLACEHOLDER_RE
+from ..engine.xmlops import PLACEHOLDER_RE, iter_paragraphs
 from ..gui.strings import STRINGS
 
 logger = logging.getLogger(__name__)
@@ -32,13 +33,20 @@ logger = logging.getLogger(__name__)
 def project_folder(
     ref: str | Path, pj: ProjectJSON, config_path: Path, store: ProjectStore
 ) -> Path:
-    """Find project folder: direct dir ref, else AJ recent lookup by config."""
+    """Find project folder: explicit dir ref, else PJ.folder, else recent."""
     ref_path = Path(ref) if isinstance(ref, str) else ref
     if ref_path.exists() and ref_path.is_dir():
         return ref_path.resolve()
-    # Config-name ref: folder remembered in recent projects.
+    if pj.folder:
+        folder = Path(pj.folder)
+        if folder.is_dir():
+            return folder.resolve()
+        raise StorageError(
+            "resolve", [f"project folder not found: {pj.folder}"]
+        )
+    # Legacy config without folder: folder remembered in recent projects.
     for item in store.get_recent():
-        if item.config == ref_path.name or item.config == config_path.stem:
+        if item.config == config_path.stem:
             folder = Path(item.folder)
             if folder.is_dir():
                 return folder.resolve()
@@ -59,13 +67,8 @@ def _scan_placeholders(docx_path: Path) -> list[str]:
         raise StorageError(
             "init", [f"cannot read template {docx_path.name}: {e}"]
         ) from e
-    blocks = list(doc.paragraphs)
-    for table in doc.tables:
-        for row in table.rows:
-            for cell in row.cells:
-                blocks.extend(cell.paragraphs)
     names: list[str] = []
-    for p in blocks:
+    for p in iter_paragraphs(doc):
         for m in PLACEHOLDER_RE.finditer(p.text):
             name = m.group(1).strip()
             if name and name not in names:
@@ -153,6 +156,10 @@ class ProjectStore:
         with open(path, "r", encoding="utf-8") as f:
             return json.load(f)
 
+    def config_exists(self, name: str) -> bool:
+        """Whether a project config with this name exists in Home."""
+        return self._get_config_path(name).exists()
+
     def _get_config_path(self, name: str) -> Path:
         """Get path for config file in Home."""
         safe_name = name.replace("/", "_").replace("\\", "_")
@@ -221,6 +228,18 @@ class ProjectStore:
             configs.sort(key=lambda x: x[0], reverse=True)
             return [pj for _, pj in configs]
 
+    def list_named(self) -> list[tuple[str, ProjectJSON]]:
+        """List (config name, PJ) pairs sorted by name (020 open dialog)."""
+        with self._lock:
+            out: list[tuple[str, ProjectJSON]] = []
+            for path in self.home_dir.glob("*.stanok"):
+                try:
+                    out.append((path.stem, validate_pj(self._read_json(path))))
+                except Exception as e:
+                    logger.warning(f"skipping invalid config {path}: {e}")
+            out.sort(key=lambda x: x[0].lower())
+            return out
+
     def _unique_config_name(self, base: str) -> str:
         """Free config stem: base, base (1), base (2), ... (§5.3 spec.md)."""
         if not self._get_config_path(base).exists():
@@ -245,6 +264,7 @@ class ProjectStore:
             )
         with open(legacy_config, "r", encoding="utf-8") as f:
             pj = validate_pj(json.load(f))
+        pj.folder = str(project_dir.resolve())
         name = self._unique_config_name(project_dir.resolve().name)
         self.save(pj, name=name)
         legacy_config.unlink()
@@ -260,12 +280,42 @@ class ProjectStore:
             if legacy.exists():
                 pj = self.migrate_from_project(ref_path)
                 return pj, self._get_config_path(ref_path.resolve().name)
+            config_path = self._get_config_path(ref_path.name)
+            if config_path.exists():
+                pj = self.load(ref_path.name)
+                self._remember_folder(pj, ref_path, config_path)
+                return pj, config_path
+            raise StorageError("resolve", [f"project not found: {ref}"])
 
         config_path = self._get_config_path(ref_path.name)
         if config_path.exists():
             return self.load(ref_path.name), config_path
 
+        # Config name known only from recent: resolve by remembered folder.
+        for item in self.get_recent():
+            if item.config == ref_path.name:
+                folder = Path(item.folder)
+                if folder.is_dir():
+                    return self.resolve_project(folder)
         raise StorageError("resolve", [f"project not found: {ref}"])
+
+    def _remember_folder(
+        self, pj: ProjectJSON, folder: str | Path, config_path: Path | None = None
+    ) -> None:
+        """Persist resolved folder into PJ (self-heal / legacy migration)."""
+        resolved = str(Path(folder).resolve())
+        if pj.folder == resolved:
+            return
+        pj.folder = resolved
+        self.save(pj, name=config_path.stem if config_path else None)
+        logger.info("remembered project folder %s", resolved)
+
+    def set_project_folder(self, ref: str | Path, folder: str | Path) -> None:
+        """Point an existing project at a new folder (relocate, 020)."""
+        with self._lock:
+            pj, config_path = self.resolve_project(ref)
+            self._remember_folder(pj, folder, config_path)
+            self.add_recent(str(Path(folder).resolve()), config_path.stem)
 
     def get_recent(self) -> list[RecentItem]:
         """Get recent projects from ApplicationJSON."""
@@ -321,6 +371,11 @@ class ProjectStore:
                 raise StorageError("init", ["no Word templates selected"])
 
             folder = Path(folder).resolve()
+            if folder.name in (STRINGS.DATA_DIR, STRINGS.TPL_DIR):
+                raise StorageError(
+                    "init",
+                    [f"cannot create project inside {folder.name}/"],
+                )
             data_dir = folder / STRINGS.DATA_DIR
             tpl_dir = folder / STRINGS.TPL_DIR
             try:
@@ -363,7 +418,8 @@ class ProjectStore:
                         for r in rel_xlsx
                     ],
                     "counters": {},
-                    "filename_template": "{template}_{i}",
+                    "filename_template": name,
+                    "folder": str(folder),
                 }
             )
             self.save(pj, name=name)
@@ -411,6 +467,53 @@ class ProjectStore:
             raise StorageError("init", [f"file not found: {src}"])
         return rel.as_posix()
 
+
+    def sync_template_fields(self, ref: str | Path) -> dict[str, list[str]]:
+        """Add docx placeholders missing from PJ (020); return template → added.
+
+        Only adds; never removes (user mappings are kept). Unreadable or
+        missing template files are skipped with a warning.
+        """
+        with self._lock:
+            pj, config_path = self.resolve_project(ref)
+            try:
+                folder = project_folder(ref, pj, config_path, self)
+            except StorageError as e:
+                logger.warning(f"sync skipped, no folder: {e}")
+                return {}
+            added: dict[str, list[str]] = {}
+            for name, tpl in pj.templates.items():
+                tpl_path = folder / tpl.file
+                if not tpl_path.is_file():
+                    logger.warning(f"sync skipped, missing template file: {tpl.file}")
+                    continue
+                try:
+                    placeholders = _scan_placeholders(tpl_path)
+                except StorageError as e:
+                    logger.warning(f"sync skipped, unreadable template: {e}")
+                    continue
+                new = [ph for ph in placeholders if ph not in tpl.fields]
+                for ph in new:
+                    tpl.fields[ph] = FieldDef(
+                        source=FieldSource.TABLE, value=ph
+                    )
+                if new:
+                    added[name] = new
+            if added:
+                self.save(pj, name=config_path.stem)
+                logger.info("synced template fields: %s", added)
+            return added
+
+    def touch_recent(self, ref: str | Path) -> None:
+        """Move a project to the top of recent (folder resolved from PJ)."""
+        with self._lock:
+            pj, config_path = self.resolve_project(ref)
+            try:
+                folder = project_folder(ref, pj, config_path, self)
+            except StorageError as e:
+                logger.warning(f"touch_recent {ref}: {e}")
+                return
+            self.add_recent(str(folder), config_path.stem)
 
     def remove_recent(self, folder: str, config: str) -> None:
         """Remove one recent project entry (no-op when absent)."""
@@ -503,6 +606,33 @@ class ProjectStore:
             del pj.templates[name]
             self.save(pj, name=config_path.stem)
             logger.info("removed template %s from %s", name, config_path.stem)
+
+    def add_source(
+        self, ref: str | Path, xlsx: str | Path, copy_files: bool = True
+    ) -> str:
+        """Attach an xlsx data source (sequential); return its PJ path."""
+        with self._lock:
+            pj, config_path = self.resolve_project(ref)
+            folder = project_folder(ref, pj, config_path, self)
+            data_dir = folder / STRINGS.DATA_DIR
+            try:
+                data_dir.mkdir(parents=True, exist_ok=True)
+            except OSError as e:
+                logger.warning(f"cannot create data dir {data_dir}: {e}")
+                raise StorageError(
+                    "data", [f"cannot create folder {data_dir}: {e}"]
+                ) from e
+            rel = self._place_source(
+                Path(xlsx), data_dir, folder, ".xlsx", copy_files
+            )
+            if any(ds.file == rel for ds in pj.data_sources):
+                raise StorageError(
+                    "data", [f"data source already attached: {rel}"]
+                )
+            pj.data_sources.append(DataSourceDef(file=rel))
+            self.save(pj, name=config_path.stem)
+            logger.info("attached data source %s to %s", rel, config_path.stem)
+            return rel
 
     def delete_project(self, ref: str | Path, delete_folder: bool = False) -> None:
         """Delete project config + recent entry; folder only on flag (FR-13)."""

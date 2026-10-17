@@ -3,6 +3,7 @@
 """PJ/AJ/Filling schemas: validate, normalize, migrate. Pure engine, no Qt."""
 
 import logging
+import os
 from datetime import datetime
 from enum import Enum
 from importlib.metadata import version as pkg_version, PackageNotFoundError
@@ -101,11 +102,27 @@ class FieldSource(str, Enum):
 class FieldDef(_WarnExtra):
     source: FieldSource
     value: Any = None
+    table: str | None = None  # TABLE: source file (020); None = any (legacy)
+
+    @field_validator("table")
+    @classmethod
+    def _relative_table(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        return _check_relative_path(v, "templates.<name>.fields.table")
 
 
 class CounterDef(_WarnExtra):
     last: int = 0
-    format: str = "plain"  # plain | month (ГГГГ-ММ-###)
+    format: str = "1"  # 020: width 1 | 01 | 001 | 0001 (zero-pad); legacy plain/month still render
+    table: str | None = None  # bound source file (020); None = counts everywhere
+
+    @field_validator("table")
+    @classmethod
+    def _relative_counter_table(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        return _check_relative_path(v, "counters.<name>.table")
 
 
 class TemplateDef(_WarnExtra):
@@ -135,6 +152,19 @@ class ProjectJSON(_WarnExtra):
     data_sources: list[DataSourceDef] = []
     counters: dict[str, CounterDef] = {}
     filename_template: str = "{template} ({i})"
+    folder: str | None = None  # absolute path with Данные/Шаблоны (020)
+
+    @field_validator("folder")
+    @classmethod
+    def _abs_folder(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        value = v.strip()
+        if not value:
+            return None
+        if not os.path.isabs(value):
+            logger.warning("project folder is not absolute: %s", value)
+        return value
 
 
 class RecentItem(_WarnExtra):

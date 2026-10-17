@@ -97,9 +97,37 @@ def _pick_data_sources(
     raise TemplateError(f"data source not found: {name}")
 
 
+def _check_table_columns(
+    rows: list[dict], template_def: TemplateDef, ds: DataSourceDef
+) -> None:
+    """Fail fast when a table field's column is missing from running rows (020).
+
+    Resolve reads only the current source, so the check targets it —
+    whatever file the field is bound to. Union of keys (ragged rows safe).
+    """
+    headers: list[str] = []
+    for r in rows:
+        for h in r.keys():
+            if h not in headers:
+                headers.append(h)
+    for field_name, fdef in template_def.fields.items():
+        if fdef.source.value != "table":
+            continue
+        if fdef.table is not None and fdef.table != ds.file:
+            continue  # bound elsewhere: resolves to None, no check
+        column = str(fdef.value)
+        if column not in headers:
+            raise TemplateError(
+                f"field '{field_name}': column '{column}' "
+                f"not found in {ds.file}"
+            )
+
+
 def _save_document(doc: Document, out_dir: Path, dist: str, row_index: int) -> Path:
     """Save rendered doc under out_dir/dist with unique name (FR-11)."""
     target = (out_dir / dist).resolve()
+    if not target.suffix:
+        target = target.with_suffix(".docx")
     try:
         target.relative_to(out_dir.resolve())
     except ValueError:
@@ -187,6 +215,9 @@ def generate_documents(
         limit = cmd.max_docs
         if limit is not None and limit <= 0:
             continue
+
+        # Pre-flight: table columns must exist (clear error before any doc).
+        _check_table_columns(rows, template_def, ds)
 
         # Mode selection (incl. circular cycling) lives in the engine;
         # here only clean rows + limit go in, cursor math stays here.

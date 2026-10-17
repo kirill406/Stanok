@@ -56,11 +56,15 @@ class CreateDialog(QDialog):
         layout.addWidget(QLabel(STRINGS.CRT_FOLDER))
         folder_row = QHBoxLayout()
         self.folder_edit = QLineEdit(folder_hint, self)
+        self.folder_edit.textChanged.connect(self._update_create_enabled)
         folder_row.addWidget(self.folder_edit)
         browse_btn = QPushButton(STRINGS.CRT_BROWSE, self)
         browse_btn.clicked.connect(self._on_browse_folder)
         folder_row.addWidget(browse_btn)
         layout.addLayout(folder_row)
+
+        self.path_label = QLabel(self)
+        layout.addWidget(self.path_label)
 
         self.xlsx_list = QListWidget(self)
         self.docx_list = QListWidget(self)
@@ -122,12 +126,41 @@ class CreateDialog(QDialog):
         self._update_create_enabled()
 
     def _update_create_enabled(self) -> None:
-        ok = bool(self.name_edit.text().strip())
+        name = self.name_edit.text().strip()
+        folder = self.folder_edit.text().strip() or str(Path.home())
+        taken = bool(name) and self._store.config_exists(name)
+        bad_dir = Path(folder).name in (STRINGS.DATA_DIR, STRINGS.TPL_DIR)
+        ok = bool(name) and not taken and not bad_dir
         ok = ok and self.xlsx_list.count() > 0 and self.docx_list.count() > 0
         self.create_btn.setEnabled(ok)
+        self._update_preview(name, folder, taken, bad_dir)
+
+    def _update_preview(
+        self, name: str, folder: str, taken: bool, bad_dir: bool
+    ) -> None:
+        if taken:
+            self.path_label.setStyleSheet("color: #b71c1c;")
+            self.path_label.setText(STRINGS.CRT_NAME_TAKEN.format(name=name))
+        elif bad_dir:
+            self.path_label.setStyleSheet("color: #b71c1c;")
+            self.path_label.setText(
+                STRINGS.CRT_BAD_DIR.format(name=Path(folder).name)
+            )
+        else:
+            self.path_label.setStyleSheet("")
+            target = Path(folder) / (name or "?")
+            self.path_label.setText(STRINGS.CRT_PATH.format(path=target))
 
     def _on_create(self) -> None:
         folder = self.folder_edit.text().strip() or str(Path.home())
+        if not Path(folder).exists():
+            answer = QMessageBox.question(
+                self,
+                STRINGS.CRT_TITLE,
+                STRINGS.CRT_MKDIR_ASK.format(path=folder),
+            )
+            if answer != QMessageBox.Yes:
+                return
         try:
             self._store.init_project(
                 folder,

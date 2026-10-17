@@ -5,7 +5,6 @@
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
@@ -25,7 +24,7 @@ from PyQt5.QtWidgets import (
 )
 
 from ..services.generate import GenerateCommand, GenerateReport
-from ..services.storage import ProjectStore
+from ..services.storage import ProjectStore, project_folder
 from .fields_dialog import FieldsDialog
 from .strings import STRINGS
 from .worker import GenerateWorker
@@ -45,26 +44,28 @@ class ProjectDialog(QDialog):
         self._worker: GenerateWorker | None = None
         self._progress_dialog: QProgressDialog | None = None
         self._running = False
-        pj, _ = self._store.resolve_project(project_ref)
+        self._store.sync_template_fields(project_ref)
+        pj, config_path = self._store.resolve_project(project_ref)
         self._pj = pj
+        self._config_name = config_path.stem
+        self._folder = project_folder(project_ref, pj, config_path, self._store)
         self._template_names = list(pj.templates)
         self._build_ui()
 
     # -- UI construction -------------------------------------------------
     def _build_ui(self) -> None:
-        self.setWindowTitle(
-            STRINGS.PROJ_TITLE.format(name=Path(self._project_ref).name)
-        )
+        self.setWindowTitle(STRINGS.PROJ_TITLE.format(name=self._config_name))
         self.resize(900, 650)
         layout = QVBoxLayout(self)
 
-        layout.addWidget(QLabel(STRINGS.PROJ_DATA.format(path=self._project_ref)))
+        layout.addWidget(QLabel(STRINGS.PROJ_DATA.format(path=self._folder)))
         layout.addWidget(QLabel(STRINGS.PROJ_SOURCE))
         self.source_combo = QComboBox(self)
-        self.source_combo.addItem(STRINGS.PROJ_SOURCE_ALL, None)
-        for ds in self._pj.data_sources:
-            self.source_combo.addItem(ds.file, ds.file)
         layout.addWidget(self.source_combo)
+        self._reload_sources()
+        self.add_src_btn = QPushButton(STRINGS.PROJ_SOURCE_ADD, self)
+        self.add_src_btn.clicked.connect(self._on_add_source)
+        layout.addWidget(self.add_src_btn)
 
         self.add_tpl_btn = QPushButton(STRINGS.TPL_ADD, self)
         self.add_tpl_btn.clicked.connect(self._on_add_template)
@@ -85,8 +86,41 @@ class ProjectDialog(QDialog):
         layout.addWidget(self.delete_btn)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Close, self)
+        close_btn = buttons.button(QDialogButtonBox.Close)
+        if close_btn is not None:
+            close_btn.setText(STRINGS.FLD_CLOSE)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
+
+    def _reload_sources(self, keep: str | None = None) -> None:
+        """Rebuild source combo, preserving selection when possible."""
+        if keep is None:
+            keep = self.source_combo.currentData()
+        self.source_combo.blockSignals(True)
+        self.source_combo.clear()
+        self.source_combo.addItem(STRINGS.PROJ_SOURCE_ALL, None)
+        for ds in self._pj.data_sources:
+            self.source_combo.addItem(ds.file, ds.file)
+        idx = self.source_combo.findData(keep)
+        self.source_combo.setCurrentIndex(idx if idx >= 0 else 0)
+        self.source_combo.blockSignals(False)
+
+    def _on_add_source(self) -> None:
+        if self._running:
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            self, STRINGS.PROJ_SOURCE_ADD, "", "Excel (*.xlsx)"
+        )
+        if not path:
+            return
+        try:
+            added = self._store.add_source(self._project_ref, path)
+        except Exception as e:
+            logger.warning(f"add source failed: {e}", exc_info=True)
+            QMessageBox.warning(self, STRINGS.MAIN_ERROR_TITLE, str(e))
+            return
+        self._pj, _ = self._store.resolve_project(self._project_ref)
+        self._reload_sources(keep=added)
 
     def _reload_templates(self) -> None:
         """Re-resolve PJ and rebuild template rows (015).
@@ -176,7 +210,7 @@ class ProjectDialog(QDialog):
     def _on_delete_project(self) -> None:
         if self._running:
             return
-        name = Path(self._project_ref).name
+        name = self._config_name
         box = QMessageBox(self)
         box.setWindowTitle(STRINGS.PROJ_DELETE)
         box.setText(STRINGS.PROJ_DELETE_ASK.format(name=name))

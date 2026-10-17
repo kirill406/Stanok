@@ -573,18 +573,8 @@ def test_init_no_copy_wrong_subdir(store, tmp_path):
         )
 
 
-def _init_simple(store, tmp_path, name="proj"):
-    """init_project with one xlsx + one docx; return folder."""
+def test_add_source_copies(store, tmp_path):
     from tests.services.test_storage import _src_files
-
-    xlsx, tpl = _src_files(tmp_path, f"src_{name}")
-    folder = tmp_path / name
-    store.init_project(folder, name, [xlsx], [tpl])
-    return folder
-
-
-def test_add_template_copies(store, tmp_path):
-    from docx import Document as DocxDocument
 
     folder = _init_simple(store, tmp_path)
     extra = tmp_path / "extra.docx"
@@ -725,3 +715,270 @@ def test_migrate_double_collision(store, tmp_path, sample_pj):
     )
     store.migrate_from_project(legacy)
     assert (store.home_dir / "proj (2).stanok").is_file()
+
+
+def _add_placeholder(folder, text="Новый {{Штрихкод}}"):
+    from docx import Document as DocxDocument
+
+    tpl = folder / "Шаблоны" / "tpl.docx"
+    doc = DocxDocument(str(tpl))
+    doc.add_paragraph(text)
+    doc.save(str(tpl))
+
+
+def _migrated(store, tmp_path, name="proj"):
+    """make_project folder migrated to Home; return folder."""
+    from tests.services.test_generate import make_project
+
+    folder = make_project(tmp_path / name)
+    store.migrate_from_project(folder)
+    return folder
+
+
+def test_sync_adds_new_placeholders(store, tmp_path):
+    folder = _migrated(store, tmp_path)
+    _add_placeholder(folder)
+    added = store.sync_template_fields(folder)
+    assert added == {"Договор": ["Штрихкод"]}
+    pj = store.load("proj")
+    assert pj.templates["Договор"].fields["Штрихкод"].source.value == "table"
+
+
+def test_sync_noop_without_changes(store, tmp_path):
+    folder = _migrated(store, tmp_path)
+    assert store.sync_template_fields(folder) == {}
+
+
+def test_sync_keeps_removed_placeholder(store, tmp_path):
+    import json as _json
+
+    folder = _migrated(store, tmp_path)
+    pj_path = store.home_dir / "proj.stanok"
+    data = _json.loads(pj_path.read_text())
+    data["templates"]["Договор"]["fields"]["Призрак"] = {
+        "source": "constant", "value": "x"
+    }
+    pj_path.write_text(_json.dumps(data, ensure_ascii=False))
+    assert store.sync_template_fields(folder) == {}
+    assert "Призрак" in store.load("proj").templates["Договор"].fields
+
+
+def test_sync_missing_template_file_skipped(store, tmp_path):
+    folder = _migrated(store, tmp_path)
+    (folder / "Шаблоны" / "tpl.docx").unlink()
+    assert store.sync_template_fields(folder) == {}
+
+
+def test_sync_no_folder_returns_empty(store, tmp_path, sample_pj):
+    store.save(sample_pj, name="ghost")
+    assert store.sync_template_fields("ghost") == {}
+
+
+def test_sync_unreadable_template_skipped(store, tmp_path):
+    folder = _migrated(store, tmp_path)
+    (folder / "Шаблоны" / "tpl.docx").write_text("not a zip")
+    assert store.sync_template_fields(folder) == {}
+
+
+def test_init_filename_defaults_to_name(store, tmp_path):
+    from tests.services.test_storage import _src_files
+
+    xlsx, tpl = _src_files(tmp_path)
+    pj = store.init_project(tmp_path / "proj", "Договоры", [xlsx], [tpl])
+    assert pj.filename_template == "Договоры"
+
+
+def test_scan_finds_nested_table_placeholders(store, tmp_path):
+    from docx import Document as DocxDocument
+
+    from stanok.services.storage import _scan_placeholders
+
+    doc = DocxDocument()
+    doc.add_paragraph("Hi {{Имя}}")
+    outer = doc.add_table(rows=1, cols=1)
+    inner = outer.cell(0, 0).add_table(rows=1, cols=1)
+    inner.cell(0, 0).text = "Deep {{Глубина}}"
+    tpl = tmp_path / "nest.docx"
+    doc.save(tpl)
+    assert _scan_placeholders(tpl) == ["Имя", "Глубина"]
+
+
+def test_scan_finds_header_placeholders(tmp_path):
+    from docx import Document as DocxDocument
+
+    from stanok.services.storage import _scan_placeholders
+
+    doc = DocxDocument()
+    doc.add_paragraph("Тело")
+    doc.sections[0].header.paragraphs[0].text = "Шапка {{Код}}"
+    tpl = tmp_path / "hdr.docx"
+    doc.save(tpl)
+    assert _scan_placeholders(tpl) == ["Код"]
+
+
+def _init_simple(store, tmp_path, name="proj"):
+    from tests.services.test_storage import _src_files
+
+    xlsx, tpl = _src_files(tmp_path, f"src_{name}")
+    folder = tmp_path / name
+    store.init_project(folder, name, [xlsx], [tpl])
+    return folder
+
+
+def test_add_source_copies(store, tmp_path):
+    from tests.services.test_storage import _src_files
+
+    folder = _init_simple(store, tmp_path)
+    xlsx, _ = _src_files(tmp_path, "extra")
+    rel = store.add_source(folder, xlsx)
+    assert rel == "Данные/data.xlsx" or rel.startswith("Данные/")
+    assert (folder / rel).is_file()
+    pj = store.load("proj")
+    assert pj.data_sources[-1].file == rel
+    assert pj.data_sources[-1].mode == "sequential"
+
+
+def test_add_source_duplicate_rejected(store, tmp_path):
+    from tests.services.test_storage import _src_files
+
+    folder = _init_simple(store, tmp_path)
+    xlsx, _ = _src_files(tmp_path, "extra2")
+    import shutil
+
+    shutil.copy(xlsx, folder / "Данные" / "extra.xlsx")
+    store.add_source(folder, folder / "Данные" / "extra.xlsx", copy_files=False)
+    with pytest.raises(StorageError, match="already attached"):
+        store.add_source(folder, folder / "Данные" / "extra.xlsx", copy_files=False)
+
+
+def test_add_source_mkdir_failure(store, tmp_path, monkeypatch):
+    import pathlib
+
+    from tests.services.test_storage import _src_files
+
+    folder = _init_simple(store, tmp_path)
+    xlsx, _ = _src_files(tmp_path, "mk")
+
+    def boom(self, *a, **k):
+        raise OSError("denied")
+
+    monkeypatch.setattr(pathlib.Path, "mkdir", boom)
+    try:
+        with pytest.raises(StorageError, match="cannot create folder"):
+            store.add_source(folder, xlsx)
+    finally:
+        monkeypatch.setattr(pathlib.Path, "mkdir", pathlib.Path.mkdir)
+
+
+def test_init_stores_folder(store, tmp_path):
+    xlsx, tpl = _src_files(tmp_path)
+    pj = store.init_project(tmp_path / "fpj", "fpj", [xlsx], [tpl])
+    assert pj.folder == str((tmp_path / "fpj").resolve())
+
+
+def test_init_rejects_data_dir(store, tmp_path):
+    xlsx, tpl = _src_files(tmp_path)
+    with pytest.raises(StorageError, match="inside"):
+        store.init_project(tmp_path / "Данные", "x1", [xlsx], [tpl])
+
+
+def test_resolve_by_dir_self_heals_folder(store, tmp_path, sample_pj):
+    folder = tmp_path / "projdir"
+    (folder / "Данные").mkdir(parents=True)
+    store.save(sample_pj, name="projdir")
+    assert store.load("projdir").folder is None
+    pj, _ = store.resolve_project(folder)
+    assert pj.folder == str(folder.resolve())
+    assert store.load("projdir").folder == str(folder.resolve())
+
+
+def test_project_folder_prefers_pj_over_recent(store, tmp_path, sample_pj):
+    from stanok.services.storage import project_folder
+
+    folder = tmp_path / "pfd"
+    folder.mkdir()
+    pj = sample_pj.model_copy(update={"folder": str(folder)})
+    store.save(pj, name="pf")
+    store.add_recent(str(tmp_path / "other"), "pf")
+    pj2, cp = store.resolve_project("pf")
+    assert project_folder("pf", pj2, cp, store) == folder.resolve()
+
+
+def test_project_folder_stale_then_relocate(store, tmp_path, sample_pj):
+    from stanok.services.storage import project_folder
+
+    pj = sample_pj.model_copy(update={"folder": str(tmp_path / "gone")})
+    store.save(pj, name="p1")
+    pj2, cp = store.resolve_project("p1")
+    with pytest.raises(StorageError, match="folder not found"):
+        project_folder("p1", pj2, cp, store)
+    new = tmp_path / "newhome"
+    new.mkdir()
+    store.set_project_folder("p1", new)
+    pj3, cp3 = store.resolve_project("p1")
+    assert project_folder("p1", pj3, cp3, store) == new.resolve()
+    assert any(r.config == "p1" for r in store.get_recent())
+
+
+def test_project_folder_legacy_recent_fallback(store, tmp_path, sample_pj):
+    from stanok.services.storage import project_folder
+
+    folder = tmp_path / "legacyf"
+    folder.mkdir()
+    store.save(sample_pj, name="lg")  # no folder field
+    store.add_recent(str(folder), "lg")
+    pj, cp = store.resolve_project("lg")
+    assert pj.folder is None
+    assert project_folder("lg", pj, cp, store) == folder.resolve()
+
+
+def test_list_named_sorted(store, sample_pj):
+    store.save(sample_pj, name="zebra")
+    store.save(sample_pj, name="alpha")
+    assert [n for n, _ in store.list_named()] == ["alpha", "zebra"]
+
+
+def test_list_named_skips_invalid(store, sample_pj):
+    store.save(sample_pj, name="ok")
+    (store.home_dir / "bad.stanok").write_text("{broken")
+    assert [n for n, _ in store.list_named()] == ["ok"]
+
+
+def test_touch_recent_resolves_folder(store, tmp_path, sample_pj):
+    folder = tmp_path / "tf"
+    folder.mkdir()
+    store.save(sample_pj.model_copy(update={"folder": str(folder)}), name="tf")
+    store.touch_recent("tf")
+    assert any(
+        r.config == "tf" and r.folder == str(folder.resolve())
+        for r in store.get_recent()
+    )
+
+
+def test_touch_recent_no_folder_noop(store, sample_pj):
+    store.save(sample_pj, name="nf")
+    store.touch_recent("nf")
+    assert store.get_recent() == []
+
+
+def test_resolve_name_via_recent_legacy(store, tmp_path):
+    folder = tmp_path / "legproj"
+    folder.mkdir()
+    (folder / "project.stanok").write_text(json.dumps({
+        "version": "0.0.0",
+        "templates": {"t1": {"file": "t.docx", "fields": {}}},
+        "data_sources": [],
+        "counters": {},
+        "filename_template": "out.docx",
+    }))
+    store.add_recent(str(folder), "legproj")
+    pj, cp = store.resolve_project("legproj")
+    assert pj.folder == str(folder.resolve())
+    assert cp.stem == "legproj"
+
+
+def test_resolve_dir_without_config_raises(store, tmp_path):
+    empty = tmp_path / "emptydir"
+    empty.mkdir()
+    with pytest.raises(StorageError, match="project not found"):
+        store.resolve_project(empty)

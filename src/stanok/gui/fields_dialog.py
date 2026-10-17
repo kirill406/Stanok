@@ -1,28 +1,36 @@
 # Copyright (C) 2026 Kirill Borovoy
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Window 3: edit template constant fields, persist to PJ on Save."""
+"""Window 3: edit template field sources and values, persist to PJ on Save."""
 
 from __future__ import annotations
 
 import logging
 from datetime import date
-from pathlib import Path
 
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
+    QComboBox,
     QDialog,
     QDialogButtonBox,
+    QHBoxLayout,
+    QHeaderView,
+    QInputDialog,
     QLabel,
     QLineEdit,
+    QMenu,
     QMessageBox,
+    QPushButton,
+    QScrollArea,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
+    QWidget,
 )
 
 from ..services.generate import TemplateError
-from ..services.storage import ProjectStore
-from ..engine.schema import FieldDef, ProjectJSON
+from ..services.storage import ProjectStore, project_folder
+from ..engine.schema import CounterDef, FieldDef, FieldSource, ProjectJSON
+from ..engine.resolve import TODAY_PRESETS, format_today
 from ..tables.excel import ExcelReader
 from .strings import STRINGS
 
@@ -34,6 +42,25 @@ SOURCE_LABELS = {
     "counter": STRINGS.FLD_SRC_COUNTER,
     "today": STRINGS.FLD_SRC_TODAY,
 }
+SOURCE_ORDER = ("constant", "table", "counter", "today")
+COUNTER_WIDTHS = ("1", "01", "001", "0001")
+DATE_PRESETS = (
+    ("dmy", STRINGS.FLD_DATE_DMY),
+    ("day", STRINGS.FLD_DATE_DAY),
+    ("month_ru", STRINGS.FLD_DATE_MONTH),
+    ("month_num", STRINGS.FLD_DATE_MONTHNUM),
+    ("year", STRINGS.FLD_DATE_YEAR),
+    ("ru_long", STRINGS.FLD_DATE_RU),
+)
+
+
+class _FieldError(Exception):
+    """Save-blocking validation error: field + STRINGS message key."""
+
+    def __init__(self, field: str, msg: str):
+        super().__init__(f"{msg}: {field}")
+        self.field = field
+        self.msg = msg
 
 
 class FieldsDialog(QDialog):
@@ -51,106 +78,536 @@ class FieldsDialog(QDialog):
         self._project_ref = project_ref
         self._template_name = template_name
         self._dirty = False
-        self._editors: dict[str, QLineEdit] = {}
+        self._rows: dict[str, dict] = {}
+        self._crows: dict[str, dict] = {}
+        self._rows_cache: dict[str, list[dict]] = {}
+        self._headers_warned: set[str] = set()
         pj, config_path = self._store.resolve_project(project_ref)
         self._pj = pj
         self._config_name = config_path.stem
+        self._folder = project_folder(project_ref, pj, config_path, self._store)
         try:
             self._template_def = pj.templates[template_name]
         except KeyError:
             raise TemplateError(f"template not found: {template_name}") from None
-        self._preview_row = self._read_first_row(pj)
         self._build_ui()
 
     # -- data -----------------------------------------------------------------
-    def _read_first_row(self, pj: ProjectJSON) -> dict:
-        """First data row for previews; empty dict when unreadable."""
-        ref_path = Path(self._project_ref)
-        if not (ref_path.exists() and ref_path.is_dir()):
-            return {}
-        if not pj.data_sources:
-            return {}
-        try:
-            rows = ExcelReader().read(ref_path / pj.data_sources[0].file)
-            return next((r for r in rows if any(v not in (None, "") for v in r.values())), {})
-        except Exception as e:
-            logger.warning(f"preview row for {self._project_ref}: {e}", exc_info=True)
-            return {}
+    def _read_table_rows(self, source_file: str | None) -> list[dict]:
+        """Rows for one source (None = all sources concatenated); warns once."""
+        key = source_file or "__all__"
+        if key in self._rows_cache:
+            return self._rows_cache[key]
+        ref_path = self._folder
+        files = (
+            [source_file]
+            if source_file
+            else [ds.file for ds in self._pj.data_sources]
+        )
+        rows: list[dict] = []
+        if ref_path.exists() and ref_path.is_dir():
+            for f in files:
+                try:
+                    rows.extend(ExcelReader().read(ref_path / f))
+                except Exception as e:
+                    logger.warning(f"headers for {f} failed: {e}", exc_info=True)
+                    if f not in self._headers_warned:
+                        self._headers_warned.add(f)
+                        QMessageBox.warning(
+                            self, STRINGS.MAIN_ERROR_TITLE, f"{f}: {e}"
+                        )
+        self._rows_cache[key] = rows
+        return rows
 
-    def _preview_text(self, field_name: str, field_def: FieldDef) -> str:
-        source = field_def.source.value
-        if source == "constant":
-            return str(field_def.value)
-        if source == "table":
-            column = str(field_def.value)
-            value = self._preview_row.get(column, "")
-            return f"{column} → {value}" if value != "" else column
-        if source == "counter":
-            last = self._pj.counters.get(str(field_def.value))
-            return STRINGS.FLD_PREVIEW_COUNTER.format(
-                name=field_def.value, last=last.last if last else 0
-            )
-        if source == "today":
-            return STRINGS.FLD_PREVIEW_TODAY.format(today=date.today().isoformat())
-        raise AssertionError(f"unreachable preview source: {source}")  # pragma: no cover - enum-exhaustive
+    def _read_headers(self, source_file: str | None) -> list[str]:
+        """Column headers for one source (None = union of all)."""
+        headers: list[str] = []
+        for r in self._read_table_rows(source_file):
+            for h in r.keys():
+                if h not in headers:
+                    headers.append(h)
+        return headers
+
+    def _first_row(self, source_file: str | None) -> dict:
+        """First non-empty row for one source (None = all); {} when none."""
+        return next(
+            (
+                r
+                for r in self._read_table_rows(source_file)
+                if any(v not in (None, "") for v in r.values())
+            ),
+            {},
+        )
 
     # -- UI construction --------------------------------------------------------
     def _build_ui(self) -> None:
         self.setWindowTitle(STRINGS.FLD_TITLE.format(name=self._template_name))
         self.resize(900, 650)
         layout = QVBoxLayout(self)
+        scroll = QScrollArea(self)
+        scroll.setWidgetResizable(True)
+        content = QWidget(scroll)
+        body = QVBoxLayout(content)
+        layout.addWidget(scroll, 1)
+        scroll.setWidget(content)
+        layout = body
+        layout.addWidget(self._section_title(STRINGS.FLD_FIELDS_TITLE))
         self.table = QTableWidget(self)
-        self.table.setColumnCount(3)
+        self.table.setColumnCount(4)
         self.table.setHorizontalHeaderLabels(
-            [STRINGS.FLD_COL_FIELD, STRINGS.FLD_COL_SOURCE, STRINGS.FLD_COL_VALUE]
+            [
+                STRINGS.FLD_COL_FIELD,
+                STRINGS.FLD_COL_SOURCE,
+                STRINGS.FLD_COL_DATA,
+                STRINGS.FLD_COL_VALUE,
+            ]
+        )
+        self.table.horizontalHeader().setSectionResizeMode(
+            0, QHeaderView.ResizeToContents
+        )
+        self.table.horizontalHeader().setSectionResizeMode(
+            1, QHeaderView.ResizeToContents
+        )
+        self.table.horizontalHeader().setSectionResizeMode(
+            2, QHeaderView.Stretch
+        )
+        self.table.horizontalHeader().setSectionResizeMode(
+            3, QHeaderView.ResizeToContents
         )
         fields = list(self._template_def.fields.items())
         self.table.setRowCount(len(fields))
         for row, (name, fdef) in enumerate(fields):
-            source = fdef.source.value
             name_item = QTableWidgetItem(name)
             name_item.setFlags(name_item.flags() & ~Qt.ItemIsEditable)
             self.table.setItem(row, 0, name_item)
-            source_item = QTableWidgetItem(SOURCE_LABELS.get(source, source))
-            source_item.setFlags(source_item.flags() & ~Qt.ItemIsEditable)
-            self.table.setItem(row, 1, source_item)
-            if source == "constant":
-                editor = QLineEdit(str(fdef.value), self.table)
-                editor.textChanged.connect(self._mark_dirty)
-                self.table.setCellWidget(row, 2, editor)
-                self._editors[name] = editor
-            else:
-                preview = QTableWidgetItem(self._preview_text(name, fdef))
-                preview.setFlags(preview.flags() & ~Qt.ItemIsEditable)
-                self.table.setItem(row, 2, preview)
+            type_combo = QComboBox(self.table)
+            for key in SOURCE_ORDER:
+                type_combo.addItem(SOURCE_LABELS[key], key)
+            type_combo.setCurrentIndex(
+                SOURCE_ORDER.index(fdef.source.value)
+            )
+            type_combo.blockSignals(True)
+            self.table.setCellWidget(row, 1, type_combo)
+            type_combo.blockSignals(False)
+            type_combo.currentIndexChanged.connect(
+                lambda _i=0, field=name: self._on_type_changed(field)
+            )
+            self._rows[name] = {"type": type_combo}
+            self._build_value_cell(row, name, fdef)
         layout.addWidget(self.table)
+
+        layout.addWidget(self._section_title(STRINGS.FLD_COUNTERS_TITLE))
+        self.ctable = QTableWidget(self)
+        self.ctable.setColumnCount(3)
+        self.ctable.setHorizontalHeaderLabels(
+            [STRINGS.FLD_CNT_NAME, STRINGS.FLD_CNT_BIND, STRINGS.FLD_CNT_LAST]
+        )
+        self._crows: dict[str, dict] = {}
+        self._build_counters_table()
+        layout.addWidget(self.ctable)
+
+        self.counter_add_btn = QPushButton(STRINGS.FLD_COUNTER_CREATE, self)
+        self.counter_add_btn.clicked.connect(self._on_counter_create)
+        layout.addWidget(self.counter_add_btn)
+
+        layout.addWidget(self._section_title(STRINGS.FLD_FNAME_TITLE))
+        fname_row = QHBoxLayout()
+        self.fname_edit = QLineEdit(self._pj.filename_template or "", self)
+        self.fname_edit.textChanged.connect(self._mark_dirty)
+        fname_row.addWidget(self.fname_edit, 1)
+        self.fname_insert_btn = QPushButton(STRINGS.FLD_INSERT_FIELD, self)
+        self.fname_insert_btn.clicked.connect(self._on_insert_field)
+        fname_row.addWidget(self.fname_insert_btn)
+        layout.addLayout(fname_row)
+        self._fit_tables()
 
         buttons = QDialogButtonBox(self)
         self.save_btn = buttons.addButton(
             STRINGS.FLD_SAVE, QDialogButtonBox.ActionRole
         )
+        self.save_btn.setStyleSheet("background-color: #2e7d32; color: black;")
         self.save_btn.clicked.connect(self._on_save)
         close_btn = buttons.addButton(QDialogButtonBox.Close)
+        close_btn.setText(STRINGS.FLD_CLOSE)
         close_btn.clicked.connect(self.reject)
-        layout.addWidget(buttons)
-        layout.addWidget(QLabel(STRINGS.FLD_HINT, self))
+        # Hide AFTER all buttons are added: QDialogButtonBox unhides on add.
+        self.save_btn.setVisible(False)
+        self.layout().addWidget(buttons)
+        self.layout().addWidget(QLabel(STRINGS.FLD_HINT, self))
+
+    def _fit_tables(self) -> None:
+        """Size tables to content; scrolling is owned by the outer QScrollArea."""
+        for table in (self.table, self.ctable):
+            table.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+            height = table.horizontalHeader().height()
+            for row in range(table.rowCount()):
+                height += max(table.rowHeight(row), 24)
+            height += 2 * table.frameWidth() + 2
+            table.setFixedHeight(height)
+
+    def _build_value_cell(
+        self, row: int, name: str, fdef: FieldDef | None = None
+    ) -> None:
+        """(Re)build the value cell for the row's current source type."""
+        st = self._rows[name]
+        kind = st["type"].currentData()
+        stored = fdef or self._template_def.fields[name]
+        box = QWidget(self.table)
+        layout = QHBoxLayout(box)
+        layout.setContentsMargins(0, 0, 0, 0)
+        for key in (
+            "const", "file", "col", "clabel",
+            "cname", "fmt", "last", "cprev",
+            "dfmt", "dlabel", "preview", "result",
+        ):
+            st.pop(key, None)
+        if kind == "constant":
+            editor = QLineEdit(
+                f"{{{{{name}}}}}" if fdef is None else str(stored.value), box
+            )
+            editor.textChanged.connect(self._mark_dirty)
+            layout.addWidget(editor)
+            st["const"] = editor
+            result = QLabel(editor.text(), self.table)
+            editor.textChanged.connect(result.setText)
+            self.table.setCellWidget(row, 3, result)
+            st["result"] = result
+        elif kind == "table":
+            file_combo = QComboBox(box)
+            for ds in self._pj.data_sources:
+                file_combo.addItem(ds.file, ds.file)
+            wanted = stored.table if stored.source.value == "table" else None
+            idx = file_combo.findData(wanted)
+            file_combo.setCurrentIndex(idx if idx >= 0 else 0)
+            file_combo.currentIndexChanged.connect(
+                lambda _i=0, field=name: self._on_table_file_changed(field)
+            )
+            layout.addWidget(file_combo)
+            st["file"] = file_combo
+            col_combo = QComboBox(box)
+            layout.addWidget(col_combo)
+            st["col"] = col_combo
+            col_combo.currentIndexChanged.connect(
+                lambda _i=0, field=name: self._update_table_value(field)
+            )
+            col_combo.currentIndexChanged.connect(self._mark_dirty)
+            clabel = QLabel(self.table)
+            self.table.setCellWidget(row, 3, clabel)
+            st["clabel"] = clabel
+            self._refill_columns(name, select=stored.value)
+            self._update_table_value(name)
+        elif kind == "counter":
+            name_combo = QComboBox(box)
+            for cname in self._pj.counters:
+                name_combo.addItem(cname, cname)
+            wanted = (
+                str(stored.value)
+                if stored.source.value == "counter" and stored.value
+                else ""
+            )
+            idx = name_combo.findData(wanted)
+            if idx < 0 and wanted:
+                name_combo.addItem(wanted, wanted)
+                idx = name_combo.findData(wanted)
+                st["touched"] = True
+            name_combo.setCurrentIndex(idx if idx >= 0 else 0)
+            name_combo.currentIndexChanged.connect(
+                lambda _i=0, field=name: self._on_counter_name_changed(field)
+            )
+            layout.addWidget(name_combo)
+            st["cname"] = name_combo
+            fmt_combo = QComboBox(box)
+            for width in COUNTER_WIDTHS:
+                fmt_combo.addItem(width, width)
+            for fmt in {c.format for c in self._pj.counters.values()}:
+                if fmt not in COUNTER_WIDTHS:
+                    fmt_combo.addItem(fmt, fmt)
+            current = self._pj.counters.get(wanted)
+            fmt_combo.setCurrentIndex(
+                fmt_combo.findData(current.format if current else "1")
+            )
+            fmt_combo.currentIndexChanged.connect(
+                lambda _i=0, field=name: self._mark_row_touched(field)
+            )
+            layout.addWidget(fmt_combo)
+            st["fmt"] = fmt_combo
+            cprev = QLabel(self.table)
+            self.table.setCellWidget(row, 3, cprev)
+            st["cprev"] = cprev
+            self._update_counter_preview(name)
+            fmt_combo.currentIndexChanged.connect(
+                lambda _i=0, field=name: self._update_counter_preview(field)
+            )
+        else:  # today ("Дата"): format combo + preview
+            dfmt = QComboBox(box)
+            if stored.source.value == "today" and stored.value is None:
+                dfmt.addItem(STRINGS.FLD_DATE_KEEP, None)
+            for key, label in DATE_PRESETS:
+                dfmt.addItem(label, key)
+            if stored.source.value == "today" and stored.value in TODAY_PRESETS:
+                dfmt.setCurrentIndex(dfmt.findData(stored.value))
+            dfmt.currentIndexChanged.connect(
+                lambda _i=0, field=name: self._update_today_preview(field)
+            )
+            dfmt.currentIndexChanged.connect(self._mark_dirty)
+            layout.addWidget(dfmt)
+            st["dfmt"] = dfmt
+            dlabel = QLabel(self.table)
+            self.table.setCellWidget(row, 3, dlabel)
+            st["dlabel"] = dlabel
+            self._update_today_preview(name)
+        self.table.setCellWidget(row, 2, box)
+        st["box"] = box
+
+    def _on_counter_create(self) -> None:
+        text, ok = QInputDialog.getText(
+            self, STRINGS.FLD_COUNTER_CREATE, STRINGS.FLD_COUNTER_NAME
+        )
+        cname = text.strip()
+        if not ok or not cname:
+            return
+        if cname in self._pj.counters:
+            QMessageBox.warning(
+                self,
+                STRINGS.MAIN_ERROR_TITLE,
+                STRINGS.FLD_DUP_COUNTER.format(name=cname),
+            )
+            return
+        self._pj.counters[cname] = CounterDef(last=0, format="1")
+        self._build_counters_table()
+        self._fit_tables()
+        for st in self._rows.values():
+            if "cname" in st:
+                combo = st["cname"]
+                combo.blockSignals(True)
+                combo.addItem(cname, cname)
+                combo.blockSignals(False)
+        self._mark_dirty()
+
+    @staticmethod
+    def _section_title(text: str) -> QLabel:
+        label = QLabel(text)
+        label.setStyleSheet("font-weight: bold; font-size: 11pt;")
+        return label
+
+    def _build_counters_table(self) -> None:
+        self._crows = {}
+        names = list(self._pj.counters)
+        self.ctable.setRowCount(len(names))
+        for row, cname in enumerate(names):
+            cdef = self._pj.counters[cname]
+            name_item = QTableWidgetItem(cname)
+            name_item.setFlags(name_item.flags() & ~Qt.ItemIsEditable)
+            self.ctable.setItem(row, 0, name_item)
+            bind_combo = QComboBox(self.ctable)
+            bind_combo.addItem(STRINGS.FLD_NONE, None)
+            for ds in self._pj.data_sources:
+                bind_combo.addItem(ds.file, ds.file)
+            idx = bind_combo.findData(cdef.table)
+            bind_combo.setCurrentIndex(idx if idx >= 0 else 0)
+            bind_combo.currentIndexChanged.connect(
+                lambda _i=0, counter=cname: self._mark_counter_touched(counter)
+            )
+            self.ctable.setCellWidget(row, 1, bind_combo)
+            last_edit = QLineEdit(str(cdef.last), self.ctable)
+            last_edit.textChanged.connect(
+                lambda _t="", counter=cname: self._mark_counter_touched(counter)
+            )
+            self.ctable.setCellWidget(row, 2, last_edit)
+            self._crows[cname] = {
+                "bind": bind_combo, "last": last_edit, "touched": False,
+            }
+
+    def _on_insert_field(self) -> None:
+        menu = QMenu(self)
+        for field_name in self._template_def.fields:
+            menu.addAction(
+                field_name,
+                lambda _checked=False, name=field_name: self.fname_edit.insert(
+                    f"{{{name}}}"
+                ),
+            )
+        menu.addSeparator()
+        for var in ("{i}", "{template}"):
+            menu.addAction(
+                var,
+                lambda _checked=False, text=var: self.fname_edit.insert(text),
+            )
+        menu.exec_(self.fname_insert_btn.mapToGlobal(
+            self.fname_insert_btn.rect().bottomLeft()
+        ))
+
+    def _mark_counter_touched(self, cname: str) -> None:
+        self._crows[cname]["touched"] = True
+        self._mark_dirty()
+        for field, st in self._rows.items():
+            if st.get("cname") is not None and st["cname"].currentData() == cname:
+                self._update_counter_preview(field)
+
+    def _selected_counter(self, name: str) -> str | None:
+        return self._rows[name]["cname"].currentData()
+
+    def _on_counter_name_changed(self, name: str) -> None:
+        st = self._rows[name]
+        current = self._pj.counters.get(st["cname"].currentData())
+        if current is not None:
+            st["fmt"].blockSignals(True)
+            st["fmt"].setCurrentIndex(st["fmt"].findData(current.format))
+            st["fmt"].blockSignals(False)
+        self._update_counter_preview(name)
+        self._mark_row_touched(name)
+
+    def _current_counter_last(self, cname: str | None) -> int | None:
+        if cname is None:
+            return None
+        cst = self._crows.get(cname)
+        if cst is not None:
+            try:
+                return int(cst["last"].text())
+            except (ValueError, TypeError):
+                return None
+        cdef = self._pj.counters.get(cname)
+        return cdef.last if cdef is not None else 0
+
+    def _update_counter_preview(self, name: str) -> None:
+        st = self._rows[name]
+        last = self._current_counter_last(st["cname"].currentData())
+        width = st["fmt"].currentData() or "1"
+        if last is None or last < 0:
+            st["cprev"].setText("")
+        else:
+            st["cprev"].setText(str(last).zfill(len(width)))
+
+    def _update_today_preview(self, name: str) -> None:
+        st = self._rows[name]
+        value = format_today(st["dfmt"].currentData(), date.today())
+        st["dlabel"].setText(str(value))
+
+    def _update_table_value(self, name: str) -> None:
+        st = self._rows[name]
+        row = self._first_row(st["file"].currentData())
+        column = st["col"].currentText()
+        if column and column in row:
+            st["clabel"].setText(str(row[column]))
+        elif row:
+            first = next(iter(row))
+            st["clabel"].setText(str(row[first]))
+        else:
+            st["clabel"].setText("")
+
+    def _mark_row_touched(self, name: str) -> None:
+        self._rows[name]["touched"] = True
+        self._mark_dirty()
+
+    def _on_type_changed(self, name: str) -> None:
+        row = list(self._rows).index(name)
+        old = self.table.cellWidget(row, 2)
+        old_result = self.table.cellWidget(row, 3)
+        self._build_value_cell(row, name, fdef=None)
+        if old is not None:
+            old.deleteLater()
+        if old_result is not None:
+            old_result.deleteLater()
+        self._fit_tables()
+        self._mark_row_touched(name)
+
+    def _on_table_file_changed(self, name: str) -> None:
+        self._refill_columns(name, select=None)
+        self._update_table_value(name)
+        self._mark_dirty()
+
+    def _refill_columns(self, name: str, select: object = None) -> None:
+        st = self._rows[name]
+        headers = self._read_headers(st["file"].currentData())
+        combo = st["col"]
+        combo.blockSignals(True)
+        combo.clear()
+        combo.addItems(headers)
+        if select is not None and select in headers:
+            combo.setCurrentText(str(select))
+        else:
+            combo.setCurrentIndex(-1)
+        combo.blockSignals(False)
 
     # -- save + dirty check -------------------------------------------------------
     def _mark_dirty(self) -> None:
         self._dirty = True
+        self.save_btn.setVisible(True)
+
+    def _show_field_warning(self, e: _FieldError) -> None:
+        logger.warning(f"save fields blocked: {e.msg} {e.field}")
+        QMessageBox.warning(
+            self,
+            STRINGS.MAIN_ERROR_TITLE,
+            getattr(STRINGS, e.msg).format(name=e.field),
+        )
 
     def _on_save(self) -> None:
         try:
             self._save()
+        except _FieldError as e:
+            self._show_field_warning(e)
         except Exception as e:
             logger.error(f"save fields {self._template_name}: {e}", exc_info=True)
             QMessageBox.critical(self, STRINGS.MAIN_ERROR_TITLE, str(e))
 
     def _save(self) -> None:
-        for name, editor in self._editors.items():
-            self._pj.templates[self._template_name].fields[name].value = editor.text()
+        fields = self._pj.templates[self._template_name].fields
+        for name, st in self._rows.items():
+            f = fields[name]
+            kind = st["type"].currentData()
+            if kind == "constant":
+                f.source = FieldSource.CONSTANT
+                f.value = st["const"].text()
+                f.table = None
+            elif kind == "table":
+                column = st["col"].currentText()
+                source_file = st["file"].currentData()
+                if not column or not source_file:
+                    raise _FieldError(name, "FLD_EMPTY_VALUE")
+                f.source = FieldSource.TABLE
+                f.value = column
+                f.table = source_file
+            elif kind == "counter":
+                cname = self._selected_counter(name)
+                if cname is None:
+                    raise _FieldError(name, "FLD_NO_COUNTER")
+                fmt = st["fmt"].currentData() or "1"
+                if st.get("touched"):
+                    existing = self._pj.counters.get(cname)
+                    if existing is None:
+                        self._pj.counters[cname] = CounterDef(last=0, format=fmt)
+                    else:
+                        existing.format = fmt
+                f.source = FieldSource.COUNTER
+                f.value = cname
+                f.table = None
+            else:
+                value = st["dfmt"].currentData()
+                if value is None:
+                    raise _FieldError(name, "FLD_EMPTY_VALUE")
+                f.source = FieldSource.TODAY
+                f.value = value
+                f.table = None
+        for cname, cst in self._crows.items():
+            if not cst.get("touched"):
+                continue
+            try:
+                last = int(cst["last"].text())
+            except ValueError:
+                raise _FieldError(cname, "FLD_CNT_BAD") from None
+            if last < 0:
+                raise _FieldError(cname, "FLD_CNT_BAD")
+            cdef = self._pj.counters[cname]
+            cdef.table = cst["bind"].currentData()
+            cdef.last = last
+        fname = self.fname_edit.text().strip()
+        if not fname:
+            raise _FieldError(self._template_name, "FLD_EMPTY_VALUE")
+        self._pj.filename_template = fname
         self._store.save(self._pj, name=self._config_name)
         self._dirty = False
+        self.save_btn.setVisible(False)
         logger.info(f"saved fields of {self._template_name} to {self._config_name}")
 
     def reject(self) -> None:
@@ -167,6 +624,9 @@ class FieldsDialog(QDialog):
         if answer == QMessageBox.Save:
             try:
                 self._save()
+            except _FieldError as e:
+                self._show_field_warning(e)
+                return
             except Exception as e:
                 logger.error(f"save fields {self._template_name}: {e}", exc_info=True)
                 QMessageBox.critical(self, STRINGS.MAIN_ERROR_TITLE, str(e))

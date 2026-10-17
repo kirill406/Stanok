@@ -51,11 +51,11 @@ def make_project(
     }
     if with_counter:
         fields["Номер"] = {"source": "counter", "value": "num"}
-    else:  # pragma: no cover - template without counter
+    else:
         doc2 = DocxDocument()
         doc2.add_paragraph("Договор {{ФИО}}")
         doc2.save(tpl_dir / "tpl.docx")
-        del fields["Номер"]
+        fields.pop("Номер", None)
     pj = {
         "version": "0.0.0",
         "templates": {"Договор": {"file": "Шаблоны/tpl.docx", "fields": fields}},
@@ -225,10 +225,20 @@ def test_config_name_ref_via_recent(tmp_path, store):
 
 
 def test_config_name_without_folder_fails(tmp_path, store):
-    folder = make_project(tmp_path / "proj", rows=(("Иван", 100),))
-    generate_documents(GenerateCommand(project_ref=folder), store=store)
+    from stanok.engine.schema import validate_pj
+
+    pj = validate_pj(
+        {
+            "version": "0.0.0",
+            "templates": {"t": {"file": "Шаблоны/t.docx", "fields": {}}},
+            "data_sources": [{"file": "Данные/d.xlsx"}],
+            "counters": {},
+            "filename_template": "nofolder",
+        }
+    )
+    store.save(pj, name="nofolder")
     with pytest.raises(StorageError, match="project folder not found"):
-        generate_documents(GenerateCommand(project_ref="proj"), store=store)
+        generate_documents(GenerateCommand(project_ref="nofolder"), store=store)
 
 
 def test_unique_path_helper(tmp_path):
@@ -510,3 +520,73 @@ def test_progress_callback_no_cancel(tmp_path, store):
     )
     assert report.created == 2
     assert calls == [(1, 2), (2, 2)]
+
+
+def test_missing_column_fails_fast(tmp_path, store):
+    import json as _json
+
+    folder = make_project(tmp_path / "proj", rows=(("Иван", 100),))
+    pj_path = folder / "project.stanok"
+    data = _json.loads(pj_path.read_text())
+    data["templates"]["Договор"]["fields"]["Инфа"] = {
+        "source": "table", "value": "инфа"
+    }
+    pj_path.write_text(_json.dumps(data, ensure_ascii=False))
+    with pytest.raises(TemplateError, match="column 'инфа'.*Данные/data.xlsx"):
+        generate_documents(GenerateCommand(project_ref=folder), store=store)
+    assert not (folder / "Результат").exists()
+
+
+def test_bound_column_missing_in_running_generates_empty(tmp_path, store):
+    import json as _json
+
+    folder = make_project(tmp_path / "proj", rows=(("Иван", 100),))
+    pj_path = folder / "project.stanok"
+    data = _json.loads(pj_path.read_text())
+    data["templates"]["Договор"]["fields"]["ФИО"]["table"] = "Данные/other.xlsx"
+    data["templates"]["Договор"]["fields"]["ФИО"]["value"] = "инфа"
+    pj_path.write_text(_json.dumps(data, ensure_ascii=False))
+    report = generate_documents(GenerateCommand(project_ref=folder), store=store)
+    assert report.created == 1
+    assert report.errors == []
+
+
+def test_bound_missing_file_still_generates(tmp_path, store):
+    import json as _json
+
+    folder = make_project(tmp_path / "proj", rows=(("Иван", 100),))
+    pj_path = folder / "project.stanok"
+    data = _json.loads(pj_path.read_text())
+    data["templates"]["Договор"]["fields"]["ФИО"]["table"] = "Данные/gone.xlsx"
+    data["templates"]["Договор"]["fields"]["ФИО"]["value"] = "нетакой"
+    pj_path.write_text(_json.dumps(data, ensure_ascii=False))
+    report = generate_documents(GenerateCommand(project_ref=folder), store=store)
+    assert report.created == 1
+    assert report.errors == []
+
+
+def test_bound_elsewhere_generates_empty(tmp_path, store):
+    import json as _json
+
+    folder = make_project(tmp_path / "proj", rows=(("Иван", 100),))
+    pj_path = folder / "project.stanok"
+    data = _json.loads(pj_path.read_text())
+    data["templates"]["Договор"]["fields"]["Сумма"]["table"] = "Данные/other.xlsx"
+    pj_path.write_text(_json.dumps(data, ensure_ascii=False))
+    report = generate_documents(GenerateCommand(project_ref=folder), store=store)
+    assert report.created == 1
+    assert report.errors == []
+
+
+def test_dist_without_extension_gets_docx(tmp_path, store):
+    import json as _json
+
+    folder = make_project(tmp_path / "proj", rows=(("Иван", 100),))
+    pj_path = folder / "project.stanok"
+    data = _json.loads(pj_path.read_text())
+    data["filename_template"] = "Договор_{ФИО}_{i}"
+    pj_path.write_text(_json.dumps(data, ensure_ascii=False))
+    report = generate_documents(GenerateCommand(project_ref=folder), store=store)
+    assert report.created == 1
+    assert report.output_paths[0].suffix == ".docx"
+    assert report.output_paths[0].name == "Договор_Иван_1.docx"

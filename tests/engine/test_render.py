@@ -151,3 +151,109 @@ def test_unexpected_error_wrapped(monkeypatch, tmp_path):
     monkeypatch.setattr(render_mod, "substitute_paragraph", boom)
     with pytest.raises(RenderError, match="template"):
         render(_fj(А="1"), _make_template(tmp_path, "{{А}}"))
+
+
+def _header_docx(path, header_text="Договор {{Номер}}", footer_text="Стр. {{Номер}}"):
+    from docx import Document as DocxDocument
+
+    doc = DocxDocument()
+    doc.add_paragraph("Тело {{Имя}}")
+    doc.sections[0].header.paragraphs[0].text = header_text
+    doc.sections[0].footer.paragraphs[0].text = footer_text
+    doc.save(path)
+    return path
+
+
+def test_header_footer_substituted(tmp_path):
+    from stanok.engine.render import render
+    from stanok.engine.schema import validate_fj
+
+    path = _header_docx(tmp_path / "hdr.docx")
+    fj = validate_fj({
+        "version": "0.0.0",
+        "template": "Д",
+        "fields": {"Имя": "Иван", "Номер": "7"},
+        "dist": "Д_1.docx",
+    })
+    doc = render(fj, path)
+    assert doc.sections[0].header.paragraphs[0].text == "Договор 7"
+    assert doc.sections[0].footer.paragraphs[0].text == "Стр. 7"
+    assert doc.paragraphs[0].text == "Тело Иван"
+
+
+def test_first_page_header_substituted(tmp_path):
+    from docx import Document as DocxDocument
+
+    from stanok.engine.render import render
+    from stanok.engine.schema import validate_fj
+
+    doc = DocxDocument()
+    doc.add_paragraph("Тело")
+    section = doc.sections[0]
+    section.different_first_page_header_footer = True
+    section.first_page_header.paragraphs[0].text = "Первый {{Номер}}"
+    path = tmp_path / "fp.docx"
+    doc.save(path)
+    fj = validate_fj({
+        "version": "0.0.0", "template": "Д", "fields": {"Номер": "7"},
+        "dist": "Д_1.docx",
+    })
+    out = render(fj, path)
+    assert out.sections[0].first_page_header.paragraphs[0].text == "Первый 7"
+
+
+def test_even_page_and_linked_sections(tmp_path):
+    from docx import Document as DocxDocument
+    from docx.enum.section import WD_SECTION
+
+    from stanok.engine.render import render
+    from stanok.engine.schema import validate_fj
+
+    doc = DocxDocument()
+    doc.add_paragraph("Тело")
+    doc.settings.odd_and_even_pages_header_footer = True
+    section = doc.sections[0]
+    section.even_page_header.paragraphs[0].text = "Чёт {{Номер}}"
+    section.header.paragraphs[0].text = "Шапка {{Номер}}"
+    second = doc.add_section(WD_SECTION.NEW_PAGE)
+    assert second.header.is_linked_to_previous
+    path = tmp_path / "ev.docx"
+    doc.save(path)
+    fj = validate_fj({
+        "version": "0.0.0", "template": "Д", "fields": {"Номер": "7"},
+        "dist": "Д_1.docx",
+    })
+    out = render(fj, path)
+    assert out.sections[0].even_page_header.paragraphs[0].text == "Чёт 7"
+    assert out.sections[0].header.paragraphs[0].text == "Шапка 7"
+
+
+def test_header_table_substituted(tmp_path):
+    from docx import Document as DocxDocument
+    from docx.shared import Mm
+
+    from stanok.engine.render import render
+    from stanok.engine.schema import validate_fj
+
+    doc = DocxDocument()
+    doc.add_paragraph("Тело")
+    table = doc.sections[0].header.add_table(rows=1, cols=1, width=Mm(100))
+    table.cell(0, 0).text = "Ячейка {{Номер}}"
+    path = tmp_path / "ht.docx"
+    doc.save(path)
+    fj = validate_fj({
+        "version": "0.0.0", "template": "Д", "fields": {"Номер": "7"},
+        "dist": "Д_1.docx",
+    })
+    out = render(fj, path)
+    assert out.sections[0].header.tables[0].cell(0, 0).text == "Ячейка 7"
+
+
+def test_iter_paragraphs_no_headers_flag(tmp_path):
+    from stanok.engine.xmlops import iter_paragraphs
+
+    path = _header_docx(tmp_path / "nh.docx")
+    from docx import Document as DocxDocument
+
+    texts = [p.text for p in iter_paragraphs(DocxDocument(str(path)), headers=False)]
+    assert texts == ["Тело {{Имя}}"]

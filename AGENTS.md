@@ -80,7 +80,7 @@
 ## Workflow
 - Before working: `git pull`
 - Branch naming: `feat/<short-desc>`, `hotfix/<issue-desc>`, `release/<release-num>`
-- Branching model: simplified git-flow (https://nvie.com/posts/a-successful-git-branching-model/): `main` is always releasable, work happens in short-lived branches, merge via squash after review
+- Branching model: simplified git-flow (https://nvie.com/posts/a-successful-git-branching-model/): `main` is always releasable,   work happens in short-lived branches, merge into `develop`/`main` with `git merge --no-ff` after review (merge commit keeps branch topology visible; no squash)
   - `main` — releases only (tagged `vX.Y.Z`, version bumped); never commit directly
   - `develop` — integration branch; `feat/*` and `fix/*` branch off it and merge back via squash after review
   - `release/*` — stabilization before tagging to `main`; `hotfix/*` — urgent fixes to `main`, then merged back into `develop`
@@ -91,9 +91,9 @@
   trufflehog3 secrets scan (excludes `venv/`, `uv.lock`) + `pytest tests/ -q` when tests exist;
   never commit with `--no-verify` without asking
 - Build exe (when GUI lands; `Станок.spec` is gitignored, not in repo): 
-  `pyinstaller --onefile --windowed --name Станок --paths src run.py`
+  `pyinstaller --onefile --windowed --name Станок --paths src --icon src/stanok/gui/icon.ico --add-data "src/stanok/gui/icon.png;stanok/gui" run.py`
 - Open PR: one logical change per PR, link to spec item
-- Squash merge to main after review
+- Merge with `git merge --no-ff` after review (no squash, no fast-forward)
 - Separate refactoring from features into different commits/branches
 - **After feature implementation: check docs/ and README.md for consistency with changes; update if needed**
 

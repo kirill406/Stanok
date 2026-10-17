@@ -18,6 +18,41 @@ PLACEHOLDER_RE = re.compile(r"\{\{\s*([^}{]+?)\s*\}\}")
 UNCLOSED_RE = re.compile(r"\{\{(?![^}]*\}\})")
 
 
+def _iter_table_paragraphs(table) -> Any:
+    for row in table.rows:
+        for cell in row.cells:
+            yield from cell.paragraphs
+            for nested in cell.tables:
+                yield from _iter_table_paragraphs(nested)
+
+
+def iter_paragraphs(doc, headers: bool = True) -> Any:
+    """Every paragraph: body + (nested) tables + headers/footers.
+
+    Single traversal for render and placeholder scan — one place to extend.
+    Yielded objects are docx Paragraphs. Header/footer parts linked to
+    previous sections are skipped (no double substitution).
+    """
+    yield from doc.paragraphs
+    for table in doc.tables:
+        yield from _iter_table_paragraphs(table)
+    if not headers:
+        return
+    odd_even = doc.settings.odd_and_even_pages_header_footer
+    for section in doc.sections:
+        parts = [section.header, section.footer]
+        if section.different_first_page_header_footer:
+            parts += [section.first_page_header, section.first_page_footer]
+        if odd_even:
+            parts += [section.even_page_header, section.even_page_footer]
+        for part in parts:
+            if part.is_linked_to_previous:
+                continue
+            yield from part.paragraphs
+            for table in part.tables:
+                yield from _iter_table_paragraphs(table)
+
+
 def _stringify(value: Any) -> str:
     from datetime import date, datetime
 

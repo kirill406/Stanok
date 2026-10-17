@@ -360,3 +360,89 @@ def test_run_stale_source_shows_error(qapp, tmp_path, store, monkeypatch):
     _await_run(dlg)
     assert shown
     dlg.close()
+
+
+def test_close_button_russian(qapp, tmp_path, store):
+    from PyQt5.QtWidgets import QPushButton
+
+    folder = make_project(tmp_path / "proj")
+    dlg = ProjectDialog(str(folder), store=store)
+    texts = [
+        b.text()
+        for b in dlg.findChildren(QPushButton)
+        if b.text() == STRINGS.FLD_CLOSE
+    ]
+    assert len(texts) == 1
+    dlg.close()
+
+
+def test_open_syncs_new_fields(qapp, tmp_path, store):
+    from docx import Document as DocxDocument
+
+    from stanok.gui.fields_dialog import FieldsDialog
+    from tests.services.test_generate import make_project
+
+    folder = make_project(tmp_path / "proj")
+    tpl = folder / "Шаблоны" / "tpl.docx"
+    doc = DocxDocument(str(tpl))
+    doc.add_paragraph("Штрихкод {{Штрихкод}}")
+    doc.save(str(tpl))
+    dlg = ProjectDialog(str(folder), store=store)
+    dlg.close()
+    fld = FieldsDialog(str(folder), "Договор", store=store)
+    assert "Штрихкод" in fld._rows
+    fld.close()
+
+
+def test_add_source_reloads_combo(qapp, tmp_path, store, monkeypatch):
+    from PyQt5.QtWidgets import QFileDialog
+
+    from tests.services.test_storage import _src_files
+
+    folder = make_project(tmp_path / "proj")
+    xlsx, _ = _src_files(tmp_path, "extra")
+    monkeypatch.setattr(
+        QFileDialog, "getOpenFileName", lambda *a, **k: (str(xlsx), "")
+    )
+    dlg = ProjectDialog(str(folder), store=store)
+    assert dlg.source_combo.count() == 2
+    dlg._on_add_source()
+    assert dlg.source_combo.count() == 3
+    assert dlg.source_combo.currentData() == "Данные/data (1).xlsx"
+    from PyQt5.QtWidgets import QLabel
+
+    assert any(
+        w.text() == "Источники:" for w in dlg.findChildren(QLabel)
+    )
+    assert dlg.add_src_btn.text() == STRINGS.PROJ_SOURCE_ADD
+    dlg.close()
+
+
+def test_add_source_guards(qapp, tmp_path, store, monkeypatch):
+    from PyQt5.QtWidgets import QFileDialog
+
+    folder = make_project(tmp_path / "proj")
+    warnings = []
+    monkeypatch.setattr(
+        QMessageBox, "warning", lambda *a: warnings.append(a[-1])
+    )
+    dlg = ProjectDialog(str(folder), store=store)
+
+    dlg._running = True
+    dlg._on_add_source()
+    dlg._running = False
+
+    monkeypatch.setattr(
+        QFileDialog, "getOpenFileName", lambda *a, **k: ("", "")
+    )
+    dlg._on_add_source()
+    assert dlg.source_combo.count() == 2
+
+    bad = tmp_path / "notes.txt"
+    bad.write_text("hi")
+    monkeypatch.setattr(
+        QFileDialog, "getOpenFileName", lambda *a, **k: (str(bad), "")
+    )
+    dlg._on_add_source()
+    assert warnings and "wrong file type" in warnings[0]
+    dlg.close()

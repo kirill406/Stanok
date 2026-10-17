@@ -3,6 +3,7 @@
 """PJ/AJ/Filling schemas: validate, normalize, migrate. Pure engine, no Qt."""
 
 import logging
+import os
 from datetime import datetime
 from enum import Enum
 from importlib.metadata import version as pkg_version, PackageNotFoundError
@@ -151,6 +152,19 @@ class ProjectJSON(_WarnExtra):
     data_sources: list[DataSourceDef] = []
     counters: dict[str, CounterDef] = {}
     filename_template: str = "{template} ({i})"
+    folder: str | None = None  # absolute path with Данные/Шаблоны (020)
+
+    @field_validator("folder")
+    @classmethod
+    def _abs_folder(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        value = v.strip()
+        if not value:
+            return None
+        if not os.path.isabs(value):
+            logger.warning("project folder is not absolute: %s", value)
+        return value
 
 
 class RecentItem(_WarnExtra):

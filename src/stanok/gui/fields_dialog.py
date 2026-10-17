@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import logging
 from datetime import date
-from pathlib import Path
 
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
@@ -29,7 +28,7 @@ from PyQt5.QtWidgets import (
 )
 
 from ..services.generate import TemplateError
-from ..services.storage import ProjectStore
+from ..services.storage import ProjectStore, project_folder
 from ..engine.schema import CounterDef, FieldDef, FieldSource, ProjectJSON
 from ..engine.resolve import TODAY_PRESETS, format_today
 from ..tables.excel import ExcelReader
@@ -85,6 +84,7 @@ class FieldsDialog(QDialog):
         pj, config_path = self._store.resolve_project(project_ref)
         self._pj = pj
         self._config_name = config_path.stem
+        self._folder = project_folder(project_ref, pj, config_path, self._store)
         try:
             self._template_def = pj.templates[template_name]
         except KeyError:
@@ -97,7 +97,7 @@ class FieldsDialog(QDialog):
         key = source_file or "__all__"
         if key in self._rows_cache:
             return self._rows_cache[key]
-        ref_path = Path(self._project_ref)
+        ref_path = self._folder
         files = (
             [source_file]
             if source_file

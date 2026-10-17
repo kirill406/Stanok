@@ -868,3 +868,117 @@ def test_add_source_mkdir_failure(store, tmp_path, monkeypatch):
             store.add_source(folder, xlsx)
     finally:
         monkeypatch.setattr(pathlib.Path, "mkdir", pathlib.Path.mkdir)
+
+
+def test_init_stores_folder(store, tmp_path):
+    xlsx, tpl = _src_files(tmp_path)
+    pj = store.init_project(tmp_path / "fpj", "fpj", [xlsx], [tpl])
+    assert pj.folder == str((tmp_path / "fpj").resolve())
+
+
+def test_init_rejects_data_dir(store, tmp_path):
+    xlsx, tpl = _src_files(tmp_path)
+    with pytest.raises(StorageError, match="inside"):
+        store.init_project(tmp_path / "Данные", "x1", [xlsx], [tpl])
+
+
+def test_resolve_by_dir_self_heals_folder(store, tmp_path, sample_pj):
+    folder = tmp_path / "projdir"
+    (folder / "Данные").mkdir(parents=True)
+    store.save(sample_pj, name="projdir")
+    assert store.load("projdir").folder is None
+    pj, _ = store.resolve_project(folder)
+    assert pj.folder == str(folder.resolve())
+    assert store.load("projdir").folder == str(folder.resolve())
+
+
+def test_project_folder_prefers_pj_over_recent(store, tmp_path, sample_pj):
+    from stanok.services.storage import project_folder
+
+    folder = tmp_path / "pfd"
+    folder.mkdir()
+    pj = sample_pj.model_copy(update={"folder": str(folder)})
+    store.save(pj, name="pf")
+    store.add_recent(str(tmp_path / "other"), "pf")
+    pj2, cp = store.resolve_project("pf")
+    assert project_folder("pf", pj2, cp, store) == folder.resolve()
+
+
+def test_project_folder_stale_then_relocate(store, tmp_path, sample_pj):
+    from stanok.services.storage import project_folder
+
+    pj = sample_pj.model_copy(update={"folder": str(tmp_path / "gone")})
+    store.save(pj, name="p1")
+    pj2, cp = store.resolve_project("p1")
+    with pytest.raises(StorageError, match="folder not found"):
+        project_folder("p1", pj2, cp, store)
+    new = tmp_path / "newhome"
+    new.mkdir()
+    store.set_project_folder("p1", new)
+    pj3, cp3 = store.resolve_project("p1")
+    assert project_folder("p1", pj3, cp3, store) == new.resolve()
+    assert any(r.config == "p1" for r in store.get_recent())
+
+
+def test_project_folder_legacy_recent_fallback(store, tmp_path, sample_pj):
+    from stanok.services.storage import project_folder
+
+    folder = tmp_path / "legacyf"
+    folder.mkdir()
+    store.save(sample_pj, name="lg")  # no folder field
+    store.add_recent(str(folder), "lg")
+    pj, cp = store.resolve_project("lg")
+    assert pj.folder is None
+    assert project_folder("lg", pj, cp, store) == folder.resolve()
+
+
+def test_list_named_sorted(store, sample_pj):
+    store.save(sample_pj, name="zebra")
+    store.save(sample_pj, name="alpha")
+    assert [n for n, _ in store.list_named()] == ["alpha", "zebra"]
+
+
+def test_list_named_skips_invalid(store, sample_pj):
+    store.save(sample_pj, name="ok")
+    (store.home_dir / "bad.stanok").write_text("{broken")
+    assert [n for n, _ in store.list_named()] == ["ok"]
+
+
+def test_touch_recent_resolves_folder(store, tmp_path, sample_pj):
+    folder = tmp_path / "tf"
+    folder.mkdir()
+    store.save(sample_pj.model_copy(update={"folder": str(folder)}), name="tf")
+    store.touch_recent("tf")
+    assert any(
+        r.config == "tf" and r.folder == str(folder.resolve())
+        for r in store.get_recent()
+    )
+
+
+def test_touch_recent_no_folder_noop(store, sample_pj):
+    store.save(sample_pj, name="nf")
+    store.touch_recent("nf")
+    assert store.get_recent() == []
+
+
+def test_resolve_name_via_recent_legacy(store, tmp_path):
+    folder = tmp_path / "legproj"
+    folder.mkdir()
+    (folder / "project.stanok").write_text(json.dumps({
+        "version": "0.0.0",
+        "templates": {"t1": {"file": "t.docx", "fields": {}}},
+        "data_sources": [],
+        "counters": {},
+        "filename_template": "out.docx",
+    }))
+    store.add_recent(str(folder), "legproj")
+    pj, cp = store.resolve_project("legproj")
+    assert pj.folder == str(folder.resolve())
+    assert cp.stem == "legproj"
+
+
+def test_resolve_dir_without_config_raises(store, tmp_path):
+    empty = tmp_path / "emptydir"
+    empty.mkdir()
+    with pytest.raises(StorageError, match="project not found"):
+        store.resolve_project(empty)

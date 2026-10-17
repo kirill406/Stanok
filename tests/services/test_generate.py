@@ -225,10 +225,20 @@ def test_config_name_ref_via_recent(tmp_path, store):
 
 
 def test_config_name_without_folder_fails(tmp_path, store):
-    folder = make_project(tmp_path / "proj", rows=(("Иван", 100),))
-    generate_documents(GenerateCommand(project_ref=folder), store=store)
+    from stanok.engine.schema import validate_pj
+
+    pj = validate_pj(
+        {
+            "version": "0.0.0",
+            "templates": {"t": {"file": "Шаблоны/t.docx", "fields": {}}},
+            "data_sources": [{"file": "Данные/d.xlsx"}],
+            "counters": {},
+            "filename_template": "nofolder",
+        }
+    )
+    store.save(pj, name="nofolder")
     with pytest.raises(StorageError, match="project folder not found"):
-        generate_documents(GenerateCommand(project_ref="proj"), store=store)
+        generate_documents(GenerateCommand(project_ref="nofolder"), store=store)
 
 
 def test_unique_path_helper(tmp_path):

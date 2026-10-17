@@ -47,6 +47,15 @@ class STRINGS:
     MAIN_LIMIT = "Лимит документов (0 — без лимита):"
     MAIN_GENERATE = "Сгенерировать"
     MAIN_REMOVE = "Убрать"
+    MAIN_FOLDER_MISSING = (
+        "Папка проекта «{name}» не найдена. Указать новую папку?"
+    )
+    MAIN_FIND_FOLDER = "Папка проекта"
+
+    # Open project dialog (gui/open_project_dialog.py, 020)
+    OPEN_TITLE = "Открыть проект"
+    OPEN_EMPTY = "Проекты не найдены: создайте новый проект."
+    OPEN_NO_FOLDER = "папка неизвестна"
     MAIN_GENERATE_ALL = "Сгенерировать все"
     MAIN_SETTINGS = "Настройки"
 
@@ -75,6 +84,10 @@ class STRINGS:
     CRT_CREATE = "Создать"
     CRT_CANCEL = "Отмена"
     CRT_ERR_TITLE = "Не удалось создать проект"
+    CRT_PATH = "Файлы проекта: {path}"
+    CRT_NAME_TAKEN = "Проект «{name}» уже существует — выберите другое имя"
+    CRT_BAD_DIR = "Нельзя создавать проект внутри «{name}»"
+    CRT_MKDIR_ASK = "Папки «{path}» нет. Создать её?"
 
     # Project folder layout (shared, NFR-3: no Cyrillic literals in code)
     DATA_DIR = "Данные"
@@ -147,6 +160,5 @@ class STRINGS:
     MAIN_DONE_TITLE = "Генерация завершена"
     MAIN_ERRORS_TITLE = "Ошибки генерации"
     MAIN_ERROR_TITLE = "Ошибка"
-    MAIN_NO_PROJECT = "В папке нет проекта Станка: нет файла «project.stanok» и конфига в домашней папке"
     MAIN_CANCELLED = "Генерация отменена: создано {created}"
-    MAIN_NO_PROJECT = "Выберите проект: папку или запись из недавних"
+

@@ -163,7 +163,7 @@ def test_headers_nondir_ref(qapp, tmp_path, store):
     generate_documents(GenerateCommand(project_ref=folder), store=store)
     store.add_recent(str(folder), "proj")
     dlg = FieldsDialog("proj", "Договор", store=store)
-    assert dlg._read_headers(None) == []
+    assert dlg._read_headers(None) == ["ФИО", "Сумма"]
     dlg.close()
 
 

@@ -94,7 +94,7 @@ class MainWindow(QMainWindow):
         for item in self._store.get_recent():
             label = f"{item.folder} [{item.config}]"
             entry = QListWidgetItem(self.recent_list)
-            entry.setData(Qt.UserRole, item.folder)
+            entry.setData(Qt.UserRole, item.config)
             row = QWidget()
             row_layout = QHBoxLayout(row)
             row_layout.setContentsMargins(4, 2, 4, 2)
@@ -102,7 +102,7 @@ class MainWindow(QMainWindow):
             row_layout.addWidget(name, 1)
             btn = QPushButton(STRINGS.MAIN_GENERATE, row)
             btn.clicked.connect(
-                lambda _checked=False, ref=item.folder: self._on_generate_one(ref)
+                lambda _checked=False, ref=item.config: self._on_generate_one(ref)
             )
             row_layout.addWidget(btn)
             rm_btn = QPushButton(STRINGS.MAIN_REMOVE, row)
@@ -117,28 +117,18 @@ class MainWindow(QMainWindow):
             self.recent_list.setItemWidget(entry, row)
 
     def _on_browse(self) -> None:
-        folder = QFileDialog.getExistingDirectory(self, STRINGS.MAIN_OPEN)
-        if not folder:
+        """Pick a project from the known list (open by config name)."""
+        from .open_project_dialog import OpenProjectDialog
+
+        dialog = OpenProjectDialog(self._store, self)
+        if not dialog.exec_():
             return
-        try:
-            self._store.resolve_project(folder)
-        except StorageError as e:
-            logger.warning(f"open project {folder}: {e}", exc_info=True)
-            if e.path == "resolve":
-                self._show_error(
-                    f"{STRINGS.MAIN_ERROR_TITLE}: "
-                    f"{STRINGS.MAIN_NO_PROJECT} ({folder})"
-                )
-            else:
-                self._show_error(f"{STRINGS.MAIN_ERROR_TITLE}: {e}")
+        config = dialog.selected_config
+        if not config:
             return
-        except Exception as e:
-            logger.warning(f"open project {folder}: {e}", exc_info=True)
-            self._show_error(f"{STRINGS.MAIN_ERROR_TITLE}: {e}")
-            return
-        resolved = str(Path(folder).resolve())
-        self._store.add_recent(resolved, Path(folder).resolve().name)
+        self._store.touch_recent(config)
         self.refresh_recent()
+        self._open_project_dialog(config)
 
     def _on_row_clicked(self, item: QListWidgetItem) -> None:
         self._open_project_dialog(item.data(Qt.UserRole))
@@ -149,15 +139,43 @@ class MainWindow(QMainWindow):
         self.refresh_recent()
 
     def _open_project_dialog(self, ref: str) -> None:
-        """Open window 2 (ProjectDialog, 009)."""
+        """Open window 2 (ProjectDialog, 009) by config name."""
         try:
             dialog = ProjectDialog(ref, self._store, self)
+        except StorageError as e:
+            logger.warning(f"open project dialog {ref}: {e}", exc_info=True)
+            if "folder not found" in str(e):
+                self._offer_relocate(ref)
+            else:
+                self._show_error(f"{STRINGS.MAIN_ERROR_TITLE}: {e}")
+            return
         except Exception as e:
             logger.warning(f"open project dialog {ref}: {e}", exc_info=True)
             self._show_error(f"{STRINGS.MAIN_ERROR_TITLE}: {e}")
             return
         dialog.exec_()
         self.refresh_recent()
+
+    def _offer_relocate(self, ref: str) -> None:
+        """Missing project folder: let the user pick a new one (020 risk)."""
+        answer = QMessageBox.question(
+            self,
+            STRINGS.MAIN_ERROR_TITLE,
+            STRINGS.MAIN_FOLDER_MISSING.format(name=ref),
+        )
+        if answer != QMessageBox.Yes:
+            return
+        folder = QFileDialog.getExistingDirectory(self, STRINGS.MAIN_FIND_FOLDER)
+        if not folder:
+            return
+        try:
+            self._store.set_project_folder(ref, folder)
+        except Exception as e:
+            logger.warning(f"relocate project {ref}: {e}", exc_info=True)
+            self._show_error(f"{STRINGS.MAIN_ERROR_TITLE}: {e}")
+            return
+        self.refresh_recent()
+        self._open_project_dialog(ref)
 
     def _on_settings(self) -> None:
         """Open settings dialog (018); keeps import lazy like create (tests)."""
@@ -176,6 +194,9 @@ class MainWindow(QMainWindow):
         dialog = CreateDialog(self._store, hint, self)
         if dialog.exec_():
             self.refresh_recent()
+            name = getattr(dialog, "project_name", "")
+            if name:
+                self._open_project_dialog(name)
 
     # -- generation queue ---------------------------------------------------
     def _on_generate_one(self, ref: str) -> None:

@@ -5,7 +5,6 @@
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
@@ -25,7 +24,7 @@ from PyQt5.QtWidgets import (
 )
 
 from ..services.generate import GenerateCommand, GenerateReport
-from ..services.storage import ProjectStore
+from ..services.storage import ProjectStore, project_folder
 from .fields_dialog import FieldsDialog
 from .strings import STRINGS
 from .worker import GenerateWorker
@@ -46,20 +45,20 @@ class ProjectDialog(QDialog):
         self._progress_dialog: QProgressDialog | None = None
         self._running = False
         self._store.sync_template_fields(project_ref)
-        pj, _ = self._store.resolve_project(project_ref)
+        pj, config_path = self._store.resolve_project(project_ref)
         self._pj = pj
+        self._config_name = config_path.stem
+        self._folder = project_folder(project_ref, pj, config_path, self._store)
         self._template_names = list(pj.templates)
         self._build_ui()
 
     # -- UI construction -------------------------------------------------
     def _build_ui(self) -> None:
-        self.setWindowTitle(
-            STRINGS.PROJ_TITLE.format(name=Path(self._project_ref).name)
-        )
+        self.setWindowTitle(STRINGS.PROJ_TITLE.format(name=self._config_name))
         self.resize(900, 650)
         layout = QVBoxLayout(self)
 
-        layout.addWidget(QLabel(STRINGS.PROJ_DATA.format(path=self._project_ref)))
+        layout.addWidget(QLabel(STRINGS.PROJ_DATA.format(path=self._folder)))
         layout.addWidget(QLabel(STRINGS.PROJ_SOURCE))
         self.source_combo = QComboBox(self)
         layout.addWidget(self.source_combo)
@@ -211,7 +210,7 @@ class ProjectDialog(QDialog):
     def _on_delete_project(self) -> None:
         if self._running:
             return
-        name = Path(self._project_ref).name
+        name = self._config_name
         box = QMessageBox(self)
         box.setWindowTitle(STRINGS.PROJ_DELETE)
         box.setText(STRINGS.PROJ_DELETE_ASK.format(name=name))

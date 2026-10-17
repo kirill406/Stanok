@@ -221,3 +221,24 @@ def test_counter_table_binding_validate():
     assert CounterDef().table is None
     with pytest.raises(Exception, match="относительным"):
         CounterDef(table="../evil.xlsx")
+
+
+def test_project_folder_field():
+    pj = validate_pj({
+        "version": "0.0.0",
+        "templates": {"T": {"file": "Шаблоны/t.docx", "fields": {}}},
+        "data_sources": [],
+        "counters": {},
+        "filename_template": "p",
+        "folder": "  ",
+    })
+    assert pj.folder is None
+    pj2 = validate_pj({
+        "version": "0.0.0",
+        "templates": {"T": {"file": "Шаблоны/t.docx", "fields": {}}},
+        "data_sources": [],
+        "counters": {},
+        "filename_template": "p",
+        "folder": "relative/dir",
+    })
+    assert pj2.folder == "relative/dir"

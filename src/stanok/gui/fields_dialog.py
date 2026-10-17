@@ -79,6 +79,7 @@ class FieldsDialog(QDialog):
         self._template_name = template_name
         self._dirty = False
         self._rows: dict[str, dict] = {}
+        self._crows: dict[str, dict] = {}
         self._rows_cache: dict[str, list[dict]] = {}
         self._headers_warned: set[str] = set()
         pj, config_path = self._store.resolve_project(project_ref)
@@ -330,21 +331,10 @@ class FieldsDialog(QDialog):
             )
             layout.addWidget(fmt_combo)
             st["fmt"] = fmt_combo
-            last_edit = QLineEdit(
-                str(current.last if current else 0), box
-            )
-            last_edit.textChanged.connect(
-                lambda _t="", field=name: self._mark_row_touched(field)
-            )
-            layout.addWidget(last_edit)
-            st["last"] = last_edit
             cprev = QLabel(self.table)
             self.table.setCellWidget(row, 3, cprev)
             st["cprev"] = cprev
             self._update_counter_preview(name)
-            last_edit.textChanged.connect(
-                lambda _t="", field=name: self._update_counter_preview(field)
-            )
             fmt_combo.currentIndexChanged.connect(
                 lambda _i=0, field=name: self._update_counter_preview(field)
             )
@@ -450,6 +440,9 @@ class FieldsDialog(QDialog):
     def _mark_counter_touched(self, cname: str) -> None:
         self._crows[cname]["touched"] = True
         self._mark_dirty()
+        for field, st in self._rows.items():
+            if st.get("cname") is not None and st["cname"].currentData() == cname:
+                self._update_counter_preview(field)
 
     def _selected_counter(self, name: str) -> str | None:
         return self._rows[name]["cname"].currentData()
@@ -457,9 +450,6 @@ class FieldsDialog(QDialog):
     def _on_counter_name_changed(self, name: str) -> None:
         st = self._rows[name]
         current = self._pj.counters.get(st["cname"].currentData())
-        st["last"].blockSignals(True)
-        st["last"].setText(str(current.last if current else 0))
-        st["last"].blockSignals(False)
         if current is not None:
             st["fmt"].blockSignals(True)
             st["fmt"].setCurrentIndex(st["fmt"].findData(current.format))
@@ -467,14 +457,26 @@ class FieldsDialog(QDialog):
         self._update_counter_preview(name)
         self._mark_row_touched(name)
 
+    def _current_counter_last(self, cname: str | None) -> int | None:
+        if cname is None:
+            return None
+        cst = self._crows.get(cname)
+        if cst is not None:
+            try:
+                return int(cst["last"].text())
+            except (ValueError, TypeError):
+                return None
+        cdef = self._pj.counters.get(cname)
+        return cdef.last if cdef is not None else 0
+
     def _update_counter_preview(self, name: str) -> None:
         st = self._rows[name]
-        try:
-            last = int(st["last"].text())
-            width = st["fmt"].currentData() or "1"
-            st["cprev"].setText(str(last).zfill(len(width)) if last >= 0 else "")
-        except (ValueError, TypeError, AttributeError):
+        last = self._current_counter_last(st["cname"].currentData())
+        width = st["fmt"].currentData() or "1"
+        if last is None or last < 0:
             st["cprev"].setText("")
+        else:
+            st["cprev"].setText(str(last).zfill(len(width)))
 
     def _update_today_preview(self, name: str) -> None:
         st = self._rows[name]
@@ -570,20 +572,13 @@ class FieldsDialog(QDialog):
                 cname = self._selected_counter(name)
                 if cname is None:
                     raise _FieldError(name, "FLD_NO_COUNTER")
-                try:
-                    last = int(st["last"].text())
-                except ValueError:
-                    raise _FieldError(name, "FLD_BAD_VALUE") from None
-                if last < 0:
-                    raise _FieldError(name, "FLD_BAD_VALUE")
                 fmt = st["fmt"].currentData() or "1"
                 if st.get("touched"):
                     existing = self._pj.counters.get(cname)
                     if existing is None:
-                        self._pj.counters[cname] = CounterDef(last=last, format=fmt)
+                        self._pj.counters[cname] = CounterDef(last=0, format=fmt)
                     else:
                         existing.format = fmt
-                        existing.last = last
                 f.source = FieldSource.COUNTER
                 f.value = cname
                 f.table = None

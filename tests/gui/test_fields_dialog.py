@@ -362,17 +362,14 @@ def test_type_switch_marks_dirty(qapp, tmp_path, store):
     dlg.close()
 
 
-def test_empty_counter_blocks_save(qapp, tmp_path, store, monkeypatch):
+def test_counter_row_has_no_value_editor(qapp, tmp_path, store):
     folder = make_project(tmp_path / "proj")
-    warnings = []
-    monkeypatch.setattr(
-        QMessageBox, "warning", lambda *a: warnings.append(a[-1])
-    )
     dlg = FieldsDialog(str(folder), "Договор", store=store)
     _set_type(dlg, "ФИО", "counter")
-    dlg._rows["ФИО"]["last"].setText("   ")
-    dlg._on_save()
-    assert any("ФИО" in w for w in warnings)
+    st = dlg._rows["ФИО"]
+    assert "last" not in st
+    st["cname"].setCurrentIndex(st["cname"].findData("num"))
+    assert st["cprev"].text() == "0"
     dlg.close()
 
 
@@ -410,9 +407,8 @@ def test_counter_select_existing_loads(qapp, tmp_path, store):
     _set_type(dlg, "ФИО", "counter")
     st = dlg._rows["ФИО"]
     st["cname"].setCurrentIndex(st["cname"].findData("num"))
-    assert st["last"].text() == "0"
-    st["last"].setText("7")
     st["fmt"].setCurrentIndex(st["fmt"].findData("01"))
+    dlg._crows["num"]["last"].setText("7")
     assert st["cprev"].text() == "07"
     dlg._on_save()
     saved = _saved_pj(store)
@@ -468,7 +464,6 @@ def test_counter_select_other_counter(qapp, tmp_path, store):
     _set_type(dlg, "ФИО", "counter")
     st = dlg._rows["ФИО"]
     st["cname"].setCurrentIndex(st["cname"].findData("doc2"))
-    assert st["last"].text() == "5"
     assert st["cprev"].text() == "005"
     dlg._on_save()
     saved = _saved_pj(store)
@@ -489,20 +484,6 @@ def test_date_preset_reopen_selects(qapp, tmp_path, store):
     assert dlg2._rows["Дата"]["dfmt"].currentData() == "month_ru"
     assert dlg2._rows["Дата"]["dlabel"].text() == "октября"
     dlg2.close()
-
-
-def test_negative_last_blocks_save(qapp, tmp_path, store, monkeypatch):
-    folder = make_project(tmp_path / "proj")
-    warnings = []
-    monkeypatch.setattr(
-        QMessageBox, "warning", lambda *a: warnings.append(a[-1])
-    )
-    dlg = FieldsDialog(str(folder), "Договор", store=store)
-    _set_type(dlg, "ФИО", "counter")
-    dlg._rows["ФИО"]["last"].setText("-3")
-    dlg._on_save()
-    assert any("целое" in w for w in warnings)
-    dlg.close()
 
 
 def test_counter_no_counters_blocks_save(qapp, tmp_path, store, monkeypatch):
@@ -644,11 +625,11 @@ def test_dangling_counter_resurrected(qapp, tmp_path, store):
     dlg = FieldsDialog(str(folder), "Договор", store=store)
     st = dlg._rows["Номер"]
     assert st["cname"].currentData() == "num"
-    st["last"].setText("3")
+    assert "last" not in st
     dlg._dirty = True
     dlg._on_save()
     saved = _saved_pj(store)
-    assert saved["counters"]["num"]["last"] == 3
+    assert saved["counters"]["num"]["last"] == 0
     assert saved["templates"]["Договор"]["fields"]["Номер"]["value"] == "num"
     dlg.close()
 

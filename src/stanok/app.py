@@ -76,12 +76,6 @@ def main(argv: list[str] | None = None) -> int:
         "project_ref", nargs="?", default=None, help=STRINGS.APP_REF_HELP
     )
     parser.add_argument("--template", default=None, help=STRINGS.APP_TEMPLATE_HELP)
-    parser.add_argument(
-        "--data-source", "--source", dest="data_source", default=None,
-        help=STRINGS.APP_SOURCE_HELP,
-    )
-    parser.add_argument("--max-docs", type=int, default=None, help=STRINGS.APP_MAXDOCS_HELP)
-    parser.add_argument("--resume", action="store_true", help=STRINGS.APP_RESUME_HELP)
     args = parser.parse_args(argv)
 
     if args.project_ref is None:
@@ -94,9 +88,6 @@ def main(argv: list[str] | None = None) -> int:
             GenerateCommand(
                 project_ref=args.project_ref,
                 template=args.template,
-                data_source=args.data_source,
-                max_docs=args.max_docs,
-                resume=args.resume,
             )
         )
     except Exception as e:
@@ -105,7 +96,6 @@ def main(argv: list[str] | None = None) -> int:
     print(
         STRINGS.APP_DONE.format(
             created=report.created,
-            skipped=report.skipped,
             errors=len(report.errors),
             elapsed=f"{report.elapsed:.1f}",
         )

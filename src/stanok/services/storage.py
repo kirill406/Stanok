@@ -14,6 +14,7 @@ from pathlib import Path
 
 from ..engine.schema import (
     ApplicationJSON,
+    CounterDef,
     DataSourceDef,
     FieldDef,
     FieldSource,
@@ -86,6 +87,25 @@ def _unique_sibling(path: Path) -> Path:
         if not candidate.exists():
             return candidate
         i += 1
+
+
+def _counter_name(existing: set[str], file: str) -> str:
+    """Auto-counter name from a source file stem; `_2`, `_3` on collision (021)."""
+    stem = Path(file).stem or "counter"
+    name = stem
+    i = 1
+    while name in existing:
+        i += 1
+        name = f"{stem}_{i}"
+    return name
+
+
+def _first_bound_counter(pj: ProjectJSON) -> str | None:
+    """First counter bound to a data source (default target for new fields)."""
+    for name, cdef in pj.counters.items():
+        if cdef.table is not None:
+            return name
+    return None
 
 
 class ProjectStore:
@@ -391,6 +411,11 @@ class ProjectStore:
                 self._place_source(Path(f), data_dir, folder, ".xlsx", copy_files)
                 for f in xlsx
             ]
+            counters: dict[str, dict] = {}
+            for r in rel_xlsx:
+                cname = _counter_name(set(counters), r)
+                counters[cname] = {"last": 0, "format": "1", "table": r}
+            default_counter = next(iter(counters), None)
             templates: dict[str, dict] = {}
             for f in docx:
                 rel = self._place_source(
@@ -402,22 +427,23 @@ class ProjectStore:
                     i += 1
                     stem = f"{base} ({i})"
                 placeholders = _scan_placeholders(folder / rel)
-                templates[stem] = {
-                    "file": rel,
-                    "fields": {
-                        ph: {"source": "table", "value": ph} for ph in placeholders
-                    },
-                }
+                fields: dict[str, dict] = {}
+                for ph in placeholders:
+                    fdef: dict = {"source": "table", "value": ph}
+                    if default_counter is not None:
+                        fdef["counter_name"] = default_counter
+                    fields[ph] = fdef
+                templates[stem] = {"file": rel, "fields": fields}
 
             pj = validate_pj(
                 {
                     "version": "0.0.0",
                     "templates": templates,
+                    "default_template": next(iter(templates)),
                     "data_sources": [
-                        {"file": r, "mode": "sequential", "start_row": 0}
-                        for r in rel_xlsx
+                        {"file": r, "mode": "sequential"} for r in rel_xlsx
                     ],
-                    "counters": {},
+                    "counters": counters,
                     "filename_template": name,
                     "folder": str(folder),
                 }
@@ -482,6 +508,7 @@ class ProjectStore:
                 logger.warning(f"sync skipped, no folder: {e}")
                 return {}
             added: dict[str, list[str]] = {}
+            default_counter = _first_bound_counter(pj)
             for name, tpl in pj.templates.items():
                 tpl_path = folder / tpl.file
                 if not tpl_path.is_file():
@@ -493,9 +520,16 @@ class ProjectStore:
                     logger.warning(f"sync skipped, unreadable template: {e}")
                     continue
                 new = [ph for ph in placeholders if ph not in tpl.fields]
+                if new and default_counter is None:
+                    logger.warning(
+                        f"sync skipped, no bound counter for new fields: {tpl.file}"
+                    )
+                    continue
                 for ph in new:
                     tpl.fields[ph] = FieldDef(
-                        source=FieldSource.TABLE, value=ph
+                        source=FieldSource.TABLE,
+                        value=ph,
+                        counter_name=default_counter,
                     )
                 if new:
                     added[name] = new
@@ -579,10 +613,20 @@ class ProjectStore:
                 i += 1
                 stem = f"{base} ({i})"
             placeholders = _scan_placeholders(folder / rel)
+            default_counter = _first_bound_counter(pj)
+            if placeholders and default_counter is None:
+                raise StorageError(
+                    "templates",
+                    ["cannot add template: no data source to bind fields"],
+                )
             pj.templates[stem] = TemplateDef(
                 file=rel,
                 fields={
-                    ph: FieldDef(source=FieldSource.TABLE, value=ph)
+                    ph: FieldDef(
+                        source=FieldSource.TABLE,
+                        value=ph,
+                        counter_name=default_counter,
+                    )
                     for ph in placeholders
                 },
             )
@@ -603,9 +647,46 @@ class ProjectStore:
                     "templates",
                     ["cannot remove last template: project needs at least one"],
                 )
+            if name == pj.default_template:
+                raise StorageError("templates", [STRINGS.STORAGE_DEFAULT_TPL])
             del pj.templates[name]
             self.save(pj, name=config_path.stem)
             logger.info("removed template %s from %s", name, config_path.stem)
+
+    def set_default_template(self, ref: str | Path, name: str) -> None:
+        """Choose the project's default template (021); used by window 1."""
+        with self._lock:
+            pj, config_path = self.resolve_project(ref)
+            if name not in pj.templates:
+                raise StorageError("templates", [f"template not found: {name}"])
+            pj.default_template = name
+            self.save(pj, name=config_path.stem)
+            logger.info("default template of %s -> %s", config_path.stem, name)
+
+    def set_template_limit(self, ref: str | Path, name: str, limit: int) -> None:
+        """Persist a per-template document limit (021); 0 = no limit."""
+        with self._lock:
+            pj, config_path = self.resolve_project(ref)
+            if name not in pj.templates:
+                raise StorageError("templates", [f"template not found: {name}"])
+            pj.templates[name].limit = max(0, int(limit))
+            self.save(pj, name=config_path.stem)
+            logger.info("template %s limit of %s -> %s", name, config_path.stem, limit)
+
+    def set_source_mode(self, ref: str | Path, file: str, mode: str) -> None:
+        """Persist one data source's mode (021): sequential/circular/constant."""
+        modes = ("sequential", "circular", "constant")
+        if mode not in modes:
+            raise StorageError("data", [f"unknown mode: {mode}"])
+        with self._lock:
+            pj, config_path = self.resolve_project(ref)
+            for ds in pj.data_sources:
+                if ds.file == file:
+                    ds.mode = mode
+                    self.save(pj, name=config_path.stem)
+                    logger.info("source %s mode of %s -> %s", file, config_path.stem, mode)
+                    return
+            raise StorageError("data", [f"data source not found: {file}"])
 
     def add_source(
         self, ref: str | Path, xlsx: str | Path, copy_files: bool = True
@@ -630,8 +711,15 @@ class ProjectStore:
                     "data", [f"data source already attached: {rel}"]
                 )
             pj.data_sources.append(DataSourceDef(file=rel))
+            cname = _counter_name(set(pj.counters), rel)
+            pj.counters[cname] = CounterDef(last=0, format="1", table=rel)
             self.save(pj, name=config_path.stem)
-            logger.info("attached data source %s to %s", rel, config_path.stem)
+            logger.info(
+                "attached data source %s (counter %s) to %s",
+                rel,
+                cname,
+                config_path.stem,
+            )
             return rel
 
     def delete_project(self, ref: str | Path, delete_folder: bool = False) -> None:

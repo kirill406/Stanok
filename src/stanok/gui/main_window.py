@@ -274,7 +274,6 @@ class MainWindow(QMainWindow):
             else:
                 text = STRINGS.APP_DONE.format(
                     created=result.created,
-                    skipped=result.skipped,
                     errors=len(result.errors),
                     elapsed=f"{result.elapsed:.1f}",
                 )
@@ -295,7 +294,6 @@ class MainWindow(QMainWindow):
                         f"{ref}: "
                         + STRINGS.APP_DONE.format(
                             created=result.created,
-                            skipped=result.skipped,
                             errors=len(result.errors),
                             elapsed=f"{result.elapsed:.1f}",
                         )

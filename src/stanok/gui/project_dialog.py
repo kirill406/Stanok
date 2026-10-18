@@ -1,6 +1,6 @@
 # Copyright (C) 2026 Kirill Borovoy
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Window 2: project templates, per-template counts and runs."""
+"""Window 2: project templates, sources, per-template runs (021)."""
 
 from __future__ import annotations
 
@@ -8,15 +8,18 @@ import logging
 
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
+    QButtonGroup,
     QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
     QFileDialog,
+    QHBoxLayout,
     QLabel,
     QMessageBox,
     QProgressDialog,
     QPushButton,
+    QRadioButton,
     QSpinBox,
     QTableWidget,
     QTableWidgetItem,
@@ -31,9 +34,15 @@ from .worker import GenerateWorker
 
 logger = logging.getLogger(__name__)
 
+MODE_LABELS = (
+    ("sequential", STRINGS.MODE_SEQUENTIAL),
+    ("circular", STRINGS.MODE_CIRCULAR),
+    ("constant", STRINGS.MODE_CONSTANT),
+)
+
 
 class ProjectDialog(QDialog):
-    """Modal project view: template table with counts and per-template runs."""
+    """Modal project view: sources table + template table with runs (021)."""
 
     def __init__(
         self, project_ref: str, store: ProjectStore | None = None, parent=None
@@ -50,6 +59,8 @@ class ProjectDialog(QDialog):
         self._config_name = config_path.stem
         self._folder = project_folder(project_ref, pj, config_path, self._store)
         self._template_names = list(pj.templates)
+        self._default_group = QButtonGroup(self)
+        self._default_group.setExclusive(True)
         self._build_ui()
 
     # -- UI construction -------------------------------------------------
@@ -58,27 +69,42 @@ class ProjectDialog(QDialog):
         self.resize(900, 650)
         layout = QVBoxLayout(self)
 
-        layout.addWidget(QLabel(STRINGS.PROJ_DATA.format(path=self._folder)))
-        layout.addWidget(QLabel(STRINGS.PROJ_SOURCE))
-        self.source_combo = QComboBox(self)
-        layout.addWidget(self.source_combo)
+        layout.addWidget(QLabel(STRINGS.PROJ_SOURCES_TITLE))
+        self.sources_table = QTableWidget(self)
+        self.sources_table.setColumnCount(2)
+        self.sources_table.setHorizontalHeaderLabels(
+            [STRINGS.PROJ_SRC_COL_FILE, STRINGS.PROJ_SRC_COL_TYPE]
+        )
+        self.sources_table.verticalHeader().setVisible(False)
         self._reload_sources()
-        self.add_src_btn = QPushButton(STRINGS.PROJ_SOURCE_ADD, self)
-        self.add_src_btn.clicked.connect(self._on_add_source)
-        layout.addWidget(self.add_src_btn)
-
-        self.add_tpl_btn = QPushButton(STRINGS.TPL_ADD, self)
-        self.add_tpl_btn.clicked.connect(self._on_add_template)
-        layout.addWidget(self.add_tpl_btn)
+        layout.addWidget(self.sources_table)
 
         self.table = QTableWidget(self)
-        self.table.setColumnCount(4)
+        self.table.setColumnCount(5)
         self.table.setHorizontalHeaderLabels(
-            [STRINGS.PROJ_TPL_COL, STRINGS.PROJ_COUNT_COL, "", ""]
+            [
+                STRINGS.PROJ_TPL_COL,
+                STRINGS.PROJ_COUNT_COL,
+                STRINGS.PROJ_DEFAULT_COL,
+                "",
+                "",
+            ]
         )
         self.table.cellClicked.connect(self._on_cell_clicked)
         self._reload_templates()
         layout.addWidget(self.table)
+
+        add_row = QHBoxLayout()
+        self.add_tpl_btn = QPushButton(STRINGS.TPL_ADD, self)
+        self.add_tpl_btn.clicked.connect(self._on_add_template)
+        add_row.addWidget(self.add_tpl_btn)
+        self.add_src_btn = QPushButton(STRINGS.PROJ_SRC_ADD, self)
+        self.add_src_btn.clicked.connect(self._on_add_source)
+        add_row.addWidget(self.add_src_btn)
+        self.settings_btn = QPushButton(STRINGS.PROJ_SETTINGS, self)
+        self.settings_btn.clicked.connect(self._on_settings)
+        add_row.addWidget(self.settings_btn)
+        layout.addLayout(add_row)
 
         self.delete_btn = QPushButton(STRINGS.PROJ_DELETE, self)
         self.delete_btn.setStyleSheet("color: #b71c1c;")
@@ -92,38 +118,28 @@ class ProjectDialog(QDialog):
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
 
-    def _reload_sources(self, keep: str | None = None) -> None:
-        """Rebuild source combo, preserving selection when possible."""
-        if keep is None:
-            keep = self.source_combo.currentData()
-        self.source_combo.blockSignals(True)
-        self.source_combo.clear()
-        self.source_combo.addItem(STRINGS.PROJ_SOURCE_ALL, None)
-        for ds in self._pj.data_sources:
-            self.source_combo.addItem(ds.file, ds.file)
-        idx = self.source_combo.findData(keep)
-        self.source_combo.setCurrentIndex(idx if idx >= 0 else 0)
-        self.source_combo.blockSignals(False)
-
-    def _on_add_source(self) -> None:
-        if self._running:
-            return
-        path, _ = QFileDialog.getOpenFileName(
-            self, STRINGS.PROJ_SOURCE_ADD, "", "Excel (*.xlsx)"
-        )
-        if not path:
-            return
-        try:
-            added = self._store.add_source(self._project_ref, path)
-        except Exception as e:
-            logger.warning(f"add source failed: {e}", exc_info=True)
-            QMessageBox.warning(self, STRINGS.MAIN_ERROR_TITLE, str(e))
-            return
+    def _reload_sources(self) -> None:
+        """Rebuild source rows: file (read-only) + editable mode combo (021)."""
         self._pj, _ = self._store.resolve_project(self._project_ref)
-        self._reload_sources(keep=added)
+        self.sources_table.setRowCount(len(self._pj.data_sources))
+        for row, ds in enumerate(self._pj.data_sources):
+            file_item = QTableWidgetItem(ds.file)
+            file_item.setFlags(file_item.flags() & ~Qt.ItemIsEditable)
+            self.sources_table.setItem(row, 0, file_item)
+            combo = QComboBox(self.sources_table)
+            for key, label in MODE_LABELS:
+                combo.addItem(label, key)
+            combo.blockSignals(True)
+            idx = combo.findData(ds.mode)
+            combo.setCurrentIndex(idx if idx >= 0 else 0)
+            combo.blockSignals(False)
+            combo.currentIndexChanged.connect(
+                lambda _i=0, file=ds.file: self._on_mode_changed(file)
+            )
+            self.sources_table.setCellWidget(row, 1, combo)
 
     def _reload_templates(self) -> None:
-        """Re-resolve PJ and rebuild template rows (015).
+        """Re-resolve PJ and rebuild template rows (015/021).
 
         Broken config mid-session → warning, existing rows stay (016/FR-10).
         """
@@ -134,27 +150,43 @@ class ProjectDialog(QDialog):
             QMessageBox.warning(self, STRINGS.MAIN_ERROR_TITLE, str(e))
             return
         self._template_names = list(self._pj.templates)
+        for btn in list(self._default_group.buttons()):
+            self._default_group.removeButton(btn)
         self.table.setRowCount(len(self._template_names))
         for row, name in enumerate(self._template_names):
             name_item = QTableWidgetItem(name)
             name_item.setFlags(name_item.flags() & ~Qt.ItemIsEditable)
             self.table.setItem(row, 0, name_item)
+            tdef = self._pj.templates[name]
             spin = QSpinBox(self.table)
             spin.setRange(0, 1_000_000)
+            spin.setValue(tdef.limit)
             spin.setToolTip(STRINGS.PROJ_COUNT_TIP)
+            spin.valueChanged.connect(self._mark_template_dirty)
             self.table.setCellWidget(row, 1, spin)
+            radio = QRadioButton(self.table)
+            radio.setToolTip(STRINGS.PROJ_DEFAULT_TIP)
+            radio.blockSignals(True)
+            radio.setChecked(name == self._pj.default_template)
+            radio.blockSignals(False)
+            radio.toggled.connect(
+                lambda checked=False, template=name: checked
+                and self._on_default_changed(template)
+            )
+            self._default_group.addButton(radio)
+            self.table.setCellWidget(row, 2, radio)
             btn = QPushButton(STRINGS.PROJ_RUN, self.table)
             btn.clicked.connect(
                 lambda _checked=False, template=name: self._on_run_template(template)
             )
-            self.table.setCellWidget(row, 2, btn)
+            self.table.setCellWidget(row, 3, btn)
             rm_btn = QPushButton(STRINGS.TPL_REMOVE, self.table)
             rm_btn.clicked.connect(
                 lambda _checked=False, template=name: self._on_remove_template(
                     template
                 )
             )
-            self.table.setCellWidget(row, 3, rm_btn)
+            self.table.setCellWidget(row, 4, rm_btn)
 
     # -- window 3 hook ------------------------------------------------------
     def _on_cell_clicked(self, row: int, col: int) -> None:
@@ -171,7 +203,55 @@ class ProjectDialog(QDialog):
             return
         dialog.exec_()
 
-    # -- template management (015) -----------------------------------------
+    # -- sources / templates management ------------------------------------
+    def _on_mode_changed(self, file: str) -> None:
+        if self._running:
+            return
+        row = next(
+            (i for i, ds in enumerate(self._pj.data_sources) if ds.file == file), None
+        )
+        if row is None:
+            return
+        combo = self.sources_table.cellWidget(row, 1)
+        mode = combo.currentData()
+        try:
+            self._store.set_source_mode(self._project_ref, file, mode)
+        except Exception as e:
+            logger.warning(f"set source mode failed: {e}", exc_info=True)
+            QMessageBox.warning(self, STRINGS.MAIN_ERROR_TITLE, str(e))
+            return
+        self._pj, _ = self._store.resolve_project(self._project_ref)
+
+    def _on_default_changed(self, template_name: str) -> None:
+        if self._running:
+            return
+        try:
+            self._store.set_default_template(self._project_ref, template_name)
+        except Exception as e:
+            logger.warning(f"set default template failed: {e}", exc_info=True)
+            QMessageBox.warning(self, STRINGS.MAIN_ERROR_TITLE, str(e))
+            return
+        self._pj, _ = self._store.resolve_project(self._project_ref)
+
+    def _mark_template_dirty(self) -> None:
+        pass  # limit is persisted on run/settings-close; no global dirty flag
+
+    def _on_add_source(self) -> None:
+        if self._running:
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            self, STRINGS.PROJ_SRC_ADD, "", "Excel (*.xlsx)"
+        )
+        if not path:
+            return
+        try:
+            self._store.add_source(self._project_ref, path)
+        except Exception as e:
+            logger.warning(f"add source failed: {e}", exc_info=True)
+            QMessageBox.warning(self, STRINGS.MAIN_ERROR_TITLE, str(e))
+            return
+        self._reload_sources()
+
     def _on_add_template(self) -> None:
         if self._running:
             return
@@ -188,11 +268,30 @@ class ProjectDialog(QDialog):
             return
         self._reload_templates()
 
+    def _on_settings(self) -> None:
+        """Open the create dialog in edit mode (021, §2.7)."""
+        if self._running:
+            return
+        from .create_dialog import CreateDialog
+
+        dialog = CreateDialog(
+            self._store, self._folder, self, edit_ref=self._project_ref
+        )
+        if dialog.exec_():
+            self._pj, _ = self._store.resolve_project(self._project_ref)
+            self._reload_sources()
+            self._reload_templates()
+
     def _on_remove_template(self, template_name: str) -> None:
         if self._running:
             return
         if len(self._template_names) == 1:
             QMessageBox.information(self, STRINGS.TPL_REMOVE, STRINGS.TPL_LAST_KEPT)
+            return
+        if template_name == self._pj.default_template:
+            QMessageBox.information(
+                self, STRINGS.TPL_REMOVE, STRINGS.TPL_DEFAULT_LOCKED
+            )
             return
         answer = QMessageBox.question(
             self, STRINGS.TPL_REMOVE, STRINGS.TPL_REMOVE_ASK.format(name=template_name)
@@ -240,11 +339,15 @@ class ProjectDialog(QDialog):
         row = self._template_names.index(template_name)
         spin = self.table.cellWidget(row, 1)
         limit = spin.value()
+        try:
+            self._store.set_template_limit(self._project_ref, template_name, limit)
+        except Exception as e:
+            logger.warning(f"save template limit failed: {e}", exc_info=True)
+            QMessageBox.warning(self, STRINGS.MAIN_ERROR_TITLE, str(e))
+            self._running = False
+            return
         cmd = GenerateCommand(
-            project_ref=self._project_ref,
-            template=template_name,
-            data_source=self.source_combo.currentData(),
-            max_docs=limit if limit > 0 else None,
+            project_ref=self._project_ref, template=template_name
         )
         self._progress_dialog = QProgressDialog(
             STRINGS.MAIN_PROGRESS_TITLE, STRINGS.MAIN_CANCEL, 0, 0, self
@@ -277,7 +380,6 @@ class ProjectDialog(QDialog):
         self._finish_run()
         text = STRINGS.APP_DONE.format(
             created=report.created,
-            skipped=report.skipped,
             errors=len(report.errors),
             elapsed=f"{report.elapsed:.1f}",
         )

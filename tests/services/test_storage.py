@@ -39,9 +39,9 @@ def sample_pj():
             }
         },
         "data_sources": [
-            {"file": "data.xlsx", "mode": "sequential", "start_row": 0}
+            {"file": "data.xlsx", "mode": "sequential"}
         ],
-        "counters": {"counter1": {"last": 0, "format": "plain"}},
+        "counters": {"counter1": {"last": 0, "format": "plain", "table": "data.xlsx"}},
         "filename_template": "output_{template}_{i}.docx",
     })
 
@@ -307,6 +307,7 @@ def test_extract_name_variants(store, sample_pj):
     raw = sample_pj.model_dump(mode="json")
     raw["filename_template"] = ""
     raw["templates"] = {"t": {"file": "Шаблоны/Договор.docx", "fields": {}}}
+    raw["default_template"] = ""
     pj = validate_pj(raw)
     assert store._extract_project_name(pj) == "Договор"
     pj2 = sample_pj.model_copy(update={"filename_template": "", "templates": {}})
@@ -394,8 +395,11 @@ def test_init_copies_and_builds_pj(store, tmp_path):
     assert (tmp_path / "proj" / "Шаблоны" / "tpl.docx").is_file()
     assert pj.templates["tpl"].file == "Шаблоны/tpl.docx"
     assert pj.templates["tpl"].fields["ФИО"].source == "table"
+    assert pj.templates["tpl"].fields["ФИО"].counter_name == "data"
     assert pj.data_sources[0].file == "Данные/data.xlsx"
-    assert pj.counters == {}
+    assert set(pj.counters) == {"data"}
+    assert pj.counters["data"].table == "Данные/data.xlsx"
+    assert pj.default_template == "tpl"
     assert (store.home_dir / "nov.stanok").is_file()
     assert any(r.config == "nov" for r in store.get_recent())
 
@@ -610,6 +614,7 @@ def test_remove_template(store, tmp_path):
     folder = _init_simple(store, tmp_path)
     xlsx, tpl = _src_files(tmp_path, "src2")
     store.add_template(folder, tpl)
+    store.set_default_template(folder, "tpl (1)")
     store.remove_template(folder, "tpl")
     pj = store.load("proj")
     assert set(pj.templates) == {"tpl (1)"}
@@ -617,6 +622,29 @@ def test_remove_template(store, tmp_path):
         store.remove_template(folder, "tpl (1)")
     with pytest.raises(StorageError, match="template not found"):
         store.remove_template(folder, "nope")
+
+
+def test_remove_default_template_locked(store, tmp_path):
+    from tests.services.test_storage import _src_files
+
+    folder = _init_simple(store, tmp_path)
+    _, tpl = _src_files(tmp_path, "src2")
+    store.add_template(folder, tpl)
+    with pytest.raises(StorageError, match="по умолчанию"):
+        store.remove_template(folder, "tpl")
+    assert "tpl" in store.load("proj").templates
+
+
+def test_set_default_template(store, tmp_path):
+    from tests.services.test_storage import _src_files
+
+    folder = _init_simple(store, tmp_path)
+    _, tpl = _src_files(tmp_path, "src2")
+    store.add_template(folder, tpl)
+    store.set_default_template(folder, "tpl (1)")
+    assert store.load("proj").default_template == "tpl (1)"
+    with pytest.raises(StorageError, match="template not found"):
+        store.set_default_template(folder, "nope")
 
 
 def test_remove_recent(store):

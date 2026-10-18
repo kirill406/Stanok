@@ -173,7 +173,9 @@ def test_headers_no_sources(qapp, tmp_path, store):
     folder = make_project(tmp_path / "proj")
     data = _json.loads((folder / "project.stanok").read_text())
     data["data_sources"] = []
-    (folder / "project.stanok").write_text(_json.dumps(data))
+    data["counters"] = {}
+    data["templates"]["Договор"]["fields"] = {}
+    (folder / "project.stanok").write_text(_json.dumps(data, ensure_ascii=False))
     dlg = FieldsDialog(str(folder), "Договор", store=store)
     assert dlg._read_headers(None) == []
     dlg.close()
@@ -256,11 +258,11 @@ def test_switch_to_constant_prefills_and_saves(qapp, tmp_path, store):
     assert dlg._rows["ФИО"]["const"].text() == "{{ФИО}}"
     dlg._on_save()
     saved = _saved_pj(store)["templates"]["Договор"]["fields"]["ФИО"]
-    assert saved == {"source": "constant", "value": "{{ФИО}}", "table": None}
+    assert saved == {"source": "constant", "value": "{{ФИО}}", "counter_name": None}
     dlg.close()
 
 
-def test_table_file_and_column_saved(qapp, tmp_path, store):
+def test_table_counter_and_column_saved(qapp, tmp_path, store):
     from tests.services.test_storage import _src_files
 
     folder = make_project(tmp_path / "proj")
@@ -271,19 +273,24 @@ def test_table_file_and_column_saved(qapp, tmp_path, store):
     shutil.copy(xlsx, folder / "Данные" / "data2.xlsx")
     pj_path = folder / "project.stanok"
     data = json.loads(pj_path.read_text())
-    data["data_sources"].append(
-        {"file": "Данные/data2.xlsx", "mode": "sequential", "start_row": 0}
-    )
+    data["data_sources"].append({"file": "Данные/data2.xlsx", "mode": "sequential"})
+    data["counters"]["data2"] = {
+        "last": 0,
+        "format": "1",
+        "table": "Данные/data2.xlsx",
+        "start_row": 0,
+        "resume": 1,
+    }
     pj_path.write_text(json.dumps(data, ensure_ascii=False))
     dlg = FieldsDialog(str(folder), "Договор", store=store)
     st = dlg._rows["ФИО"]
-    assert st["file"].count() == 2
-    st["file"].setCurrentIndex(1)
+    assert st["cname"].count() == 3
+    st["cname"].setCurrentIndex(st["cname"].findData("data2"))
     assert st["col"].count() == 2
     st["col"].setCurrentIndex(0)
     dlg._on_save()
     saved = _saved_pj(store)["templates"]["Договор"]["fields"]["ФИО"]
-    assert saved["table"] == "Данные/data2.xlsx"
+    assert saved["counter_name"] == "data2"
     assert saved["value"] == "ФИО"
     dlg.close()
 
@@ -292,8 +299,8 @@ def test_legacy_table_without_file(qapp, tmp_path, store):
     folder = make_project(tmp_path / "proj")
     dlg = FieldsDialog(str(folder), "Договор", store=store)
     st = dlg._rows["ФИО"]
-    assert st["file"].currentData() == "Данные/data.xlsx"
-    assert st["file"].count() == 1
+    assert st["cname"].currentData() == "data"
+    assert st["cname"].count() == 2
     assert st["col"].currentText() == "ФИО"
     dlg.close()
 
@@ -306,18 +313,25 @@ def test_counter_create_via_table(qapp, tmp_path, store, monkeypatch):
         QInputDialog, "getText", lambda *a, **k: ("doc", True)
     )
     dlg = FieldsDialog(str(folder), "Договор", store=store)
-    assert dlg.ctable.rowCount() == 1
-    dlg._on_counter_create()
     assert dlg.ctable.rowCount() == 2
+    dlg._on_counter_create()
+    assert dlg.ctable.rowCount() == 3
     assert dlg._rows["Номер"]["cname"].findData("doc") >= 0
     _set_type(dlg, "ФИО", "counter")
     st = dlg._rows["ФИО"]
     st["cname"].setCurrentIndex(st["cname"].findData("doc"))
-    st["fmt"].setCurrentIndex(st["fmt"].findData("001"))
+    cfmt = dlg._crows["doc"]["fmt"]
+    cfmt.setCurrentIndex(cfmt.findData("001"))
     dlg._on_save()
     saved = _saved_pj(store)
     assert saved["templates"]["Договор"]["fields"]["ФИО"]["value"] == "doc"
-    assert saved["counters"]["doc"] == {"last": 0, "format": "001", "table": None}
+    assert saved["counters"]["doc"] == {
+        "last": 0,
+        "format": "001",
+        "table": None,
+        "start_row": 0,
+        "resume": 1,
+    }
     dlg.close()
 
 
@@ -333,7 +347,7 @@ def test_counter_create_duplicate_warns(qapp, tmp_path, store, monkeypatch):
     dlg = FieldsDialog(str(folder), "Договор", store=store)
     dlg._on_counter_create()
     assert warnings and "num" in warnings[0]
-    assert dlg.ctable.rowCount() == 1
+    assert dlg.ctable.rowCount() == 2
     dlg.close()
 
 
@@ -379,7 +393,7 @@ def test_today_type_saves(qapp, tmp_path, store):
     _set_type(dlg, "Номер", "today")
     dlg._on_save()
     saved = _saved_pj(store)["templates"]["Договор"]["fields"]["Номер"]
-    assert saved == {"source": "today", "value": "dmy", "table": None}
+    assert saved == {"source": "today", "value": "dmy", "counter_name": None}
     dlg.close()
 
 
@@ -407,7 +421,8 @@ def test_counter_select_existing_loads(qapp, tmp_path, store):
     _set_type(dlg, "ФИО", "counter")
     st = dlg._rows["ФИО"]
     st["cname"].setCurrentIndex(st["cname"].findData("num"))
-    st["fmt"].setCurrentIndex(st["fmt"].findData("01"))
+    cfmt = dlg._crows["num"]["fmt"]
+    cfmt.setCurrentIndex(cfmt.findData("01"))
     dlg._crows["num"]["last"].setText("7")
     assert st["cprev"].text() == "07"
     dlg._on_save()
@@ -424,7 +439,7 @@ def test_counter_create_cancel_noop(qapp, tmp_path, store, monkeypatch):
     monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: ("", False))
     dlg = FieldsDialog(str(folder), "Договор", store=store)
     dlg._on_counter_create()
-    assert dlg.ctable.rowCount() == 1
+    assert dlg.ctable.rowCount() == 2
     dlg.close()
 
 
@@ -438,7 +453,7 @@ def test_date_format_saves_preset(qapp, tmp_path, store):
     assert st["dlabel"].text() == "октября"
     dlg._on_save()
     saved = _saved_pj(store)["templates"]["Договор"]["fields"]["Дата"]
-    assert saved == {"source": "today", "value": "month_ru", "table": None}
+    assert saved == {"source": "today", "value": "month_ru", "counter_name": None}
     dlg.close()
 
 
@@ -484,24 +499,6 @@ def test_date_preset_reopen_selects(qapp, tmp_path, store):
     assert dlg2._rows["Дата"]["dfmt"].currentData() == "month_ru"
     assert dlg2._rows["Дата"]["dlabel"].text() == "октября"
     dlg2.close()
-
-
-def test_counter_no_counters_blocks_save(qapp, tmp_path, store, monkeypatch):
-    import json as _json
-
-    folder = make_project(tmp_path / "proj", with_counter=False)
-    warnings = []
-    monkeypatch.setattr(
-        QMessageBox, "warning", lambda *a: warnings.append(a[-1])
-    )
-    dlg = FieldsDialog(str(folder), "Договор", store=store)
-    _set_type(dlg, "ФИО", "counter")
-    assert dlg._rows["ФИО"]["cname"].count() == 0
-    dlg._on_save()
-    assert any("выберите счётчик" in w for w in warnings)
-    data = _json.loads((store.home_dir / "proj.stanok").read_text())
-    assert data["counters"] == {}
-    dlg.close()
 
 
 def test_result_column(qapp, tmp_path, store):
@@ -588,10 +585,9 @@ def test_today_empty_format_blocks_save(qapp, tmp_path, store, monkeypatch):
 def test_counters_table_binding_saves(qapp, tmp_path, store):
     folder = make_project(tmp_path / "proj")
     dlg = FieldsDialog(str(folder), "Договор", store=store)
-    assert dlg.ctable.rowCount() == 1
-    assert dlg.ctable.item(0, 0).text() == "num"
-    bind = dlg._crows["num"]["bind"]
-    assert bind.currentData() is None
+    assert dlg.ctable.rowCount() == 2
+    assert dlg._crows["num"]["table"].currentData() is None
+    bind = dlg._crows["num"]["table"]
     bind.setCurrentIndex(bind.findData("Данные/data.xlsx"))
     dlg._crows["num"]["last"].setText("9")
     dlg._on_save()

@@ -5,7 +5,7 @@
 
 ## Active
 
-- `021-counters` — счётчики на источники, композиция из нескольких источников, default_template.
+- (нет)
 
 ## Done
 
@@ -29,6 +29,7 @@
 - `018-observability` — stanok.log, настройки, STANOK_HOME.
 - `019-release` — стабилизация, README, src 100%, релиз 0.1.0.
 - `020-field-sources` — смена источника поля в окне 3.
+- `021-counters` — счётчики на источники, композиция из нескольких источников, default_template.
 
 ## Conventions
 

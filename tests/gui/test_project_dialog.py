@@ -131,21 +131,18 @@ def test_open_missing_project_raises(qapp, tmp_path, store):
         ProjectDialog("nope", store=store)
 
 
-def test_source_combo_runs_selected_only(qapp, tmp_path, store, monkeypatch):
-    from tests.services.test_generate import _add_source
+def test_source_mode_change_persists(qapp, tmp_path, store):
+    import json
 
-    infos = []
-    monkeypatch.setattr(QMessageBox, "information", lambda *a: infos.append(a[-1]))
     folder = make_project(tmp_path / "proj")
-    second = _add_source(folder)
     dlg = ProjectDialog(str(folder), store=store)
-    assert dlg.source_combo.count() == 3
-    assert dlg.source_combo.itemText(0) == STRINGS.PROJ_SOURCE_ALL
-    dlg.source_combo.setCurrentIndex(2)
-    assert dlg.source_combo.currentData() == second
-    dlg._on_run_template("Договор")
-    _await_run(dlg)
-    assert infos and "создано 1" in infos[0]
+    assert dlg.sources_table.rowCount() == 1
+    assert dlg.sources_table.item(0, 0).text() == "Данные/data.xlsx"
+    combo = dlg.sources_table.cellWidget(0, 1)
+    assert combo.currentData() == "sequential"
+    combo.setCurrentIndex(combo.findData("circular"))
+    saved = json.loads((store.home_dir / "proj.stanok").read_text())
+    assert saved["data_sources"][0]["mode"] == "circular"
     dlg.close()
 
 
@@ -183,11 +180,97 @@ def test_remove_template_with_confirm(qapp, tmp_path, store, monkeypatch):
     monkeypatch.setattr(QMessageBox, "information", lambda *a: infos.append(a[-1]))
     dlg = ProjectDialog(str(folder), store=store)
     assert dlg.table.rowCount() == 2
-    dlg._on_remove_template("Договор")
-    assert dlg.table.rowCount() == 1
     dlg._on_remove_template("extra")
+    assert dlg.table.rowCount() == 1
+    dlg._on_remove_template("Договор")
     assert infos == [STRINGS.TPL_LAST_KEPT]
     assert dlg.table.rowCount() == 1
+    dlg.close()
+
+
+def test_remove_default_template_locked(qapp, tmp_path, store, monkeypatch):
+    folder = make_project(tmp_path / "proj")
+    extra = _extra_docx(tmp_path / "extra.docx")
+    store.add_template(folder, extra)
+    infos = []
+    monkeypatch.setattr(QMessageBox, "information", lambda *a: infos.append(a[-1]))
+    dlg = ProjectDialog(str(folder), store=store)
+    dlg._on_remove_template("Договор")
+    assert infos == [STRINGS.TPL_DEFAULT_LOCKED]
+    assert dlg.table.rowCount() == 2
+    dlg.close()
+
+
+def test_default_template_radio_changes(qapp, tmp_path, store):
+    import json
+
+    folder = make_project(tmp_path / "proj")
+    data = json.loads((folder / "project.stanok").read_text())
+    data["templates"]["Второй"] = json.loads(
+        json.dumps(data["templates"]["Договор"])
+    )
+    (folder / "project.stanok").write_text(json.dumps(data, ensure_ascii=False))
+    dlg = ProjectDialog(str(folder), store=store)
+    assert dlg.table.rowCount() == 2
+    dlg.table.cellWidget(1, 2).setChecked(True)
+    pj, _ = store.resolve_project(str(folder))
+    assert pj.default_template == "Второй"
+    dlg.close()
+
+
+def test_source_mode_change_error_warns(qapp, tmp_path, store, monkeypatch):
+    folder = make_project(tmp_path / "proj")
+    warnings = []
+    monkeypatch.setattr(
+        QMessageBox, "warning", lambda *a: warnings.append(a[-1])
+    )
+    dlg = ProjectDialog(str(folder), store=store)
+
+    def boom(*a, **k):
+        raise RuntimeError("locked")
+
+    monkeypatch.setattr(store, "set_source_mode", boom)
+    combo = dlg.sources_table.cellWidget(0, 1)
+    combo.setCurrentIndex(combo.findData("circular"))
+    assert warnings
+    dlg.close()
+
+
+def test_run_template_limit_save_error(qapp, tmp_path, store, monkeypatch):
+    folder = make_project(tmp_path / "proj")
+    warnings = []
+    monkeypatch.setattr(
+        QMessageBox, "warning", lambda *a: warnings.append(a[-1])
+    )
+    dlg = ProjectDialog(str(folder), store=store)
+
+    def boom(*a, **k):
+        raise RuntimeError("locked")
+
+    monkeypatch.setattr(store, "set_template_limit", boom)
+    dlg._on_run_template("Договор")
+    assert warnings
+    assert not dlg._running
+    dlg.close()
+
+
+def test_settings_button_opens_edit_dialog(qapp, tmp_path, store, monkeypatch):
+    import stanok.gui.create_dialog as cd
+
+    opened = []
+
+    class Fake:
+        def __init__(self, *a, **k):
+            opened.append(k.get("edit_ref"))
+
+        def exec_(self):
+            return True
+
+    monkeypatch.setattr(cd, "CreateDialog", Fake)
+    folder = make_project(tmp_path / "proj")
+    dlg = ProjectDialog(str(folder), store=store)
+    dlg._on_settings()
+    assert opened == [str(folder)]
     dlg.close()
 
 
@@ -314,6 +397,7 @@ def test_fields_dialog_missing_template_warns(qapp, tmp_path, store, monkeypatch
     dlg = ProjectDialog(str(folder), store=store)
     data = json.loads((store.home_dir / "proj.stanok").read_text())
     data["templates"] = {"Чужой": data["templates"]["Договор"]}
+    data["default_template"] = "Чужой"
     (store.home_dir / "proj.stanok").write_text(json.dumps(data))
     dlg._open_fields_dialog("Договор")
     assert warnings and "template not found" in warnings[0]
@@ -394,7 +478,7 @@ def test_open_syncs_new_fields(qapp, tmp_path, store):
     fld.close()
 
 
-def test_add_source_reloads_combo(qapp, tmp_path, store, monkeypatch):
+def test_add_source_reloads_table(qapp, tmp_path, store, monkeypatch):
     from PyQt5.QtWidgets import QFileDialog
 
     from tests.services.test_storage import _src_files
@@ -405,16 +489,15 @@ def test_add_source_reloads_combo(qapp, tmp_path, store, monkeypatch):
         QFileDialog, "getOpenFileName", lambda *a, **k: (str(xlsx), "")
     )
     dlg = ProjectDialog(str(folder), store=store)
-    assert dlg.source_combo.count() == 2
+    assert dlg.sources_table.rowCount() == 1
     dlg._on_add_source()
-    assert dlg.source_combo.count() == 3
-    assert dlg.source_combo.currentData() == "Данные/data (1).xlsx"
+    assert dlg.sources_table.rowCount() == 2
     from PyQt5.QtWidgets import QLabel
 
     assert any(
-        w.text() == "Источники:" for w in dlg.findChildren(QLabel)
+        w.text() == STRINGS.PROJ_SOURCES_TITLE for w in dlg.findChildren(QLabel)
     )
-    assert dlg.add_src_btn.text() == STRINGS.PROJ_SOURCE_ADD
+    assert dlg.add_src_btn.text() == STRINGS.PROJ_SRC_ADD
     dlg.close()
 
 
@@ -436,7 +519,7 @@ def test_add_source_guards(qapp, tmp_path, store, monkeypatch):
         QFileDialog, "getOpenFileName", lambda *a, **k: ("", "")
     )
     dlg._on_add_source()
-    assert dlg.source_combo.count() == 2
+    assert dlg.sources_table.rowCount() == 1
 
     bad = tmp_path / "notes.txt"
     bad.write_text("hi")

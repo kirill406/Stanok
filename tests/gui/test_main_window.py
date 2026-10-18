@@ -319,6 +319,45 @@ def test_create_dialog_shows_error(qapp, tmp_path, store, monkeypatch):
     dlg.close()
 
 
+def test_create_dialog_settings_mode(qapp, tmp_path, store):
+    from stanok.gui.create_dialog import CreateDialog
+
+    folder = make_project(tmp_path / "proj")
+    dlg = CreateDialog(store, "", None, edit_ref=str(folder))
+    assert dlg.windowTitle() == STRINGS.CRT_EDIT_TITLE
+    assert dlg.name_edit.isReadOnly()
+    assert dlg.name_edit.text() == "proj"
+    assert dlg.default_combo.currentData() == "Договор"
+    new_folder = tmp_path / "moved"
+    new_folder.mkdir()
+    dlg.folder_edit.setText(str(new_folder))
+    dlg._on_create()
+    assert dlg.result()
+    pj = store.load("proj")
+    assert pj.folder == str(new_folder.resolve())
+    dlg.close()
+
+
+def test_create_dialog_settings_error_warns(qapp, tmp_path, store, monkeypatch):
+    from stanok.gui.create_dialog import CreateDialog
+
+    folder = make_project(tmp_path / "proj")
+    warnings = []
+    monkeypatch.setattr(
+        QMessageBox, "warning", lambda *a: warnings.append(a[-1])
+    )
+    dlg = CreateDialog(store, "", None, edit_ref=str(folder))
+
+    def boom(*a, **k):
+        raise RuntimeError("locked")
+
+    monkeypatch.setattr(store, "set_project_folder", boom)
+    dlg._on_create()
+    assert warnings
+    assert not dlg.result()
+    dlg.close()
+
+
 def test_generate_one_end_to_end(qapp, tmp_path, store, monkeypatch):
     infos = []
     monkeypatch.setattr(QMessageBox, "information", lambda *a: infos.append(a[-1]))

@@ -102,20 +102,15 @@ class FieldSource(str, Enum):
 class FieldDef(_WarnExtra):
     source: FieldSource
     value: Any = None
-    table: str | None = None  # TABLE: source file (020); None = any (legacy)
-
-    @field_validator("table")
-    @classmethod
-    def _relative_table(cls, v: str | None) -> str | None:
-        if v is None:
-            return None
-        return _check_relative_path(v, "templates.<name>.fields.table")
+    counter_name: str | None = None  # TABLE: counter ref, required (021)
 
 
 class CounterDef(_WarnExtra):
     last: int = 0
     format: str = "1"  # 020: width 1 | 01 | 001 | 0001 (zero-pad); legacy plain/month still render
-    table: str | None = None  # bound source file (020); None = counts everywhere
+    table: str | None = None  # bound source file (021); None = numeric counter
+    start_row: int = 0  # 021: position/cursor (variant A: start + current)
+    resume: int = 1  # 021: 1 — cursor persists after run; 0 — keep start_row
 
     @field_validator("table")
     @classmethod
@@ -128,6 +123,7 @@ class CounterDef(_WarnExtra):
 class TemplateDef(_WarnExtra):
     file: str
     fields: dict[str, FieldDef] = {}
+    limit: int = 0  # 021: per-template document limit; 0 = no limit
 
     @field_validator("file")
     @classmethod
@@ -138,7 +134,6 @@ class TemplateDef(_WarnExtra):
 class DataSourceDef(_WarnExtra):
     file: str
     mode: str = "sequential"  # sequential | circular | constant
-    start_row: int = 0  # > 0 означает «продолжать» (resume без отдельного флага)
 
     @field_validator("file")
     @classmethod
@@ -153,6 +148,7 @@ class ProjectJSON(_WarnExtra):
     counters: dict[str, CounterDef] = {}
     filename_template: str = "{template} ({i})"
     folder: str | None = None  # absolute path with Данные/Шаблоны (020)
+    default_template: str = ""  # 021: template for window 1; "" = first template
 
     @field_validator("folder")
     @classmethod
@@ -165,6 +161,46 @@ class ProjectJSON(_WarnExtra):
         if not os.path.isabs(value):
             logger.warning("project folder is not absolute: %s", value)
         return value
+
+    @model_validator(mode="after")
+    def _check_relations(self) -> "ProjectJSON":
+        names = list(self.templates)
+        if not self.default_template and names:
+            self.default_template = names[0]
+        if self.default_template and self.default_template not in self.templates:
+            raise ValueError(
+                f"default_template '{self.default_template}' not in templates"
+            )
+        files = [ds.file for ds in self.data_sources]
+        for tname, tdef in self.templates.items():
+            for fname, fdef in tdef.fields.items():
+                if fdef.source != FieldSource.TABLE:
+                    continue
+                cname = fdef.counter_name
+                if not cname:
+                    raise ValueError(
+                        f"table field needs counter_name: {tname}.{fname}"
+                    )
+                cdef = self.counters.get(cname)
+                if cdef is None:
+                    raise ValueError(
+                        f"counter '{cname}' not defined: {tname}.{fname}"
+                    )
+                if cdef.table is None:
+                    raise ValueError(
+                        f"counter '{cname}' is not bound to a source: "
+                        f"{tname}.{fname}"
+                    )
+        for cname, cdef in self.counters.items():
+            if cdef.table is not None and cdef.table not in files:
+                raise ValueError(
+                    f"counter '{cname}' table not in data_sources: {cdef.table}"
+                )
+        bound = {c.table for c in self.counters.values() if c.table}
+        for ds in self.data_sources:
+            if ds.file not in bound:
+                raise ValueError(f"source '{ds.file}' has no bound counter")
+        return self
 
 
 class RecentItem(_WarnExtra):

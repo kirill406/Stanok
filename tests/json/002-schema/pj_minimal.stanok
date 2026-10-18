@@ -4,14 +4,18 @@
     "Договор": {
       "file": "Шаблоны/Договор.docx",
       "fields": {
-        "ФИО": {"source": "table", "value": "ФИО"},
+        "ФИО": {"source": "table", "value": "ФИО", "counter_name": "emp"},
         "Номер": {"source": "counter", "value": "doc_num"}
       }
     }
   },
+  "default_template": "Договор",
   "data_sources": [
-    {"file": "Данные/Сотрудники.xlsx", "mode": "sequential", "start_row": 0}
+    {"file": "Данные/Сотрудники.xlsx", "mode": "sequential"}
   ],
-  "counters": {},
+  "counters": {
+    "emp": {"last": 0, "format": "1", "table": "Данные/Сотрудники.xlsx"},
+    "doc_num": {"last": 0, "format": "1"}
+  },
   "filename_template": "{template} ({i})"
 }

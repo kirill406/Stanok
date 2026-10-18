@@ -43,7 +43,8 @@
   радио `default_template`; лимит per-template из PJ; запрет удаления default
   (предупреждение «Смените шаблон по умолчанию»).
 - Унифицировать создание и настройки в одном окне (режимы «создание»/«настройки»).
-- Окно 1: запуск `default_template`; поле лимита default_template с сохранением.
+- Окно 1: запуск `default_template`; лимит в окне 1 **не** дублируется —
+  правится в окне 2 (в строке шаблона).
 - Тесты `tests/gui/test_project_dialog.py`, `test_main_window.py`, `test_create*`.
 
 ## Фаза E: Окно 3 + строки + доки
@@ -60,7 +61,7 @@
 
 ## Definition of Done
 
-- [ ] `pytest tests/ -q` — все зелёные, `src/` 100%
-- [ ] Pre-commit чистый (trufflehog3 + pytest)
-- [ ] Спеки (021/spec+plan), `specs/spec.md`, `docs/architecture.md`, CHANGELOG обновлены
-- [ ] 020 и старые спеки не переписываются
+- [x] `pytest tests/ -q` — все зелёные (332), `src/` 99%
+- [x] Pre-commit чистый (trufflehog3 + pytest)
+- [x] Спеки (021/spec+plan), `specs/spec.md`, `docs/architecture.md`, CHANGELOG обновлены
+- [x] 020 и старые спеки не переписываются

@@ -21,7 +21,7 @@ from PyQt5.QtWidgets import (
 )
 
 from .strings import STRINGS
-from .table_picker import TableGrid, ValuePickerDialog, coerce_number
+from .table_picker import TableGrid, ValuePickerDialog
 
 
 class PickerDialog(ValuePickerDialog):
@@ -51,9 +51,9 @@ class PickerDialog(ValuePickerDialog):
         layout.addWidget(self.value_label)
         self.table = QTableWidget(self)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.table.setSelectionBehavior(QAbstractItemView.SelectItems)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SingleSelection)
-        self.table.cellClicked.connect(self._on_cell_clicked)
+        self.table.itemSelectionChanged.connect(self._on_selection_changed)
         self.table.cellDoubleClicked.connect(self._on_double_click)
         layout.addWidget(self.table)
         buttons = QDialogButtonBox(
@@ -85,7 +85,7 @@ class PickerDialog(ValuePickerDialog):
         self.table.setRowCount(len(grid.rows))
         for row, values in enumerate(grid.rows):
             index_item = QTableWidgetItem(str(row))
-            index_item.setFlags(Qt.NoItemFlags)
+            index_item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
             index_item.setToolTip(STRINGS.PICK_ROW_TIP)
             self.table.setItem(row, 0, index_item)
             for col, value in enumerate(values, start=1):
@@ -101,34 +101,23 @@ class PickerDialog(ValuePickerDialog):
             STRINGS.PICK_WILL_WRITE.format(value=STRINGS.PICK_NO_VALUE)
         )
 
-    def _on_cell_clicked(self, row: int, col: int) -> None:
-        if col == 0:
+    def _on_selection_changed(self) -> None:
+        rows = self.table.selectionModel().selectedRows()
+        if not rows:
             self._clear_choice()
-            self.table.clearSelection()
-            self.hint.setText(STRINGS.PICK_TABLE_HINT)
             return
-        item = self.table.item(row, col)
-        raw = item.data(Qt.UserRole) if item is not None else None
-        number = coerce_number(raw)
-        if number is None:
-            self._clear_choice()
-            self.hint.setText(STRINGS.FLD_PICK_NOT_NUMBER)
-            return
-        self._cell = raw
+        self._cell = rows[0].row()
         self.ok_btn.setEnabled(True)
         self.value_label.setText(
-            STRINGS.PICK_WILL_WRITE.format(value=number)
+            STRINGS.PICK_WILL_WRITE.format(value=self._cell)
         )
         self.hint.setText(STRINGS.PICK_TABLE_HINT)
 
     def _on_double_click(self, row: int, col: int) -> None:
-        if col == 0:
-            return
-        self._on_cell_clicked(row, col)
-        if self.ok_btn.isEnabled():
-            self._on_accept()
+        self._cell = row
+        self._on_accept()
 
     def _on_accept(self) -> None:
-        if self._cell is None or coerce_number(self._cell) is None:
+        if self._cell is None:
             return
         self.choose(self._cell)

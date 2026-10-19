@@ -190,7 +190,7 @@ class MainWindow(QMainWindow):
         from .create_dialog import CreateDialog
 
         recent = self._store.get_recent()
-        hint = recent[-1].folder if recent else str(Path.home())
+        hint = str(Path(recent[-1].folder).parent) if recent else str(Path.home())
         dialog = CreateDialog(self._store, hint, self)
         if dialog.exec_():
             self.refresh_recent()

@@ -398,9 +398,11 @@ class ProjectStore:
                 )
             data_dir = folder / STRINGS.DATA_DIR
             tpl_dir = folder / STRINGS.TPL_DIR
+            result_dir = folder / STRINGS.GEN_RESULT_DIR
             try:
                 data_dir.mkdir(parents=True, exist_ok=True)
                 tpl_dir.mkdir(parents=True, exist_ok=True)
+                result_dir.mkdir(parents=True, exist_ok=True)
             except OSError as e:
                 logger.warning(f"cannot create project folder {folder}: {e}")
                 raise StorageError(

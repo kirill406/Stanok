@@ -240,6 +240,24 @@ def test_field_counter_ok():
     assert pj.templates["T"].fields["F"].counter_name == "emp"
 
 
+def test_counter_field_must_exist():
+    with pytest.raises(PJValidationError, match="counter field"):
+        validate_pj(
+            _pj({"source": "counter", "value": "ghost"}, {}, sources=[])
+        )
+
+
+def test_counter_field_ok():
+    pj = validate_pj(
+        _pj(
+            {"source": "counter", "value": "num"},
+            {"num": {"last": 0, "format": "1"}},
+            sources=[],
+        )
+    )
+    assert pj.templates["T"].fields["F"].value == "num"
+
+
 def test_counter_table_must_be_known_source():
     with pytest.raises(PJValidationError, match="not in data_sources"):
         validate_pj(

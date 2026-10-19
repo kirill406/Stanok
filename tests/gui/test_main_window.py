@@ -8,7 +8,13 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
 from PyQt5.QtCore import QEventLoop, QTimer
-from PyQt5.QtWidgets import QApplication, QFileDialog, QMessageBox
+from PyQt5.QtWidgets import (
+    QApplication,
+    QComboBox,
+    QFileDialog,
+    QListWidget,
+    QMessageBox,
+)
 
 from stanok.gui.main_window import MainWindow
 from stanok.gui.strings import STRINGS
@@ -232,7 +238,8 @@ def test_create_dialog_builds_project(qapp, tmp_path, store, monkeypatch):
     assert dlg.create_btn.isEnabled()
     dlg._on_create()
     assert dlg.result()
-    assert (tmp_path / "proj" / "Данные" / "data.xlsx").is_file()
+    assert (tmp_path / "proj" / "nov" / "Данные" / "data.xlsx").is_file()
+    assert (tmp_path / "proj" / "nov" / "Результат").is_dir()
     assert any(r.config == "nov" for r in store.get_recent())
     dlg.close()
 
@@ -279,7 +286,31 @@ def test_create_dialog_preview_path(qapp, tmp_path, store):
     dlg.name_edit.setText("p")
     dlg.folder_edit.setText(str(tmp_path / "box"))
     dlg._update_create_enabled()
-    assert str(tmp_path / "box" / "p") in dlg.path_label.text()
+    text = dlg.path_label.text()
+    base = tmp_path / "box" / "p"
+    assert str(base) in text
+    assert str(base / "Данные") in text
+    assert str(base / "Шаблоны") in text
+    assert str(base / "Результат") in text
+    dlg.close()
+
+
+def test_create_dialog_mkdir_accepted(qapp, tmp_path, store, monkeypatch):
+    from tests.services.test_storage import _src_files
+
+    from stanok.gui.create_dialog import CreateDialog
+
+    xlsx, tpl = _src_files(tmp_path)
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a: None)
+    monkeypatch.setattr(QMessageBox, "question", lambda *a: QMessageBox.Yes)
+    dlg = CreateDialog(store, str(tmp_path), None)
+    dlg.name_edit.setText("nov")
+    dlg.folder_edit.setText(str(tmp_path / "base"))
+    dlg.xlsx_list.addItem(str(xlsx))
+    dlg.docx_list.addItem(str(tpl))
+    dlg._on_create()
+    assert dlg.result()
+    assert (tmp_path / "base" / "nov" / "Данные" / "data.xlsx").is_file()
     dlg.close()
 
 
@@ -328,6 +359,11 @@ def test_create_dialog_settings_mode(qapp, tmp_path, store):
     assert dlg.name_edit.isReadOnly()
     assert dlg.name_edit.text() == "proj"
     assert dlg.default_combo.currentData() == "Договор"
+    text = dlg.path_label.text()
+    assert str(folder) in text
+    assert str(folder / "Данные") in text
+    assert str(folder / "Шаблоны") in text
+    assert str(folder / "Результат") in text
     new_folder = tmp_path / "moved"
     new_folder.mkdir()
     dlg.folder_edit.setText(str(new_folder))
@@ -335,6 +371,23 @@ def test_create_dialog_settings_mode(qapp, tmp_path, store):
     assert dlg.result()
     pj = store.load("proj")
     assert pj.folder == str(new_folder.resolve())
+    dlg.close()
+
+
+def test_create_dialog_create_mode_has_no_orphan_widgets(qapp, tmp_path, store):
+    from stanok.gui.create_dialog import CreateDialog
+
+    dlg = CreateDialog(store, str(tmp_path), None)
+    assert dlg.findChildren(QComboBox) == []
+    dlg.close()
+
+
+def test_create_dialog_settings_mode_has_no_orphan_widgets(qapp, tmp_path, store):
+    from stanok.gui.create_dialog import CreateDialog
+
+    folder = make_project(tmp_path / "proj")
+    dlg = CreateDialog(store, "", None, edit_ref=str(folder))
+    assert dlg.findChildren(QListWidget) == []
     dlg.close()
 
 

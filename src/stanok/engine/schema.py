@@ -174,6 +174,15 @@ class ProjectJSON(_WarnExtra):
         files = [ds.file for ds in self.data_sources]
         for tname, tdef in self.templates.items():
             for fname, fdef in tdef.fields.items():
+                if fdef.source == FieldSource.COUNTER:
+                    # 021: a counter field's value must name a defined counter.
+                    value = fdef.value
+                    if not isinstance(value, str) or value not in self.counters:
+                        raise ValueError(
+                            f"counter field references unknown counter "
+                            f"'{value}': {tname}.{fname}"
+                        )
+                    continue
                 if fdef.source != FieldSource.TABLE:
                     continue
                 cname = fdef.counter_name

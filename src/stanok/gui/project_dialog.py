@@ -162,7 +162,11 @@ class ProjectDialog(QDialog):
             spin.setRange(0, 1_000_000)
             spin.setValue(tdef.limit)
             spin.setToolTip(STRINGS.PROJ_COUNT_TIP)
-            spin.valueChanged.connect(self._mark_template_dirty)
+            spin.valueChanged.connect(
+                lambda value, template=name: self._on_template_limit_changed(
+                    template, value
+                )
+            )
             self.table.setCellWidget(row, 1, spin)
             radio = QRadioButton(self.table)
             radio.setToolTip(STRINGS.PROJ_DEFAULT_TIP)
@@ -233,8 +237,16 @@ class ProjectDialog(QDialog):
             return
         self._pj, _ = self._store.resolve_project(self._project_ref)
 
-    def _mark_template_dirty(self) -> None:
-        pass  # limit is persisted on run/settings-close; no global dirty flag
+    def _on_template_limit_changed(self, template_name: str, value: int) -> None:
+        """Persist a template's limit as soon as the spinbox changes (021)."""
+        if self._running:
+            return
+        try:
+            self._store.set_template_limit(self._project_ref, template_name, value)
+            self._pj, _ = self._store.resolve_project(self._project_ref)
+        except Exception as e:
+            logger.warning(f"set template limit failed: {e}", exc_info=True)
+            QMessageBox.warning(self, STRINGS.MAIN_ERROR_TITLE, str(e))
 
     def _on_add_source(self) -> None:
         if self._running:
@@ -275,7 +287,7 @@ class ProjectDialog(QDialog):
         from .create_dialog import CreateDialog
 
         dialog = CreateDialog(
-            self._store, self._folder, self, edit_ref=self._project_ref
+            self._store, str(self._folder), self, edit_ref=self._project_ref
         )
         if dialog.exec_():
             self._pj, _ = self._store.resolve_project(self._project_ref)

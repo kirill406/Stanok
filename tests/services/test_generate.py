@@ -31,6 +31,7 @@ def make_project(
     start_row=0,
     with_counter=True,
     limit=0,
+    resume=1,
 ) -> Path:
     """Build minimal project folder: Данные/data.xlsx + Шаблоны/tpl.docx + legacy PJ."""
     data_dir = root / "Данные"
@@ -50,7 +51,13 @@ def make_project(
         "Сумма": {"source": "table", "value": "Сумма", "counter_name": "data"},
     }
     counters = {
-        "data": {"last": 0, "format": "1", "table": DATA, "start_row": start_row, "resume": 1}
+        "data": {
+            "last": 0,
+            "format": "1",
+            "table": DATA,
+            "start_row": start_row,
+            "resume": resume,
+        }
     }
     doc = DocxDocument()
     text = "Договор {{ФИО}} на сумму {{Сумма}} №{{Номер}}"
@@ -105,6 +112,8 @@ def test_full_sequential_run(tmp_path, store):
     assert all(p.exists() for p in report.output_paths)
     saved = _load_saved(store, "proj")
     assert saved.counters["num"].last == 2
+    # Two table fields share one counter → one bump per document, not two.
+    assert saved.counters["data"].last == 2
     assert saved.counters["data"].start_row == 2
 
 
@@ -124,6 +133,16 @@ def test_start_row_skips(tmp_path, store):
     report = generate_documents(GenerateCommand(project_ref=folder), store=store)
     assert report.created == 1
     assert "Петр" in report.output_paths[0].name
+
+
+def test_resume_0_keeps_cursor(tmp_path, store):
+    """resume=0 → start_row stays; the numeric counter still advances (021)."""
+    folder = make_project(tmp_path / "proj", resume=0)
+    report = generate_documents(GenerateCommand(project_ref=folder), store=store)
+    assert report.created == 2
+    saved = _load_saved(store, "proj")
+    assert saved.counters["data"].start_row == 0
+    assert saved.counters["num"].last == 2
 
 
 def test_empty_source_returns_empty_report(tmp_path, store):
@@ -163,6 +182,23 @@ def test_error_continues_and_advances(monkeypatch, tmp_path, store):
     assert len(report.errors) == 1
     assert report.errors[0][0] == 2
     assert "boom" in report.errors[0][1]
+    saved = _load_saved(store, "proj")
+    assert saved.counters["num"].last == 2
+    assert saved.counters["data"].start_row == 2
+
+
+def test_all_failed_still_persists_counters(monkeypatch, tmp_path, store):
+    """All docs error (created=0) → counters/cursors still advance (021)."""
+    folder = make_project(tmp_path / "proj")
+    import stanok.services.generate as gen
+
+    def boom(fj, template_path):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(gen, "render", boom)
+    report = generate_documents(GenerateCommand(project_ref=folder), store=store)
+    assert report.created == 0
+    assert len(report.errors) == 2
     saved = _load_saved(store, "proj")
     assert saved.counters["num"].last == 2
     assert saved.counters["data"].start_row == 2

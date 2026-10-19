@@ -254,6 +254,34 @@ def test_run_template_limit_save_error(qapp, tmp_path, store, monkeypatch):
     dlg.close()
 
 
+def test_template_limit_saved_on_change(qapp, tmp_path, store):
+    import json
+
+    folder = make_project(tmp_path / "proj")
+    dlg = ProjectDialog(str(folder), store=store)
+    dlg.table.cellWidget(0, 1).setValue(3)
+    saved = json.loads((store.home_dir / "proj.stanok").read_text())
+    assert saved["templates"]["Договор"]["limit"] == 3
+    dlg.close()
+
+
+def test_template_limit_change_error_warns(qapp, tmp_path, store, monkeypatch):
+    folder = make_project(tmp_path / "proj")
+    warnings = []
+    monkeypatch.setattr(
+        QMessageBox, "warning", lambda *a: warnings.append(a[-1])
+    )
+    dlg = ProjectDialog(str(folder), store=store)
+
+    def boom(*a, **k):
+        raise RuntimeError("locked")
+
+    monkeypatch.setattr(store, "set_template_limit", boom)
+    dlg.table.cellWidget(0, 1).setValue(4)
+    assert warnings
+    dlg.close()
+
+
 def test_settings_button_opens_edit_dialog(qapp, tmp_path, store, monkeypatch):
     import stanok.gui.create_dialog as cd
 
@@ -271,6 +299,16 @@ def test_settings_button_opens_edit_dialog(qapp, tmp_path, store, monkeypatch):
     dlg = ProjectDialog(str(folder), store=store)
     dlg._on_settings()
     assert opened == [str(folder)]
+    dlg.close()
+
+
+def test_settings_button_builds_real_create_dialog(qapp, tmp_path, store, monkeypatch):
+    import stanok.gui.create_dialog as cd
+
+    folder = make_project(tmp_path / "proj")
+    monkeypatch.setattr(cd.CreateDialog, "exec_", lambda self: 0)
+    dlg = ProjectDialog(str(folder), store=store)
+    dlg._on_settings()
     dlg.close()
 
 

@@ -104,10 +104,17 @@ def used_counters(pj: ProjectJSON, template_name: str) -> list[str]:
 
 
 def participating_sources(pj: ProjectJSON, template_name: str) -> list[str]:
-    """Data-source files used by the template (via table-field counters)."""
+    """Data-source files used by the template (via table-field counters).
+
+    Counters that are referenced but not defined are skipped here; the
+    counter guard lives in `resolve_rows` (clean ResolveError, not KeyError).
+    """
     files: list[str] = []
     for cname in used_counters(pj, template_name):
-        table = pj.counters[cname].table
+        cdef = pj.counters.get(cname)
+        if cdef is None:
+            continue
+        table = cdef.table
         if table is not None and table not in files:
             files.append(table)
     return files

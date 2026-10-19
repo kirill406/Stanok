@@ -92,7 +92,11 @@ def _check_table_columns(
     for field_name, fdef in template_def.fields.items():
         if fdef.source.value != "table":
             continue
-        cdef = pj.counters[fdef.counter_name]
+        cdef = pj.counters.get(fdef.counter_name) if fdef.counter_name else None
+        if cdef is None:
+            raise TemplateError(
+                f"field '{field_name}': counter '{fdef.counter_name}' not defined"
+            )
         rows = rows_by_source.get(cdef.table, [])
         headers: list[str] = []
         for r in rows:
@@ -213,7 +217,9 @@ def generate_documents(
             cdef.start_row = (orig_start + processed) % len(rows) if rows else orig_start
         # constant: cursor stays
 
-    if report.created:
+    # Persist counters/cursors whenever documents were attempted (created +
+    # errors). An all-errored run must still advance, matching `processed`.
+    if processed:
         store.save(pj, name=config_path.stem)
         logger.info(f"saved PJ counters/cursors to {config_path}")
 

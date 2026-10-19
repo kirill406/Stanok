@@ -9,7 +9,9 @@ counters table shows source / position (cursor) / resume / last / width.
 from __future__ import annotations
 
 import logging
+import shutil
 from datetime import date
+from pathlib import Path, PurePosixPath
 
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
@@ -17,6 +19,7 @@ from PyQt5.QtWidgets import (
     QComboBox,
     QDialog,
     QDialogButtonBox,
+    QFileDialog,
     QHBoxLayout,
     QHeaderView,
     QInputDialog,
@@ -86,6 +89,8 @@ class FieldsDialog(QDialog):
         self._crows: dict[str, dict] = {}
         self._rows_cache: dict[str, list[dict]] = {}
         self._headers_warned: set[str] = set()
+        self._recovery_prompted = False
+        self._recovery_dir: Path | None = None
         pj, config_path = self._store.resolve_project(project_ref)
         self._pj = pj
         self._config_name = config_path.stem
@@ -102,26 +107,145 @@ class FieldsDialog(QDialog):
         key = source_file or "__all__"
         if key in self._rows_cache:
             return self._rows_cache[key]
-        ref_path = self._folder
-        files = (
+        sources = (
             [source_file]
             if source_file
             else [ds.file for ds in self._pj.data_sources]
         )
         rows: list[dict] = []
-        if ref_path.exists() and ref_path.is_dir():
-            for f in files:
+        if self._folder.exists() and self._folder.is_dir():
+            for f in sources:
+                path = self._resolve_source_path(f)
+                if path is None:
+                    continue
                 try:
-                    rows.extend(ExcelReader().read(ref_path / f))
+                    rows.extend(ExcelReader().read(path))
                 except Exception as e:
                     logger.warning(f"headers for {f} failed: {e}", exc_info=True)
-                    if f not in self._headers_warned:
-                        self._headers_warned.add(f)
-                        QMessageBox.warning(
-                            self, STRINGS.MAIN_ERROR_TITLE, f"{f}: {e}"
-                        )
+                    self._warn_source(f, f"{f}: {e}")
         self._rows_cache[key] = rows
         return rows
+
+    def _resolve_source_path(self, source: str) -> Path | None:
+        """Path for a source; offer a one-time fix when the file is missing."""
+        path = self._folder / source
+        if path.is_file():
+            return path
+        name = PurePosixPath(source.replace("\\", "/")).name
+        if self._recovery_dir is not None:
+            restored = self._restore_source(source, name, self._recovery_dir)
+            if restored is not None:
+                return self._folder / restored
+        elif not self._recovery_prompted:
+            self._recovery_prompted = True
+            choice = self._ask_source_recovery(name)
+            if choice == "pick":
+                folder = QFileDialog.getExistingDirectory(
+                    self, STRINGS.FLD_SRC_FIND_TITLE, str(self._folder)
+                )
+                if folder:
+                    self._recovery_dir = Path(folder)
+                    restored = self._restore_source(
+                        source, name, self._recovery_dir
+                    )
+                    if restored is not None:
+                        return self._folder / restored
+            elif choice == "create":
+                self._create_project_dirs()
+        self._warn_source(source, STRINGS.FLD_SRC_MISSING.format(name=name))
+        return None
+
+    def _ask_source_recovery(self, name: str) -> str | None:
+        """Ask how to fix a missing source: 'pick', 'create' or None."""
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Warning)
+        box.setWindowTitle(STRINGS.MAIN_ERROR_TITLE)
+        box.setText(STRINGS.FLD_SRC_MISSING.format(name=name))
+        box.setInformativeText(STRINGS.FLD_SRC_MISSING_HINT)
+        pick = box.addButton(STRINGS.FLD_SRC_PICK, QMessageBox.ActionRole)
+        create = box.addButton(STRINGS.FLD_SRC_CREATE, QMessageBox.ActionRole)
+        box.addButton(STRINGS.MAIN_CANCEL, QMessageBox.RejectRole)
+        box.exec_()
+        clicked = box.clickedButton()
+        if clicked is pick:
+            return "pick"
+        if clicked is create:
+            return "create"
+        return None
+
+    def _restore_source(
+        self, source: str, name: str, folder: Path
+    ) -> str | None:
+        """Bind `source` to file `name` found under `folder`; None if absent."""
+        found = next(
+            (
+                c
+                for c in (folder / name, folder / STRINGS.DATA_DIR / name)
+                if c.is_file()
+            ),
+            None,
+        )
+        if found is None:
+            return None
+        found = found.resolve()
+        root = self._folder.resolve()
+        target = (self._folder / source).resolve()
+        try:
+            if found == target:
+                return source
+            if root in found.parents:
+                new = found.relative_to(root).as_posix()
+                self._rebind_source(source, new)
+                return new
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(found, target)
+        except OSError as e:
+            logger.warning(
+                f"restore source {name} from {folder}: {e}", exc_info=True
+            )
+            QMessageBox.warning(self, STRINGS.MAIN_ERROR_TITLE, f"{name}: {e}")
+            return None
+        self._rows_cache.clear()
+        return source
+
+    def _rebind_source(self, old: str, new: str) -> None:
+        """Repoint data sources and counters from `old` to `new` path."""
+        for ds in self._pj.data_sources:
+            if ds.file == old:
+                ds.file = new
+        for cdef in self._pj.counters.values():
+            if cdef.table == old:
+                cdef.table = new
+        try:
+            self._store.save(self._pj, name=self._config_name)
+        except Exception as e:
+            logger.warning(
+                f"save rebound source {old} -> {new}: {e}", exc_info=True
+            )
+
+    def _create_project_dirs(self) -> None:
+        """Recreate the project Данные/Шаблоны folders."""
+        for sub in (STRINGS.DATA_DIR, STRINGS.TPL_DIR):
+            try:
+                (self._folder / sub).mkdir(parents=True, exist_ok=True)
+            except OSError as e:
+                logger.warning(
+                    f"cannot create {self._folder / sub}: {e}", exc_info=True
+                )
+                QMessageBox.warning(self, STRINGS.MAIN_ERROR_TITLE, str(e))
+                return
+        QMessageBox.information(
+            self,
+            STRINGS.MAIN_ERROR_TITLE,
+            STRINGS.FLD_SRC_DIR_MADE.format(folder=self._folder),
+        )
+
+    def _warn_source(self, key: str, message: str) -> None:
+        """Warn once per source about an unreadable or missing table."""
+        if key in self._headers_warned:
+            return
+        self._headers_warned.add(key)
+        QMessageBox.warning(self, STRINGS.MAIN_ERROR_TITLE, message)
 
     def _read_headers(self, source_file: str | None) -> list[str]:
         """Column headers for one source (None = union of all)."""
@@ -218,19 +342,33 @@ class FieldsDialog(QDialog):
         layout.addWidget(self._section_title(STRINGS.FLD_COUNTERS_TITLE))
         self.ctable = QTableWidget(self)
         self.ctable.setColumnCount(6)
+        header_tips = [
+            STRINGS.FLD_CNT_NAME_TIP,
+            STRINGS.FLD_CNT_SOURCE_TIP,
+            STRINGS.FLD_CNT_FORMAT_TIP,
+            STRINGS.FLD_POS_TIP,
+            STRINGS.FLD_CNT_LAST_TIP,
+            STRINGS.FLD_CNT_RESUME_TIP,
+        ]
         self.ctable.setHorizontalHeaderLabels(
             [
                 STRINGS.FLD_CNT_NAME,
                 STRINGS.FLD_CNT_SOURCE,
-                STRINGS.FLD_CNT_POS,
-                STRINGS.FLD_CNT_RESUME,
-                STRINGS.FLD_CNT_LAST,
                 STRINGS.FLD_CNT_FORMAT,
+                STRINGS.FLD_CNT_POS,
+                STRINGS.FLD_CNT_LAST,
+                STRINGS.FLD_CNT_RESUME,
             ]
+        )
+        for col, tip in enumerate(header_tips):
+            self.ctable.horizontalHeaderItem(col).setToolTip(tip)
+        self.ctable.horizontalHeader().setStretchLastSection(False)
+        self.ctable.horizontalHeader().setSectionResizeMode(
+            QHeaderView.ResizeToContents
         )
         self._build_counters_table()
         layout.addWidget(self.ctable)
-        layout.addWidget(QLabel(STRINGS.FLD_POS_TIP, self))
+        layout.addWidget(QLabel(STRINGS.FLD_CNT_HINT, self))
 
         self.counter_add_btn = QPushButton(STRINGS.FLD_COUNTER_CREATE, self)
         self.counter_add_btn.clicked.connect(self._on_counter_create)
@@ -398,6 +536,7 @@ class FieldsDialog(QDialog):
             name_item.setFlags(name_item.flags() & ~Qt.ItemIsEditable)
             self.ctable.setItem(row, 0, name_item)
             table_combo = QComboBox(self.ctable)
+            table_combo.setToolTip(STRINGS.FLD_CNT_SOURCE_TIP)
             table_combo.addItem(STRINGS.FLD_NONE, None)
             for ds in self._pj.data_sources:
                 table_combo.addItem(ds.file, ds.file)
@@ -407,24 +546,8 @@ class FieldsDialog(QDialog):
                 lambda _i=0, counter=cname: self._on_counter_source_changed(counter)
             )
             self.ctable.setCellWidget(row, 1, table_combo)
-            pos_edit = QLineEdit(str(cdef.start_row), self.ctable)
-            pos_edit.setToolTip(STRINGS.FLD_POS_TIP)
-            pos_edit.textChanged.connect(
-                lambda _t="", counter=cname: self._mark_counter_touched(counter)
-            )
-            self.ctable.setCellWidget(row, 2, pos_edit)
-            resume_check = QCheckBox(self.ctable)
-            resume_check.setChecked(bool(cdef.resume))
-            resume_check.stateChanged.connect(
-                lambda _s=0, counter=cname: self._mark_counter_touched(counter)
-            )
-            self.ctable.setCellWidget(row, 3, resume_check)
-            last_edit = QLineEdit(str(cdef.last), self.ctable)
-            last_edit.textChanged.connect(
-                lambda _t="", counter=cname: self._mark_counter_touched(counter)
-            )
-            self.ctable.setCellWidget(row, 4, last_edit)
             fmt_combo = QComboBox(self.ctable)
+            fmt_combo.setToolTip(STRINGS.FLD_CNT_FORMAT_TIP)
             for width in COUNTER_WIDTHS:
                 fmt_combo.addItem(width, width)
             if cdef.format not in COUNTER_WIDTHS:
@@ -433,7 +556,26 @@ class FieldsDialog(QDialog):
             fmt_combo.currentIndexChanged.connect(
                 lambda _i=0, counter=cname: self._mark_counter_touched(counter)
             )
-            self.ctable.setCellWidget(row, 5, fmt_combo)
+            self.ctable.setCellWidget(row, 2, fmt_combo)
+            pos_edit = QLineEdit(str(cdef.start_row), self.ctable)
+            pos_edit.setToolTip(STRINGS.FLD_POS_TIP)
+            pos_edit.textChanged.connect(
+                lambda _t="", counter=cname: self._mark_counter_touched(counter)
+            )
+            self.ctable.setCellWidget(row, 3, pos_edit)
+            last_edit = QLineEdit(str(cdef.last), self.ctable)
+            last_edit.setToolTip(STRINGS.FLD_CNT_LAST_TIP)
+            last_edit.textChanged.connect(
+                lambda _t="", counter=cname: self._mark_counter_touched(counter)
+            )
+            self.ctable.setCellWidget(row, 4, last_edit)
+            resume_check = QCheckBox(self.ctable)
+            resume_check.setToolTip(STRINGS.FLD_CNT_RESUME_TIP)
+            resume_check.setChecked(not bool(cdef.resume))
+            resume_check.stateChanged.connect(
+                lambda _s=0, counter=cname: self._mark_counter_touched(counter)
+            )
+            self.ctable.setCellWidget(row, 5, resume_check)
             self._crows[cname] = {
                 "table": table_combo,
                 "pos": pos_edit,
@@ -635,7 +777,7 @@ class FieldsDialog(QDialog):
             cdef = self._pj.counters[cname]
             cdef.table = cst["table"].currentData()
             cdef.start_row = position
-            cdef.resume = 1 if cst["resume"].isChecked() else 0
+            cdef.resume = 0 if cst["resume"].isChecked() else 1
             cdef.last = last
             cdef.format = cst["fmt"].currentData() or "1"
         fname = self.fname_edit.text().strip()

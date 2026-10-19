@@ -52,6 +52,7 @@ class CreateDialog(QDialog):
 
     # -- UI construction -------------------------------------------------
     def _build_ui(self, folder_hint: str) -> None:
+        folder_hint = str(folder_hint or "")
         self.setWindowTitle(
             STRINGS.CRT_EDIT_TITLE if self._edit_mode else STRINGS.CRT_TITLE
         )
@@ -74,15 +75,15 @@ class CreateDialog(QDialog):
         layout.addLayout(folder_row)
 
         self.path_label = QLabel(self)
+        self.path_label.setWordWrap(True)
         layout.addWidget(self.path_label)
 
-        self.xlsx_list = QListWidget(self)
-        self.docx_list = QListWidget(self)
-        self.copy_check = QCheckBox(STRINGS.CRT_COPY, self)
-        self.default_combo = QComboBox(self)
         if self._edit_mode:
             self._fill_settings()
         else:
+            self.xlsx_list = QListWidget(self)
+            self.docx_list = QListWidget(self)
+            self.copy_check = QCheckBox(STRINGS.CRT_COPY, self)
             layout.addWidget(QLabel(STRINGS.CRT_XLSX))
             layout.addWidget(self.xlsx_list)
             layout.addLayout(self._list_buttons(self.xlsx_list, "Excel (*.xlsx)"))
@@ -111,6 +112,7 @@ class CreateDialog(QDialog):
         self.name_edit.setReadOnly(True)
         self.folder_edit.setText(pj.folder or "")
         self._templates = list(pj.templates)
+        self.default_combo = QComboBox(self)
         self.layout().addWidget(QLabel(STRINGS.CRT_DEFAULT_TPL))
         for name in self._templates:
             self.default_combo.addItem(name, name)
@@ -155,7 +157,7 @@ class CreateDialog(QDialog):
         folder = self.folder_edit.text().strip() or str(Path.home())
         if self._edit_mode:
             self.create_btn.setEnabled(bool(folder))
-            self.path_label.setText(STRINGS.CRT_PATH.format(path=folder))
+            self.path_label.setText(self._project_paths_text(Path(folder)))
             return
         taken = bool(name) and self._store.config_exists(name)
         bad_dir = Path(folder).name in (STRINGS.DATA_DIR, STRINGS.TPL_DIR)
@@ -178,24 +180,44 @@ class CreateDialog(QDialog):
         else:
             self.path_label.setStyleSheet("")
             target = Path(folder) / (name or "?")
-            self.path_label.setText(STRINGS.CRT_PATH.format(path=target))
+            self.path_label.setText(self._project_paths_text(target))
+
+    def _project_paths_text(self, base: Path) -> str:
+        """Project folder and its Данные/Шаблоны/Результат as absolute lines."""
+        base = base.resolve()
+        lines = [STRINGS.CRT_PATH.format(path=base)]
+        lines += [
+            str(base / sub)
+            for sub in (
+                STRINGS.DATA_DIR,
+                STRINGS.TPL_DIR,
+                STRINGS.GEN_RESULT_DIR,
+            )
+        ]
+        return "\n".join(lines)
+
+    def _confirm_mkdir(self, path: str) -> bool:
+        """Ask the user to create a missing folder; True if confirmed."""
+        answer = QMessageBox.question(
+            self,
+            self.windowTitle(),
+            STRINGS.CRT_MKDIR_ASK.format(path=path),
+        )
+        return answer == QMessageBox.Yes
 
     def _on_create(self) -> None:
         folder = self.folder_edit.text().strip() or str(Path.home())
-        if not Path(folder).exists():
-            answer = QMessageBox.question(
-                self,
-                self.windowTitle(),
-                STRINGS.CRT_MKDIR_ASK.format(path=folder),
-            )
-            if answer != QMessageBox.Yes:
-                return
         if self._edit_mode:
+            if not Path(folder).exists() and not self._confirm_mkdir(folder):
+                return
             self._save_settings(folder)
+            return
+        target = Path(folder).resolve() / self.name_edit.text().strip()
+        if not target.exists() and not self._confirm_mkdir(str(target)):
             return
         try:
             self._store.init_project(
-                folder,
+                target,
                 self.name_edit.text(),
                 [self.xlsx_list.item(i).text() for i in range(self.xlsx_list.count())],
                 [self.docx_list.item(i).text() for i in range(self.docx_list.count())],
@@ -205,7 +227,7 @@ class CreateDialog(QDialog):
             logger.warning(f"create project failed: {e}", exc_info=True)
             QMessageBox.warning(self, STRINGS.CRT_ERR_TITLE, str(e))
             return
-        self.project_folder = str(Path(folder).resolve())
+        self.project_folder = str(target)
         self.project_name = self.name_edit.text().strip()
         self.accept()
 

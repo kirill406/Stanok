@@ -7,10 +7,20 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import json
+import shutil
 
 import pytest
+from openpyxl import Workbook
 from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import QApplication, QDialog, QLineEdit, QMessageBox
+from PyQt5.QtWidgets import (
+    QApplication,
+    QDialog,
+    QFileDialog,
+    QHeaderView,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+)
 
 from stanok.gui.fields_dialog import FieldsDialog
 from stanok.gui.strings import STRINGS
@@ -335,6 +345,18 @@ def test_counter_create_via_table(qapp, tmp_path, store, monkeypatch):
     dlg.close()
 
 
+def test_resume_checkbox_inverted_label(qapp, tmp_path, store):
+    """Column «Начинать заново»: checked means resume=0 (start over)."""
+    folder = make_project(tmp_path / "proj")
+    dlg = FieldsDialog(str(folder), "Договор", store=store)
+    box = dlg._crows["data"]["resume"]
+    assert box.isChecked() is False  # resume=1 → не «начинать заново»
+    box.setChecked(True)
+    dlg._on_save()
+    assert _saved_pj(store)["counters"]["data"]["resume"] == 0
+    dlg.close()
+
+
 def test_counter_create_duplicate_warns(qapp, tmp_path, store, monkeypatch):
     from PyQt5.QtWidgets import QInputDialog
 
@@ -358,6 +380,7 @@ def test_empty_column_blocks_save(qapp, tmp_path, store, monkeypatch):
     monkeypatch.setattr(
         QMessageBox, "warning", lambda *a: warnings.append(a[-1])
     )
+    monkeypatch.setattr(FieldsDialog, "_ask_source_recovery", lambda self, name: None)
     dlg = FieldsDialog(str(folder), "Договор", store=store)
     assert dlg._rows["ФИО"]["col"].count() == 0
     dlg._on_save()
@@ -407,6 +430,7 @@ def test_dirty_close_save_blocked_stays_open(qapp, tmp_path, store, monkeypatch)
     monkeypatch.setattr(
         QMessageBox, "question", lambda *a, **k: QMessageBox.Save
     )
+    monkeypatch.setattr(FieldsDialog, "_ask_source_recovery", lambda self, name: None)
     dlg = FieldsDialog(str(folder), "Договор", store=store)
     dlg._dirty = True
     dlg.reject()
@@ -611,18 +635,17 @@ def test_counters_table_bad_last_blocks(qapp, tmp_path, store, monkeypatch):
 
 
 def test_dangling_counter_resurrected(qapp, tmp_path, store):
-    import json as _json
+    """Defensive: a counter field naming a missing counter is recreated on save.
 
+    Such a PJ can no longer be loaded (schema rejects it), so simulate
+    in-memory divergence instead.
+    """
     folder = make_project(tmp_path / "proj")
-    pj_path = folder / "project.stanok"
-    data = _json.loads(pj_path.read_text())
-    del data["counters"]["num"]
-    pj_path.write_text(_json.dumps(data, ensure_ascii=False))
     dlg = FieldsDialog(str(folder), "Договор", store=store)
+    del dlg._pj.counters["num"]
+    del dlg._crows["num"]
     st = dlg._rows["Номер"]
     assert st["cname"].currentData() == "num"
-    assert "last" not in st
-    dlg._dirty = True
     dlg._on_save()
     saved = _saved_pj(store)
     assert saved["counters"]["num"]["last"] == 0
@@ -695,4 +718,212 @@ def test_insert_field_menu(qapp, tmp_path, store, monkeypatch):
     dlg.fname_edit.clear()
     fio.trigger()
     assert dlg.fname_edit.text() == "{ФИО}"
+    dlg.close()
+
+
+def _xlsx(path, headers=("ФИО", "Сумма"), rows=(("Иван", 100),)):
+    wb = Workbook()
+    ws = wb.active
+    ws.append(list(headers))
+    for r in rows:
+        ws.append(list(r))
+    wb.save(path)
+
+
+def test_missing_source_pick_copies_into_project(qapp, tmp_path, store, monkeypatch):
+    folder = make_project(tmp_path / "proj")
+    (folder / "Данные" / "data.xlsx").unlink()
+    other = tmp_path / "elsewhere"
+    other.mkdir()
+    _xlsx(other / "data.xlsx")
+    monkeypatch.setattr(FieldsDialog, "_ask_source_recovery", lambda self, name: "pick")
+    monkeypatch.setattr(
+        QFileDialog, "getExistingDirectory", lambda *a, **k: str(other)
+    )
+    dlg = FieldsDialog(str(folder), "Договор", store=store)
+    assert (folder / "Данные" / "data.xlsx").is_file()
+    assert dlg._rows["ФИО"]["col"].count() == 2
+    dlg.close()
+
+
+def test_missing_source_pick_rebinds_relative(qapp, tmp_path, store, monkeypatch):
+    folder = make_project(tmp_path / "proj")
+    (folder / "Данные" / "data.xlsx").unlink()
+    _xlsx(folder / "data.xlsx")
+    monkeypatch.setattr(FieldsDialog, "_ask_source_recovery", lambda self, name: "pick")
+    monkeypatch.setattr(
+        QFileDialog, "getExistingDirectory", lambda *a, **k: str(folder)
+    )
+    dlg = FieldsDialog(str(folder), "Договор", store=store)
+    pj, _ = store.resolve_project(str(folder))
+    assert pj.data_sources[0].file == "data.xlsx"
+    assert pj.counters["data"].table == "data.xlsx"
+    assert dlg._rows["ФИО"]["col"].count() == 2
+    dlg.close()
+
+
+def test_missing_source_create_folders(qapp, tmp_path, store, monkeypatch):
+    folder = make_project(tmp_path / "proj")
+    shutil.rmtree(folder / "Данные")
+    infos = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a: None)
+    monkeypatch.setattr(
+        QMessageBox, "information", lambda *a: infos.append(a[-1])
+    )
+    monkeypatch.setattr(
+        FieldsDialog, "_ask_source_recovery", lambda self, name: "create"
+    )
+    dlg = FieldsDialog(str(folder), "Договор", store=store)
+    assert (folder / "Данные").is_dir()
+    assert (folder / "Шаблоны").is_dir()
+    assert infos
+    dlg.close()
+
+
+def test_missing_source_cancel_prompts_once(qapp, tmp_path, store, monkeypatch):
+    folder = make_project(tmp_path / "proj")
+    (folder / "Данные" / "data.xlsx").unlink()
+    warnings = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a: warnings.append(a[-1]))
+    calls = {"n": 0}
+
+    def ask(self, name):
+        calls["n"] += 1
+        return None
+
+    monkeypatch.setattr(FieldsDialog, "_ask_source_recovery", ask)
+    dlg = FieldsDialog(str(folder), "Договор", store=store)
+    assert calls["n"] == 1
+    assert len(warnings) == 1
+    dlg._resolve_source_path("Данные/data.xlsx")
+    assert calls["n"] == 1
+    dlg.close()
+
+
+def test_counters_table_column_order(qapp, tmp_path, store):
+    folder = make_project(tmp_path / "proj")
+    dlg = FieldsDialog(str(folder), "Договор", store=store)
+    labels = [
+        dlg.ctable.horizontalHeaderItem(c).text()
+        for c in range(dlg.ctable.columnCount())
+    ]
+    assert labels == [
+        STRINGS.FLD_CNT_NAME,
+        STRINGS.FLD_CNT_SOURCE,
+        STRINGS.FLD_CNT_FORMAT,
+        STRINGS.FLD_CNT_POS,
+        STRINGS.FLD_CNT_LAST,
+        STRINGS.FLD_CNT_RESUME,
+    ]
+    st = dlg._crows["data"]
+    assert dlg.ctable.cellWidget(0, 1) is st["table"]
+    assert dlg.ctable.cellWidget(0, 2) is st["fmt"]
+    assert dlg.ctable.cellWidget(0, 3) is st["pos"]
+    assert dlg.ctable.cellWidget(0, 4) is st["last"]
+    assert dlg.ctable.cellWidget(0, 5) is st["resume"]
+    tips = [
+        dlg.ctable.horizontalHeaderItem(c).toolTip()
+        for c in range(dlg.ctable.columnCount())
+    ]
+    assert tips == [
+        STRINGS.FLD_CNT_NAME_TIP,
+        STRINGS.FLD_CNT_SOURCE_TIP,
+        STRINGS.FLD_CNT_FORMAT_TIP,
+        STRINGS.FLD_POS_TIP,
+        STRINGS.FLD_CNT_LAST_TIP,
+        STRINGS.FLD_CNT_RESUME_TIP,
+    ]
+    assert st["table"].toolTip() == STRINGS.FLD_CNT_SOURCE_TIP
+    assert st["fmt"].toolTip() == STRINGS.FLD_CNT_FORMAT_TIP
+    assert st["pos"].toolTip() == STRINGS.FLD_POS_TIP
+    assert st["last"].toolTip() == STRINGS.FLD_CNT_LAST_TIP
+    assert st["resume"].toolTip() == STRINGS.FLD_CNT_RESUME_TIP
+    assert STRINGS.FLD_CNT_HINT in [
+        w.text() for w in dlg.findChildren(QLabel)
+    ]
+    dlg.close()
+
+
+def test_counters_table_fits_text(qapp, tmp_path, store):
+    folder = make_project(tmp_path / "proj")
+    dlg = FieldsDialog(str(folder), "Договор", store=store)
+    header = dlg.ctable.horizontalHeader()
+    assert header.stretchLastSection() is False
+    for col in range(dlg.ctable.columnCount()):
+        assert header.sectionResizeMode(col) == QHeaderView.ResizeToContents
+    dlg.close()
+
+
+def test_ask_source_recovery_choices(qapp, tmp_path, store, monkeypatch):
+    folder = make_project(tmp_path / "proj")
+    dlg = FieldsDialog(str(folder), "Договор", store=store)
+    buttons = [object(), object(), object()]
+    monkeypatch.setattr(QMessageBox, "exec_", lambda self: 0)
+    for idx, expected in ((0, "pick"), (1, "create"), (2, None)):
+        it = iter(buttons)
+        monkeypatch.setattr(
+            QMessageBox, "addButton", lambda self, *a, **k: next(it)
+        )
+        monkeypatch.setattr(
+            QMessageBox, "clickedButton", lambda self, i=idx: buttons[i]
+        )
+        assert dlg._ask_source_recovery("x.xlsx") == expected
+    dlg.close()
+
+
+def test_restore_source_not_found(qapp, tmp_path, store):
+    folder = make_project(tmp_path / "proj")
+    dlg = FieldsDialog(str(folder), "Договор", store=store)
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    assert dlg._restore_source("Данные/data.xlsx", "data.xlsx", empty) is None
+    dlg.close()
+
+
+def test_resolve_source_uses_remembered_dir(qapp, tmp_path, store, monkeypatch):
+    folder = make_project(tmp_path / "proj")
+    (folder / "Данные" / "data.xlsx").unlink()
+    donor = make_project(tmp_path / "donor")
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a: None)
+    monkeypatch.setattr(FieldsDialog, "_ask_source_recovery", lambda self, name: None)
+    dlg = FieldsDialog(str(folder), "Договор", store=store)
+    dlg._recovery_dir = donor / "Данные"
+    dlg._rows_cache.clear()
+    path = dlg._resolve_source_path("Данные/data.xlsx")
+    assert path is not None and path.is_file()
+    dlg.close()
+
+
+def test_rebind_source_save_error_logged(qapp, tmp_path, store, monkeypatch):
+    folder = make_project(tmp_path / "proj")
+    dlg = FieldsDialog(str(folder), "Договор", store=store)
+
+    def boom(*a, **k):
+        raise RuntimeError("disk full")
+
+    monkeypatch.setattr(dlg._store, "save", boom)
+    dlg._rebind_source("Данные/data.xlsx", "x.xlsx")
+    dlg.close()
+
+
+def test_restore_source_copy_error_warns(qapp, tmp_path, store, monkeypatch):
+    import stanok.gui.fields_dialog as fd
+
+    folder = make_project(tmp_path / "proj")
+    (folder / "Данные" / "data.xlsx").unlink()
+    donor = make_project(tmp_path / "donor")
+    warnings = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a: warnings.append(a[-1]))
+    monkeypatch.setattr(FieldsDialog, "_ask_source_recovery", lambda self, name: None)
+    dlg = FieldsDialog(str(folder), "Договор", store=store)
+
+    def boom(*a, **k):
+        raise OSError("nope")
+
+    monkeypatch.setattr(fd.shutil, "copy2", boom)
+    assert (
+        dlg._restore_source("Данные/data.xlsx", "data.xlsx", donor / "Данные")
+        is None
+    )
+    assert warnings
     dlg.close()

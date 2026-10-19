@@ -480,6 +480,16 @@ def test_init_second_copy_collision(store, tmp_path):
     ]
 
 
+def test_counter_name_collision_suffix():
+    """Auto-counter name: stem, then _2/_3 on collision; fallback 'counter'."""
+    from stanok.services.storage import _counter_name
+
+    assert _counter_name(set(), "Данные/data.xlsx") == "data"
+    assert _counter_name({"data"}, "Данные/sub/data.xlsx") == "data_2"
+    assert _counter_name({"data", "data_2"}, "x/data.xlsx") == "data_3"
+    assert _counter_name(set(), "") == "counter"
+
+
 def test_init_empty_lists_rejected(store, tmp_path):
     xlsx, tpl = _src_files(tmp_path)
     with pytest.raises(StorageError, match="no Excel"):

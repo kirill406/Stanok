@@ -187,6 +187,15 @@ class STRINGS:
     FLD_PICK_DISABLED_TIP = "Выбор данных недоступен в этой сборке"
     FLD_PICK_NO_SOURCE_TIP = "Счётчик не привязан к таблице — выбирать нечего"
     FLD_PICK_NOT_NUMBER = "Выберите целое неотрицательное число"
+    PICK_COLUMNS_HINT = (
+        "Выберите столбец, затем значение — оно станет «Номером»."
+    )
+    PICK_COLUMN = "Столбец"
+    PICK_VALUE = "Значение"
+    PICK_NO_VALUES = "В столбце нет чисел"
+    PICK_SOURCE = "Таблица: {name}"
+    PICK_EMPTY = "В таблице нет данных"
+    PICK_CHOOSE = "Выбрать"
     FLD_NONE = "отсутствует"
     FLD_COUNTER_CREATE = "Создать счётчик"
     FLD_COUNTER_NAME = "Имя счётчика:"

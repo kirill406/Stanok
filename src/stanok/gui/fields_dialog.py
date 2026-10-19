@@ -31,6 +31,7 @@ from PyQt5.QtWidgets import (
     QScrollArea,
     QTableWidget,
     QTableWidgetItem,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -41,6 +42,7 @@ from ..engine.schema import CounterDef, FieldDef, FieldSource, ProjectJSON, vali
 from ..engine.resolve import COUNTER_WIDTHS, TODAY_PRESETS, format_today
 from ..tables.excel import ExcelReader
 from .strings import STRINGS
+from .table_picker import eye_icon, open_picker, picker_available
 
 logger = logging.getLogger(__name__)
 
@@ -563,12 +565,26 @@ class FieldsDialog(QDialog):
                 lambda _t="", counter=cname: self._mark_counter_touched(counter)
             )
             self.ctable.setCellWidget(row, 3, pos_edit)
-            last_edit = QLineEdit(str(cdef.last), self.ctable)
+            last_box = QWidget(self.ctable)
+            last_layout = QHBoxLayout(last_box)
+            last_layout.setContentsMargins(0, 0, 0, 0)
+            last_layout.setSpacing(2)
+            last_edit = QLineEdit(str(cdef.last), last_box)
             last_edit.setToolTip(STRINGS.FLD_CNT_LAST_TIP)
             last_edit.textChanged.connect(
                 lambda _t="", counter=cname: self._mark_counter_touched(counter)
             )
-            self.ctable.setCellWidget(row, 4, last_edit)
+            last_layout.addWidget(last_edit)
+            pick_btn = QToolButton(last_box)
+            pick_btn.setIcon(eye_icon())
+            pick_btn.setAutoRaise(True)
+            pick_btn.setCursor(Qt.PointingHandCursor)
+            pick_btn.setAccessibleName(STRINGS.FLD_PICK_DATA)
+            pick_btn.clicked.connect(
+                lambda _checked=False, counter=cname: self._pick_counter_value(counter)
+            )
+            last_layout.addWidget(pick_btn)
+            self.ctable.setCellWidget(row, 4, last_box)
             resume_check = QCheckBox(self.ctable)
             resume_check.setToolTip(STRINGS.FLD_CNT_RESUME_TIP)
             resume_check.setChecked(not bool(cdef.resume))
@@ -581,9 +597,12 @@ class FieldsDialog(QDialog):
                 "pos": pos_edit,
                 "resume": resume_check,
                 "last": last_edit,
+                "last_box": last_box,
+                "pick": pick_btn,
                 "fmt": fmt_combo,
                 "touched": False,
             }
+            self._update_counter_row_state(cname)
 
     def _on_insert_field(self) -> None:
         menu = QMenu(self)
@@ -606,11 +625,63 @@ class FieldsDialog(QDialog):
 
     # -- counter previews -------------------------------------------------------
     def _on_counter_source_changed(self, cname: str) -> None:
+        self._update_counter_row_state(cname)
         self._mark_counter_touched(cname)
         for field, st in self._rows.items():
             if st["type"].currentData() == "table" and self._selected_counter(field) == cname:
                 self._refill_columns(field, select=None)
                 self._update_table_value(field)
+
+    def _counter_table_live(self, cname: str) -> str | None:
+        cst = self._crows.get(cname)
+        if cst is not None:
+            return cst["table"].currentData()
+        cdef = self._pj.counters.get(cname)
+        return cdef.table if cdef is not None else None
+
+    def _mode_of_table(self, table: str | None) -> str | None:
+        if not table:
+            return None
+        for source in self._pj.data_sources:
+            if source.file == table:
+                return source.mode
+        return None
+
+    def _update_counter_row_state(self, cname: str) -> None:
+        """Constant sources keep their row fixed; the picker needs a table."""
+        cst = self._crows.get(cname)
+        if cst is None:
+            return
+        table = self._counter_table_live(cname)
+        constant = self._mode_of_table(table) == "constant"
+        pos = cst["pos"]
+        pos.setReadOnly(constant)
+        pos.setToolTip(
+            STRINGS.FLD_POS_CONST_TIP if constant else STRINGS.FLD_POS_TIP
+        )
+        pick = cst["pick"]
+        if table is None:
+            pick.setEnabled(False)
+            pick.setToolTip(STRINGS.FLD_PICK_NO_SOURCE_TIP)
+        elif not picker_available():
+            pick.setEnabled(False)
+            pick.setToolTip(STRINGS.FLD_PICK_DISABLED_TIP)
+        else:
+            pick.setEnabled(True)
+            pick.setToolTip(STRINGS.FLD_PICK_TIP)
+
+    def _pick_counter_value(self, cname: str) -> None:
+        table = self._counter_table_live(cname)
+        if table is None:
+            return
+        value = open_picker(
+            self, self._folder, table, self._current_counter_last(cname)
+        )
+        if value is None:
+            return
+        cst = self._crows.get(cname)
+        if cst is not None:
+            cst["last"].setText(str(value))
 
     def _mark_counter_touched(self, cname: str) -> None:
         self._crows[cname]["touched"] = True

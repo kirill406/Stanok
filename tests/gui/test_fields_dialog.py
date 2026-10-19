@@ -819,8 +819,11 @@ def test_counters_table_column_order(qapp, tmp_path, store):
     assert dlg.ctable.cellWidget(0, 1) is st["table"]
     assert dlg.ctable.cellWidget(0, 2) is st["fmt"]
     assert dlg.ctable.cellWidget(0, 3) is st["pos"]
-    assert dlg.ctable.cellWidget(0, 4) is st["last"]
+    assert dlg.ctable.cellWidget(0, 4) is st["last_box"]
     assert dlg.ctable.cellWidget(0, 5) is st["resume"]
+    assert st["last_box"].findChild(QLineEdit) is st["last"]
+    assert not st["pick"].isEnabled()
+    assert st["pick"].toolTip() == STRINGS.FLD_PICK_DISABLED_TIP
     tips = [
         dlg.ctable.horizontalHeaderItem(c).toolTip()
         for c in range(dlg.ctable.columnCount())
@@ -852,6 +855,49 @@ def test_counters_table_fits_text(qapp, tmp_path, store):
     for col in range(dlg.ctable.columnCount()):
         assert header.sectionResizeMode(col) == QHeaderView.ResizeToContents
     dlg.close()
+
+
+def test_counter_constant_mode_row_read_only(qapp, tmp_path, store):
+    folder = make_project(tmp_path / "proj", mode="constant")
+    dlg = FieldsDialog(str(folder), "Договор", store=store)
+    st = dlg._crows["data"]
+    assert st["pos"].isReadOnly()
+    assert st["pos"].toolTip() == STRINGS.FLD_POS_CONST_TIP
+    combo = st["table"]
+    combo.setCurrentIndex(combo.findData(None))
+    assert not st["pos"].isReadOnly()
+    assert st["pos"].toolTip() == STRINGS.FLD_POS_TIP
+    assert not st["pick"].isEnabled()
+    assert st["pick"].toolTip() == STRINGS.FLD_PICK_NO_SOURCE_TIP
+    dlg.close()
+
+
+def test_counter_last_updates_field_preview(qapp, tmp_path, store):
+    folder = make_project(tmp_path / "proj")
+    dlg = FieldsDialog(str(folder), "Договор", store=store)
+    st = dlg._crows["num"]
+    st["last"].setText("7")
+    assert dlg._rows["Номер"]["cprev"].text() == "7"
+    st["fmt"].setCurrentIndex(st["fmt"].findData("0001"))
+    assert dlg._rows["Номер"]["cprev"].text() == "0007"
+    dlg.close()
+
+
+def test_counter_pick_writes_value_and_preview(qapp, tmp_path, store, monkeypatch):
+    import stanok.gui.fields_dialog as fields_module
+
+    folder = make_project(tmp_path / "proj")
+    monkeypatch.setattr(fields_module, "picker_available", lambda: True)
+    monkeypatch.setattr(fields_module, "open_picker", lambda *a, **k: 42)
+    dlg = FieldsDialog(str(folder), "Договор", store=store)
+    st = dlg._crows["data"]
+    assert st["pick"].isEnabled()
+    assert st["pick"].toolTip() == STRINGS.FLD_PICK_TIP
+    st["pick"].click()
+    assert st["last"].text() == "42"
+    assert dlg._crows["data"]["touched"] is True
+    dlg.close()
+
 
 
 def test_ask_source_recovery_choices(qapp, tmp_path, store, monkeypatch):

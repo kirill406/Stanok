@@ -800,7 +800,10 @@ def test_missing_source_cancel_prompts_once(qapp, tmp_path, store, monkeypatch):
     dlg.close()
 
 
-def test_counters_table_column_order(qapp, tmp_path, store):
+def test_counters_table_column_order(qapp, tmp_path, store, monkeypatch):
+    import stanok.gui.fields_dialog as fields_module
+
+    monkeypatch.setattr(fields_module, "picker_available", lambda: False)
     folder = make_project(tmp_path / "proj")
     dlg = FieldsDialog(str(folder), "Договор", store=store)
     labels = [

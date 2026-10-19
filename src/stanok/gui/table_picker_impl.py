@@ -45,6 +45,10 @@ class PickerDialog(ValuePickerDialog):
         self.hint = QLabel(STRINGS.PICK_TABLE_HINT, self)
         self.hint.setWordWrap(True)
         layout.addWidget(self.hint)
+        self.value_label = QLabel(
+            STRINGS.PICK_WILL_WRITE.format(value=STRINGS.PICK_NO_VALUE), self
+        )
+        layout.addWidget(self.value_label)
         self.table = QTableWidget(self)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectItems)
@@ -81,7 +85,7 @@ class PickerDialog(ValuePickerDialog):
         self.table.setRowCount(len(grid.rows))
         for row, values in enumerate(grid.rows):
             index_item = QTableWidgetItem(str(row))
-            index_item.setFlags(Qt.ItemIsEnabled)
+            index_item.setFlags(Qt.NoItemFlags)
             index_item.setToolTip(STRINGS.PICK_ROW_TIP)
             self.table.setItem(row, 0, index_item)
             for col, value in enumerate(values, start=1):
@@ -89,33 +93,33 @@ class PickerDialog(ValuePickerDialog):
                 item.setData(Qt.UserRole, value)
                 self.table.setItem(row, col, item)
         self.table.resizeColumnsToContents()
-        self._select_current(grid)
 
-    def _select_current(self, grid: TableGrid) -> None:
-        if self.current is None:
-            return
-        for row, values in enumerate(grid.rows):
-            for col, value in enumerate(values, start=1):
-                if coerce_number(value) == self.current:
-                    self.table.setCurrentCell(row, col)
-                    self._cell = value
-                    self.ok_btn.setEnabled(True)
-                    return
+    def _clear_choice(self) -> None:
+        self._cell = None
+        self.ok_btn.setEnabled(False)
+        self.value_label.setText(
+            STRINGS.PICK_WILL_WRITE.format(value=STRINGS.PICK_NO_VALUE)
+        )
 
     def _on_cell_clicked(self, row: int, col: int) -> None:
         if col == 0:
-            self._cell = None
-            self.ok_btn.setEnabled(False)
+            self._clear_choice()
             self.table.clearSelection()
             self.hint.setText(STRINGS.PICK_TABLE_HINT)
             return
         item = self.table.item(row, col)
-        self._cell = item.data(Qt.UserRole) if item is not None else None
-        valid = coerce_number(self._cell) is not None
-        self.ok_btn.setEnabled(valid)
-        self.hint.setText(
-            STRINGS.PICK_TABLE_HINT if valid else STRINGS.FLD_PICK_NOT_NUMBER
+        raw = item.data(Qt.UserRole) if item is not None else None
+        number = coerce_number(raw)
+        if number is None:
+            self._clear_choice()
+            self.hint.setText(STRINGS.FLD_PICK_NOT_NUMBER)
+            return
+        self._cell = raw
+        self.ok_btn.setEnabled(True)
+        self.value_label.setText(
+            STRINGS.PICK_WILL_WRITE.format(value=number)
         )
+        self.hint.setText(STRINGS.PICK_TABLE_HINT)
 
     def _on_double_click(self, row: int, col: int) -> None:
         if col == 0:

@@ -136,10 +136,12 @@ def create_gui(store=None):
 
     from .gui.icons import apply_app_icon
     from .gui.main_window import MainWindow
+    from .gui.theme import apply_theme
     from .services.storage import ProjectStore
 
     qt_app = QApplication.instance() or QApplication([])
     _install_qt_translation(qt_app)
+    apply_theme(qt_app)
     apply_app_icon(qt_app)
     window = MainWindow(store=store if store is not None else ProjectStore())
     return qt_app, window

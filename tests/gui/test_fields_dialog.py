@@ -545,7 +545,7 @@ def test_save_button_visibility(qapp, tmp_path, store):
     assert dlg.save_btn.isHidden()
     dlg._rows["Город"]["const"].setText("Казань")
     assert not dlg.save_btn.isHidden()
-    assert "2e7d32" in dlg.save_btn.styleSheet()
+    assert dlg.save_btn.property("role") == "primary"
     dlg._on_save()
     assert dlg.save_btn.isHidden()
     dlg.close()

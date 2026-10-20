@@ -20,6 +20,7 @@ from PyQt5.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QFileDialog,
+    QFrame,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -42,6 +43,7 @@ from ..engine.resolve import COUNTER_WIDTHS, TODAY_PRESETS, format_today
 from ..tables.excel import ExcelReader
 from .dialogs import ask_save_discard_cancel, ask_text
 from .strings import STRINGS
+from .theme import set_button_role
 from .table_picker import eye_icon, open_picker, picker_available
 
 logger = logging.getLogger(__name__)
@@ -269,12 +271,20 @@ class FieldsDialog(QDialog):
     # -- UI construction --------------------------------------------------------
     def _build_ui(self) -> None:
         self.setWindowTitle(STRINGS.FLD_TITLE.format(name=self._template_name))
-        self.resize(900, 650)
+        self.resize(920, 700)
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 18, 20, 16)
+        layout.setSpacing(8)
+        title = QLabel(STRINGS.FLD_TITLE.format(name=self._template_name), self)
+        title.setObjectName("pageTitle")
+        layout.addWidget(title)
         scroll = QScrollArea(self)
+        scroll.setFrameShape(QFrame.NoFrame)
         scroll.setWidgetResizable(True)
         content = QWidget(scroll)
         body = QVBoxLayout(content)
+        body.setContentsMargins(4, 4, 4, 4)
+        body.setSpacing(8)
         layout.addWidget(scroll, 1)
         scroll.setWidget(content)
         layout = body
@@ -292,6 +302,8 @@ class FieldsDialog(QDialog):
         layout.addWidget(self._section_title(STRINGS.FLD_FIELDS_TITLE))
         self.table = QTableWidget(self)
         self.table.setColumnCount(4)
+        self.table.setAlternatingRowColors(True)
+        self.table.setShowGrid(False)
         self.table.setHorizontalHeaderLabels(
             [
                 STRINGS.FLD_COL_FIELD,
@@ -333,6 +345,8 @@ class FieldsDialog(QDialog):
         layout.addWidget(self._section_title(STRINGS.FLD_COUNTERS_TITLE))
         self.ctable = QTableWidget(self)
         self.ctable.setColumnCount(5)
+        self.ctable.setAlternatingRowColors(True)
+        self.ctable.setShowGrid(False)
         header_tips = [
             STRINGS.FLD_CNT_NAME_TIP,
             STRINGS.FLD_CNT_SOURCE_TIP,
@@ -368,7 +382,7 @@ class FieldsDialog(QDialog):
         self.save_btn = buttons.addButton(
             STRINGS.FLD_SAVE, QDialogButtonBox.ActionRole
         )
-        self.save_btn.setStyleSheet("background-color: #2e7d32; color: black;")
+        set_button_role(self.save_btn, "primary")
         self.save_btn.clicked.connect(self._on_save)
         close_btn = buttons.addButton(QDialogButtonBox.Close)
         close_btn.setText(STRINGS.FLD_CLOSE)
@@ -426,6 +440,11 @@ class FieldsDialog(QDialog):
             )
             layout.addWidget(cname_combo)
             st["cname"] = cname_combo
+            sep = QLabel("/", box)
+            sep.setObjectName("muted")
+            sep.setFixedWidth(10)
+            sep.setAlignment(Qt.AlignCenter)
+            layout.addWidget(sep)
             col_combo = QComboBox(box)
             layout.addWidget(col_combo)
             st["col"] = col_combo
@@ -512,7 +531,7 @@ class FieldsDialog(QDialog):
     @staticmethod
     def _section_title(text: str) -> QLabel:
         label = QLabel(text)
-        label.setStyleSheet("font-weight: bold; font-size: 11pt;")
+        label.setObjectName("sectionTitle")
         return label
 
     def _build_counters_table(self) -> None:

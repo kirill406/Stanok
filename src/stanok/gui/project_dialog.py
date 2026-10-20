@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import logging
 
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtWidgets import (
     QButtonGroup,
     QCheckBox,
@@ -34,6 +34,7 @@ from .dialogs import ask_yes_no
 from .fields_dialog import FieldsDialog
 from .report_text import done_text
 from .strings import STRINGS
+from .theme import set_button_role
 from .worker import GenerateWorker
 
 logger = logging.getLogger(__name__)
@@ -43,6 +44,26 @@ MODE_LABELS = (
     ("circular", STRINGS.MODE_CIRCULAR),
     ("constant", STRINGS.MODE_CONSTANT),
 )
+
+
+class HintComboBox(QComboBox):
+    """Source-type combo that reports popup opening to stop the pulse."""
+
+    popup_requested = pyqtSignal()
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        view = self.view()
+        if view is not None:
+            view.setStyleSheet(
+                "background-color: white; color: black;"
+                " selection-background-color: #c8e6c9;"
+                " selection-color: black;"
+            )
+
+    def showPopup(self) -> None:
+        self.popup_requested.emit()
+        super().showPopup()
 
 
 class ProjectDialog(QDialog):
@@ -82,24 +103,50 @@ class ProjectDialog(QDialog):
     # -- UI construction -------------------------------------------------
     def _build_ui(self) -> None:
         self.setWindowTitle(STRINGS.PROJ_TITLE.format(name=self._config_name))
-        self.resize(900, 650)
+        self.resize(920, 700)
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 18, 20, 18)
+        layout.setSpacing(10)
 
-        layout.addWidget(QLabel(STRINGS.PROJ_SOURCES_TITLE))
+        title = QLabel(STRINGS.PROJ_TITLE.format(name=self._config_name), self)
+        title.setObjectName("pageTitle")
+        layout.addWidget(title)
+        folder = QLabel(STRINGS.PROJ_FOLDER.format(path=self._folder), self)
+        folder.setObjectName("pageSubtitle")
+        folder.setWordWrap(True)
+        layout.addWidget(folder)
+
+        sources_title = QLabel(STRINGS.PROJ_SOURCES_TITLE, self)
+        sources_title.setObjectName("sectionTitle")
+        layout.addWidget(sources_title)
         self.sources_table = QTableWidget(self)
         self.sources_table.setColumnCount(2)
         self.sources_table.setHorizontalHeaderLabels(
             [STRINGS.PROJ_SRC_COL_FILE, STRINGS.PROJ_SRC_COL_TYPE]
         )
         self.sources_table.verticalHeader().setVisible(False)
+        self.sources_table.verticalHeader().setDefaultSectionSize(40)
+        self.sources_table.setAlternatingRowColors(True)
+        self.sources_table.setShowGrid(False)
+        src_header = self.sources_table.horizontalHeader()
+        src_header.setSectionResizeMode(0, QHeaderView.Stretch)
+        src_header.setSectionResizeMode(1, QHeaderView.Fixed)
+        src_header.resizeSection(1, 200)
         self._reload_sources()
         layout.addWidget(self.sources_table)
         hint = QLabel(STRINGS.PROJ_SRC_TYPES_HINT, self)
+        hint.setObjectName("muted")
         hint.setWordWrap(True)
         layout.addWidget(hint)
 
+        tpl_title = QLabel(STRINGS.PROJ_TEMPLATES_TITLE, self)
+        tpl_title.setObjectName("sectionTitle")
+        layout.addWidget(tpl_title)
         self.table = QTableWidget(self)
         self.table.setColumnCount(6)
+        self.table.setAlternatingRowColors(True)
+        self.table.setShowGrid(False)
+        self.table.verticalHeader().setDefaultSectionSize(42)
         self.table.setHorizontalHeaderLabels(
             [
                 STRINGS.PROJ_TPL_COL,
@@ -112,20 +159,22 @@ class ProjectDialog(QDialog):
         )
         header = self.table.horizontalHeader()
         header.setStretchLastSection(False)
+        for col in range(6):
+            header.setSectionResizeMode(col, QHeaderView.Interactive)
         for col, width in (
-            (0, 240),
-            (1, 130),
-            (2, 80),
-            (3, 140),
-            (4, 140),
+            (0, 215),
+            (1, 160),
+            (2, 90),
+            (3, 155),
+            (4, 152),
             (5, 90),
         ):
-            header.setSectionResizeMode(col, QHeaderView.Interactive)
             header.resizeSection(col, width)
         self._reload_templates()
         layout.addWidget(self.table)
 
         add_row = QHBoxLayout()
+        add_row.setSpacing(8)
         self.add_tpl_btn = QPushButton(STRINGS.TPL_ADD, self)
         self.add_tpl_btn.clicked.connect(self._on_add_template)
         add_row.addWidget(self.add_tpl_btn)
@@ -135,19 +184,23 @@ class ProjectDialog(QDialog):
         self.settings_btn = QPushButton(STRINGS.PROJ_SETTINGS, self)
         self.settings_btn.clicked.connect(self._on_settings)
         add_row.addWidget(self.settings_btn)
+        add_row.addStretch(1)
         layout.addLayout(add_row)
 
+        footer = QHBoxLayout()
+        footer.setSpacing(8)
         self.delete_btn = QPushButton(STRINGS.PROJ_DELETE, self)
-        self.delete_btn.setStyleSheet("color: #b71c1c;")
+        set_button_role(self.delete_btn, "danger")
         self.delete_btn.clicked.connect(self._on_delete_project)
-        layout.addWidget(self.delete_btn)
-
+        footer.addWidget(self.delete_btn)
+        footer.addStretch(1)
         buttons = QDialogButtonBox(QDialogButtonBox.Close, self)
         close_btn = buttons.button(QDialogButtonBox.Close)
         if close_btn is not None:
             close_btn.setText(STRINGS.FLD_CLOSE)
         buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
+        footer.addWidget(buttons)
+        layout.addLayout(footer)
 
     def _reload_sources(self) -> None:
         """Rebuild source rows: file (read-only) + editable mode combo (021)."""
@@ -160,7 +213,7 @@ class ProjectDialog(QDialog):
             file_item = QTableWidgetItem(ds.file)
             file_item.setFlags(file_item.flags() & ~Qt.ItemIsEditable)
             self.sources_table.setItem(row, 0, file_item)
-            combo = QComboBox(self.sources_table)
+            combo = HintComboBox(self.sources_table)
             for key, label in MODE_LABELS:
                 combo.addItem(label, key)
             combo.blockSignals(True)
@@ -246,12 +299,20 @@ class ProjectDialog(QDialog):
             combo = self.sources_table.cellWidget(row, 1)
             if combo is not None:
                 blink = GreenBlink(combo)
+                combo.popup_requested.connect(
+                    lambda b=blink: self._stop_source_hint(b)
+                )
                 blink.start()
                 self._source_blinks.append(blink)
         for name, button in self._edit_buttons.items():
             blink = GreenBlink(button)
             blink.start()
             self._edit_blinks[name] = blink
+
+    def _stop_source_hint(self, blink: GreenBlink) -> None:
+        blink.stop()
+        if blink in self._source_blinks:
+            self._source_blinks.remove(blink)
 
     def _stop_source_hints(self) -> None:
         for blink in self._source_blinks:
@@ -267,6 +328,24 @@ class ProjectDialog(QDialog):
     def closeEvent(self, event) -> None:
         self._stop_hints()
         super().closeEvent(event)
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        if hasattr(self, "table"):
+            self._fit_template_name_column()
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        if hasattr(self, "table"):
+            self._fit_template_name_column()
+
+    def _fit_template_name_column(self) -> None:
+        """Let the template name use the spare width without a Stretch mode."""
+        header = self.table.horizontalHeader()
+        used = sum(header.sectionSize(col) for col in range(1, header.count()))
+        width = max(160, self.table.viewport().width() - used)
+        if header.sectionSize(0) != width:
+            header.resizeSection(0, width)
 
     # -- window 3 hook ------------------------------------------------------
     def _open_fields_dialog(self, template_name: str) -> None:

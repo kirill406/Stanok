@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 from PyQt5.QtCore import QAbstractAnimation, QEasingCurve, QVariantAnimation
-from PyQt5.QtWidgets import QWidget
+from PyQt5.QtWidgets import QComboBox, QWidget
 
 GREEN_RGB = "76, 175, 80"
 
@@ -38,7 +38,14 @@ class GreenBlink:
 
     def _apply(self, alpha) -> None:
         percent = max(0, min(100, round(float(alpha) * 100)))
-        self._widget.setStyleSheet(
-            f"{self._base_style}\n"
-            f"background-color: rgba({GREEN_RGB}, {percent}%);"
-        )
+        if isinstance(self._widget, QComboBox):
+            style = (
+                f"{self._base_style}\n"
+                f"QComboBox {{ background-color: rgba({GREEN_RGB}, {percent}%); }}"
+            )
+        else:
+            style = (
+                f"{self._base_style}\n"
+                f"background-color: rgba({GREEN_RGB}, {percent}%);"
+            )
+        self._widget.setStyleSheet(style)

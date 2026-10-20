@@ -160,9 +160,10 @@ class MainWindow(QMainWindow):
         config = dialog.selected_config
         if not config:
             return
+        created = getattr(dialog, "created_config", "") == config
         self._store.touch_recent(config)
         self.refresh_recent()
-        self._open_project_dialog(config)
+        self._open_project_dialog(config, highlight_new=created)
 
     def _on_row_clicked(self, item: QListWidgetItem) -> None:
         self._open_project_dialog(item.data(Qt.UserRole))

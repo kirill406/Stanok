@@ -162,6 +162,37 @@ def test_browse_opens_selected(qapp, tmp_path, store, monkeypatch):
     win.close()
 
 
+def test_browse_created_project_opens_highlighted(
+    qapp, tmp_path, store, monkeypatch
+):
+    import stanok.gui.main_window as mw
+    import stanok.gui.open_project_dialog as opd
+
+    _make_home_project(store, tmp_path)
+    opened = {}
+
+    class FakeOpen:
+        def __init__(self, *a, **k):
+            self.selected_config = "proj"
+            self.created_config = "proj"
+
+        def exec_(self):
+            return True
+
+    monkeypatch.setattr(opd, "OpenProjectDialog", FakeOpen)
+    monkeypatch.setattr(
+        mw,
+        "ProjectDialog",
+        lambda ref, st, parent, **k: type(
+            "F", (), {"exec_": lambda self: opened.update(ref=ref, **k)}
+        )(),
+    )
+    win = MainWindow(store=store)
+    win._on_browse()
+    assert opened["highlight_new"] is True
+    win.close()
+
+
 def test_browse_cancelled_noop(qapp, tmp_path, store, monkeypatch):
     import stanok.gui.open_project_dialog as opd
 

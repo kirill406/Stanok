@@ -37,10 +37,13 @@ def test_validate_pj_minimal():
 
 def test_validate_pj_full():
     pj = validate_pj(_load("pj_full.stanok"))
-    assert pj.counters["doc_num"].last == 42
+    assert pj.counters["doc_num"].pos == 42
     assert pj.counters["act_num"].format == "month"
     assert pj.data_sources[1].mode == "circular"
-    assert pj.data_sources[1].start_row == 5
+    assert pj.counters["proj"].pos == 5
+    assert pj.templates["Договор"].limit == 10
+    assert pj.default_template == "Договор"
+    assert pj.templates["Договор"].fields["ФИО"].counter_name == "emp"
 
 
 def test_validate_fj_example():
@@ -190,34 +193,126 @@ def test_migrate_no_version_update(monkeypatch):
         migrate({"version": "0.0.0"})
 
 
-def test_field_table_binding():
-    pj = validate_pj({
+def _pj(table_field: dict, counters: dict, sources=None) -> dict:
+    if sources is None:
+        sources = [{"file": "Данные/d.xlsx", "mode": "sequential"}]
+    return {
         "version": "0.0.0",
-        "templates": {"T": {"file": "Шаблоны/t.docx", "fields": {
-            "F": {"source": "table", "value": "col", "table": "Данные/d.xlsx"},
-        }}},
-        "data_sources": [{"file": "Данные/d.xlsx", "mode": "sequential", "start_row": 0}],
-        "counters": {},
-        "filename_template": "Д_{i}.docx",
-    })
-    assert pj.templates["T"].fields["F"].table == "Данные/d.xlsx"
-    bad = {
-        "version": "0.0.0",
-        "templates": {"T": {"file": "Шаблоны/t.docx", "fields": {
-            "F": {"source": "table", "value": "col", "table": "../evil.xlsx"},
-        }}},
-        "data_sources": [{"file": "Данные/d.xlsx", "mode": "sequential", "start_row": 0}],
-        "counters": {},
+        "templates": {"T": {"file": "Шаблоны/t.docx", "fields": {"F": table_field}}},
+        "data_sources": sources,
+        "counters": counters,
         "filename_template": "Д_{i}.docx",
     }
-    with pytest.raises(Exception, match="относительным"):
-        validate_pj(bad)
+
+
+def test_field_needs_counter_name():
+    with pytest.raises(PJValidationError, match="counter_name"):
+        validate_pj(_pj({"source": "table", "value": "col"}, {}))
+
+
+def test_field_counter_must_exist():
+    with pytest.raises(PJValidationError, match="not defined"):
+        validate_pj(
+            _pj(
+                {"source": "table", "value": "col", "counter_name": "ghost"},
+                {},
+            )
+        )
+
+
+def test_field_counter_must_be_bound():
+    with pytest.raises(PJValidationError, match="not bound"):
+        validate_pj(
+            _pj(
+                {"source": "table", "value": "col", "counter_name": "num"},
+                {"num": {"pos": 0, "format": "1"}},
+            )
+        )
+
+
+def test_field_counter_ok():
+    pj = validate_pj(
+        _pj(
+            {"source": "table", "value": "col", "counter_name": "emp"},
+            {"emp": {"format": "1", "table": "Данные/d.xlsx"}},
+        )
+    )
+    assert pj.templates["T"].fields["F"].counter_name == "emp"
+
+
+def test_counter_field_must_exist():
+    with pytest.raises(PJValidationError, match="counter field"):
+        validate_pj(
+            _pj({"source": "counter", "value": "ghost"}, {}, sources=[])
+        )
+
+
+def test_counter_field_ok():
+    pj = validate_pj(
+        _pj(
+            {"source": "counter", "value": "num"},
+            {"num": {"pos": 0, "format": "1"}},
+            sources=[],
+        )
+    )
+    assert pj.templates["T"].fields["F"].value == "num"
+
+
+def test_counter_table_must_be_known_source():
+    with pytest.raises(PJValidationError, match="not in data_sources"):
+        validate_pj(
+            _pj(
+                {"source": "constant", "value": "x"},
+                {"emp": {"format": "1", "table": "Данные/gone.xlsx"}},
+            )
+        )
+
+
+def test_source_needs_bound_counter():
+    with pytest.raises(PJValidationError, match="no bound counter"):
+        validate_pj(
+            _pj(
+                {"source": "constant", "value": "x"},
+                {},
+            )
+        )
+
+
+def test_default_template_must_exist():
+    data = _pj({"source": "constant", "value": "x"}, {}, sources=[])
+    data["default_template"] = "Чужой"
+    with pytest.raises(PJValidationError, match="default_template"):
+        validate_pj(data)
+
+
+def test_default_template_defaults_to_first():
+    pj = validate_pj(_pj({"source": "constant", "value": "x"}, {}, sources=[]))
+    assert pj.default_template == "T"
+
+
+def test_counter_pos_and_resume_defaults():
+    from stanok.engine.schema import CounterDef
+
+    cdef = CounterDef()
+    assert cdef.pos == 0
+    assert cdef.resume == 1
+    assert CounterDef(table="Данные/d.xlsx", pos=3, resume=0).pos == 3
+
+
+def test_counter_legacy_position_migrates():
+    from stanok.engine.schema import CounterDef
+
+    assert CounterDef(last=7, start_row=3, table="Данные/d.xlsx").pos == 3
+    assert CounterDef(last=7, start_row=3).pos == 7
+    assert CounterDef(last=7).pos == 7
+    assert CounterDef(start_row=3).pos == 3
+    assert CounterDef(pos=5, last=7, start_row=3).pos == 5
 
 
 def test_counter_table_binding_validate():
     from stanok.engine.schema import CounterDef
 
-    assert CounterDef(last=0, table="Данные/d.xlsx").table == "Данные/d.xlsx"
+    assert CounterDef(pos=0, table="Данные/d.xlsx").table == "Данные/d.xlsx"
     assert CounterDef().table is None
     with pytest.raises(Exception, match="относительным"):
         CounterDef(table="../evil.xlsx")

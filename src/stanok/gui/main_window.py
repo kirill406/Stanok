@@ -19,6 +19,7 @@ from PyQt5.QtWidgets import (
     QProgressBar,
     QProgressDialog,
     QPushButton,
+    QSpinBox,
     QVBoxLayout,
     QWidget,
     QFileDialog,
@@ -26,7 +27,9 @@ from PyQt5.QtWidgets import (
 
 from ..services.generate import GenerateCommand, GenerateReport
 from ..services.storage import ProjectStore, StorageError
+from .dialogs import ask_yes_no
 from .project_dialog import ProjectDialog
+from .report_text import done_text
 from .strings import STRINGS
 from .worker import GenerateWorker
 
@@ -100,6 +103,7 @@ class MainWindow(QMainWindow):
             row_layout.setContentsMargins(4, 2, 4, 2)
             name = QLabel(label, row)
             row_layout.addWidget(name, 1)
+            self._add_template_controls(row, row_layout, item.config)
             btn = QPushButton(STRINGS.MAIN_GENERATE, row)
             btn.clicked.connect(
                 lambda _checked=False, ref=item.config: self._on_generate_one(ref)
@@ -115,6 +119,36 @@ class MainWindow(QMainWindow):
             entry.setSizeHint(row.sizeHint())
             self.recent_list.addItem(entry)
             self.recent_list.setItemWidget(entry, row)
+
+    def _add_template_controls(self, row: QWidget, layout: QHBoxLayout, ref: str) -> None:
+        """Show the default template name + editable limit before «Сгенерировать»."""
+        try:
+            pj, _ = self._store.resolve_project(ref)
+            template = pj.default_template
+            limit = pj.templates[template].limit
+        except Exception as e:
+            logger.warning(f"default template of {ref}: {e}", exc_info=True)
+            layout.addWidget(QLabel(STRINGS.MAIN_TPL_UNAVAILABLE, row))
+            return
+        layout.addWidget(QLabel(STRINGS.MAIN_TPL.format(name=template), row))
+        spin = QSpinBox(row)
+        spin.setRange(0, 1_000_000)
+        spin.setValue(limit)
+        spin.setToolTip(STRINGS.MAIN_TPL_LIMIT_TIP)
+        spin.valueChanged.connect(
+            lambda value, r=ref, t=template: self._on_row_limit_changed(r, t, value)
+        )
+        layout.addWidget(spin)
+
+    def _on_row_limit_changed(self, ref: str, template: str, value: int) -> None:
+        """Persist a row's default-template limit as soon as it changes."""
+        try:
+            self._store.set_template_limit(ref, template, value)
+        except Exception as e:
+            logger.warning(
+                f"set template limit {ref}/{template}: {e}", exc_info=True
+            )
+            self._show_error(f"{STRINGS.MAIN_ERROR_TITLE}: {e}")
 
     def _on_browse(self) -> None:
         """Pick a project from the known list (open by config name)."""
@@ -138,10 +172,12 @@ class MainWindow(QMainWindow):
         self._store.remove_recent(folder, config)
         self.refresh_recent()
 
-    def _open_project_dialog(self, ref: str) -> None:
+    def _open_project_dialog(self, ref: str, *, highlight_new: bool = False) -> None:
         """Open window 2 (ProjectDialog, 009) by config name."""
         try:
-            dialog = ProjectDialog(ref, self._store, self)
+            dialog = ProjectDialog(
+                ref, self._store, self, highlight_new=highlight_new
+            )
         except StorageError as e:
             logger.warning(f"open project dialog {ref}: {e}", exc_info=True)
             if "folder not found" in str(e):
@@ -158,12 +194,11 @@ class MainWindow(QMainWindow):
 
     def _offer_relocate(self, ref: str) -> None:
         """Missing project folder: let the user pick a new one (020 risk)."""
-        answer = QMessageBox.question(
+        if not ask_yes_no(
             self,
             STRINGS.MAIN_ERROR_TITLE,
             STRINGS.MAIN_FOLDER_MISSING.format(name=ref),
-        )
-        if answer != QMessageBox.Yes:
+        ):
             return
         folder = QFileDialog.getExistingDirectory(self, STRINGS.MAIN_FIND_FOLDER)
         if not folder:
@@ -190,13 +225,13 @@ class MainWindow(QMainWindow):
         from .create_dialog import CreateDialog
 
         recent = self._store.get_recent()
-        hint = recent[-1].folder if recent else str(Path.home())
+        hint = str(Path(recent[-1].folder).parent) if recent else str(Path.home())
         dialog = CreateDialog(self._store, hint, self)
         if dialog.exec_():
             self.refresh_recent()
             name = getattr(dialog, "project_name", "")
             if name:
-                self._open_project_dialog(name)
+                self._open_project_dialog(name, highlight_new=True)
 
     # -- generation queue ---------------------------------------------------
     def _on_generate_one(self, ref: str) -> None:
@@ -272,12 +307,7 @@ class MainWindow(QMainWindow):
             if isinstance(result, str):
                 self._show_error(f"{STRINGS.MAIN_ERROR_TITLE}: {result}")
             else:
-                text = STRINGS.APP_DONE.format(
-                    created=result.created,
-                    skipped=result.skipped,
-                    errors=len(result.errors),
-                    elapsed=f"{result.elapsed:.1f}",
-                )
+                text = done_text(result)
                 if result.errors:
                     details = "\n".join(f"{i}: {msg}" for i, msg in result.errors)
                     QMessageBox.information(
@@ -291,15 +321,7 @@ class MainWindow(QMainWindow):
                 if isinstance(result, str):
                     lines.append(f"{ref}: {STRINGS.MAIN_ERROR_TITLE}: {result}")
                 else:
-                    lines.append(
-                        f"{ref}: "
-                        + STRINGS.APP_DONE.format(
-                            created=result.created,
-                            skipped=result.skipped,
-                            errors=len(result.errors),
-                            elapsed=f"{result.elapsed:.1f}",
-                        )
-                    )
+                    lines.append(f"{ref}: {done_text(result)}")
             QMessageBox.information(
                 self, STRINGS.MAIN_SUMMARY_TITLE, "\n".join(lines)
             )

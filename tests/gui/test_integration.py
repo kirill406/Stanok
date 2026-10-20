@@ -96,7 +96,7 @@ def test_window_chain_to_docx(qapp, tmp_path, store, monkeypatch):
     assert "{{" not in text
     saved = json.loads((store.home_dir / "proj.stanok").read_text())
     assert saved["templates"]["Договор"]["fields"]["Город"]["value"] == "Казань"
-    assert saved["counters"]["num"]["last"] == 2
+    assert saved["counters"]["num"]["pos"] == 2
     dlg2.close()
     win.close()
 
@@ -120,14 +120,22 @@ def test_cli_broken_project_returns_1(tmp_path, store, monkeypatch):
     assert main([str(tmp_path / "gone")]) == 1
 
 
-def test_cli_source_alias(tmp_path, store, monkeypatch, capsys):
-    from tests.services.test_generate import _add_source
-
+def test_cli_selects_template(tmp_path, store, monkeypatch, capsys):
     monkeypatch.setattr(
         "stanok.services.generate.ProjectStore", lambda *a, **k: store
     )
     folder = make_project(tmp_path / "cli")
-    second = _add_source(folder)
-    assert main([str(folder), "--source", second]) == 0
+    data = json.loads((folder / "project.stanok").read_text())
+    data["templates"]["Второй"] = json.loads(json.dumps(data["templates"]["Договор"]))
+    (folder / "project.stanok").write_text(json.dumps(data, ensure_ascii=False))
+    assert main([str(folder), "--template", "Второй"]) == 0
     out, _ = capsys.readouterr()
-    assert "создано 1" in out
+    assert "создано 2" in out
+
+
+def test_cli_unknown_template_returns_1(tmp_path, store, monkeypatch):
+    monkeypatch.setattr(
+        "stanok.services.generate.ProjectStore", lambda *a, **k: store
+    )
+    folder = make_project(tmp_path / "cli")
+    assert main([str(folder), "--template", "Чужой"]) == 1

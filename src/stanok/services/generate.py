@@ -1,6 +1,11 @@
 # Copyright (C) 2026 Kirill Borovoy
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""End-to-end generation: tables → resolve → render → docx (single entry)."""
+"""End-to-end generation: tables → resolve → render → docx (single entry).
+
+021: all sources participating in the template run at once; each counter holds
+one position (`pos`) that is both its source row and printed number and persists
+per `resume`. No launch-point/selection dependency.
+"""
 
 from __future__ import annotations
 
@@ -12,8 +17,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
 from ..engine.render import render
-from ..engine.resolve import resolve_rows
-from ..engine.schema import DataSourceDef, ProjectJSON, TemplateDef, validate_pj
+from ..engine.resolve import modes_of, participating_sources, resolve_rows
+from ..engine.schema import ProjectJSON, TemplateDef
 from ..gui.strings import STRINGS
 from ..tables.excel import ExcelReader
 from .storage import ProjectStore, project_folder
@@ -35,10 +40,7 @@ class GenerateCommand:
     """Generation run parameters (single entry point for CLI/GUI)."""
 
     project_ref: str | Path
-    template: str | None = None
-    data_source: str | None = None  # None = all sources in PJ order (FR-7)
-    max_docs: int | None = None  # per-source limit (013)
-    resume: bool = False
+    template: str | None = None  # None = project default_template (021)
 
 
 @dataclass
@@ -46,11 +48,11 @@ class GenerateReport:
     """Generation run outcome."""
 
     created: int = 0
-    skipped: int = 0
     errors: list[tuple[int, str]] = field(default_factory=list)
     output_paths: list[Path] = field(default_factory=list)
     elapsed: float = 0.0
-    resumed_from: int | None = None  # input cursor; None on fresh start
+    planned: int = 0  # documents resolved for this run (before errors)
+    limit: int = 0  # template limit (0 = unlimited)
 
 
 def _unique_path(base: Path) -> Path:
@@ -66,60 +68,50 @@ def _unique_path(base: Path) -> Path:
         i += 1
 
 
-def _is_empty_row(row: dict[str, Any]) -> bool:
-    return all(v is None or v == "" for v in row.values())
-
-
 def _pick_template(pj: ProjectJSON, name: str | None) -> tuple[str, TemplateDef]:
     if not pj.templates:
         raise TemplateError("no templates defined in project")
-    if name is None:
-        picked = next(iter(pj.templates))
-        if len(pj.templates) > 1:
-            logger.warning(f"multiple templates, using first: {picked}")
-        return picked, pj.templates[picked]
-    if name not in pj.templates:
-        raise TemplateError(f"template not found: {name}")
-    return name, pj.templates[name]
-
-
-def _pick_data_sources(
-    pj: ProjectJSON, name: str | None
-) -> list[tuple[int, DataSourceDef]]:
-    """Select sources to run: all in PJ order (None) or one by file name."""
-    if not pj.data_sources:
-        raise TemplateError("no data sources defined in project")
-    if name is None:
-        return list(enumerate(pj.data_sources))
-    for i, ds in enumerate(pj.data_sources):
-        if ds.file == name:
-            return [(i, ds)]
-    raise TemplateError(f"data source not found: {name}")
+    if name:
+        if name not in pj.templates:
+            raise TemplateError(f"template not found: {name}")
+        return name, pj.templates[name]
+    default = pj.default_template or next(iter(pj.templates))
+    if default not in pj.templates:
+        raise TemplateError(f"default template not found: {default}")
+    return default, pj.templates[default]
 
 
 def _check_table_columns(
-    rows: list[dict], template_def: TemplateDef, ds: DataSourceDef
+    rows_by_source: dict[str, list[dict]],
+    template_def: TemplateDef,
+    pj: ProjectJSON,
 ) -> None:
-    """Fail fast when a table field's column is missing from running rows (020).
+    """Fail fast when a table field's column is missing from its source (021).
 
-    Resolve reads only the current source, so the check targets it —
-    whatever file the field is bound to. Union of keys (ragged rows safe).
+    The source of a table field comes from its counter's `table`. Headers are
+    the union of row keys (ragged rows safe).
     """
-    headers: list[str] = []
-    for r in rows:
-        for h in r.keys():
-            if h not in headers:
-                headers.append(h)
     for field_name, fdef in template_def.fields.items():
         if fdef.source.value != "table":
             continue
-        if fdef.table is not None and fdef.table != ds.file:
-            continue  # bound elsewhere: resolves to None, no check
+        cdef = pj.counters.get(fdef.counter_name) if fdef.counter_name else None
+        if cdef is None:
+            raise TemplateError(
+                f"field '{field_name}': counter '{fdef.counter_name}' not defined"
+            )
+        rows = rows_by_source.get(cdef.table, [])
+        headers: list[str] = []
+        for r in rows:
+            for h in r.keys():
+                if h not in headers:
+                    headers.append(h)
+        if not headers:
+            continue  # empty source: no documents will be produced
         column = str(fdef.value)
         if column not in headers:
             raise TemplateError(
                 f"field '{field_name}': column '{column}' "
-                f"not found in {ds.file}"
+                f"not found in {cdef.table}"
             )
 
 
@@ -147,11 +139,10 @@ def generate_documents(
 ) -> GenerateReport:
     """Run tables → resolve → render → docx pipeline, return report.
 
-    FR-7: data_source=None runs ALL sources in PJ order with shared counters;
-    per-source cursors persist independently. max_docs applies per source.
+    021: the template's participating sources are read and composed together;
+    counters/cursors persist according to each counter's `resume`.
     Fail-fast (exception out): project/template/data config errors.
-    Per-source file errors (multi-source only) and per-row render/save errors
-    are collected into report.errors.
+    Per-row render/save errors are collected into report.errors.
     progress(created, total) is called after each created document;
     returning True cancels the run (partial report, created files stay).
     """
@@ -159,127 +150,89 @@ def generate_documents(
     report = GenerateReport()
     store = store or ProjectStore()
     logger.info(
-        f"generate started: ref={cmd.project_ref} resume={cmd.resume} "
-        f"source={cmd.data_source or 'all'}"
+        f"generate started: ref={cmd.project_ref} template={cmd.template or 'default'}"
     )
 
     pj, config_path = store.resolve_project(cmd.project_ref)
     project_dir = project_folder(cmd.project_ref, pj, config_path, store)
 
     template_name, template_def = _pick_template(pj, cmd.template)
-    sources = _pick_data_sources(pj, cmd.data_source)
-    multi = len(sources) > 1
     template_path = project_dir / template_def.file
     if not template_path.is_file():
         raise TemplateError(f"template file not found: {template_path}")
 
-    out_dir = project_dir / RESULT_DIR
-
-    first_ds = sources[0][1]
-    first_start = max(0, first_ds.start_row if cmd.resume else 0)
-    report.resumed_from = first_start or None
-
-    cancelled = False
-    for ds_index, ds in sources:
-        if cancelled:
-            break
+    rows_by_source: dict[str, list[dict[str, Any]]] = {}
+    reader = ExcelReader()
+    for file in participating_sources(pj, template_name):
+        path = project_dir / file
         try:
-            rows = ExcelReader().read(project_dir / ds.file)
+            rows_by_source[file] = reader.read(path)
         except Exception as e:
-            if not multi:
-                raise
-            logger.warning(f"source {ds.file} failed: {e}", exc_info=True)
-            report.errors.append((-1, f"{ds.file}: {e}"))
-            continue
-        logger.debug(f"read {len(rows)} rows from {ds.file}")
-        if not rows:
-            logger.info(f"generate: empty data source {ds.file}")
-            continue
+            logger.error(f"source {file} failed: {e}", exc_info=True)
+            raise TemplateError(f"data source not readable: {file}: {e}") from e
 
-        # Work copy: single template + THIS source only (013: resolve reads [0]).
-        work = pj.model_copy(deep=True)
-        work.templates = {template_name: template_def}
-        src = ds.model_copy()
-        start = max(0, ds.start_row if cmd.resume else 0)
-        src.start_row = 0
-        work.data_sources = [src]
-        work = validate_pj(work.model_dump(mode="json"))
+    _check_table_columns(rows_by_source, template_def, pj)
 
-        indexed = [(i, r) for i, r in enumerate(rows[start:], start)]
-        nonempty = [(i, r) for i, r in indexed if not _is_empty_row(r)]
-        report.skipped += len(indexed) - len(nonempty)
-        if not nonempty:
-            logger.info(f"generate: only empty rows in {ds.file}")
-            continue
+    fillings, used = resolve_rows(rows_by_source, pj, template_name, today)
+    logger.debug(f"resolved {len(fillings)} fillings for {template_name}")
 
-        limit = cmd.max_docs
-        if limit is not None and limit <= 0:
-            continue
+    modes = modes_of(pj)
+    origin = {name: pj.counters[name].pos for name in used}
 
-        # Pre-flight: table columns must exist (clear error before any doc).
-        _check_table_columns(rows, template_def, ds)
-
-        # Mode selection (incl. circular cycling) lives in the engine;
-        # here only clean rows + limit go in, cursor math stays here.
-        clean_idx = [i for i, _ in nonempty]
-        fillings, counters = resolve_rows(
-            [r for _, r in nonempty], work, today, limit=limit
-        )
-        logger.debug(f"resolved {len(fillings)} fillings, mode={ds.mode}")
-        n = len(clean_idx)
-        if ds.mode == "circular" and limit is not None:
-            attempt_idx = [clean_idx[k % n] for k in range(len(fillings))]
-            new_start = start + len(indexed)
-        elif ds.mode == "constant":
-            attempt_idx = [clean_idx[0]] * len(fillings)
-            new_start = clean_idx[0] + 1
-        else:
-            attempt_idx = clean_idx[: len(fillings)]
-            new_start = start + len(indexed if limit is None else indexed[:limit])
-        attempt = list(zip(attempt_idx, fillings))
-
-        total = len(fillings)
-        tag = f"{ds.file}: " if multi else ""
-        source_created = 0
-        out_dir.mkdir(parents=True, exist_ok=True)
-        for abs_index, fj in attempt:
+    out_dir = project_dir / RESULT_DIR
+    total = len(fillings)
+    report.planned = total
+    report.limit = template_def.limit
+    cancelled = False
+    processed = 0
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for k, fj in enumerate(fillings, start=1):
+        processed += 1
+        try:
+            doc = render(fj, template_path)
+            path = _save_document(doc, out_dir, fj.dist, k)
+            report.output_paths.append(path)
+            report.created += 1
+        except Exception as e:
+            logger.warning(f"row {k} failed: {e}", exc_info=True)
+            report.errors.append((k, str(e)))
+        if progress is not None:
             try:
-                doc = render(fj, template_path)
-                path = _save_document(doc, out_dir, fj.dist, abs_index)
-                report.output_paths.append(path)
-                report.created += 1
-                source_created += 1
+                if progress(report.created, total):
+                    logger.info(f"generate cancelled after {report.created} docs")
+                    cancelled = True
+                    break
             except Exception as e:
-                logger.warning(f"row {abs_index} failed: {e}", exc_info=True)
-                report.errors.append((abs_index, f"{tag}{e}"))
-            if progress is not None:
-                try:
-                    if progress(report.created, total):
-                        logger.info(
-                            f"generate cancelled after {report.created} docs"
-                        )
-                        cancelled = True
-                        break
-                except Exception as e:
-                    logger.warning(f"progress callback failed: {e}", exc_info=True)
-        if cancelled:
-            logger.info("generate cancelled by user")
+                logger.warning(f"progress callback failed: {e}", exc_info=True)
+    if cancelled:
+        logger.info("generate cancelled by user")
 
-        if source_created:
-            for name in pj.counters:
-                if name in counters:
-                    pj.counters[name].last = counters[name]
-            # Counters for docs that failed to render keep resolved numbers
-            # (gaps are accepted); cursor advances per mode (§2.2 spec 012).
-            pj.data_sources[ds_index].start_row = new_start
+    for name in used:
+        cdef = pj.counters[name]
+        orig_pos = origin[name]
+        if cdef.table is None:
+            # Numeric counter: no row cursor, numbering always continues.
+            cdef.pos = orig_pos + processed
+            continue
+        if not cdef.resume:
+            continue
+        mode = modes.get(cdef.table, "sequential")
+        if mode == "constant":
+            # Constant source: the position never changes.
+            continue
+        # Sequential/circular: keep the absolute count; the row wraps at read
+        # time, so the printed number keeps growing.
+        cdef.pos = orig_pos + processed
 
-    if report.created:
+    # Persist positions whenever documents were attempted (created + errors).
+    # An all-errored run must still advance, matching `processed`.
+    if processed:
         store.save(pj, name=config_path.stem)
-        logger.info(f"saved PJ counters/cursors to {config_path}")
+        logger.info(f"saved PJ counter positions to {config_path}")
 
     report.elapsed = time.monotonic() - started
     logger.info(
-        f"generate finished: created={report.created} skipped={report.skipped} "
+        f"generate finished: created={report.created} "
         f"errors={len(report.errors)} elapsed={report.elapsed:.2f}s"
     )
     return report

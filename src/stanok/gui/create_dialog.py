@@ -1,6 +1,6 @@
 # Copyright (C) 2026 Kirill Borovoy
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Window 4: new project creation (FR-12)."""
+"""Window 4: new project creation and project settings (FR-12, 021)."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from pathlib import Path
 
 from PyQt5.QtWidgets import (
     QCheckBox,
+    QComboBox,
     QDialog,
     QDialogButtonBox,
     QFileDialog,
@@ -22,30 +23,41 @@ from PyQt5.QtWidgets import (
 )
 
 from ..services.storage import ProjectStore
+from .dialogs import ask_yes_no
 from .strings import STRINGS
 
 logger = logging.getLogger(__name__)
 
 
 class CreateDialog(QDialog):
-    """Modal new-project view: name, folder, xlsx/docx lists, copy flag."""
+    """Modal create/edit view: creation (files) or settings (folder, default)."""
 
     def __init__(
         self,
         store: ProjectStore | None = None,
         folder_hint: str = "",
         parent=None,
+        edit_ref: str | None = None,
     ) -> None:
         super().__init__(parent)
         self._store = store or ProjectStore()
+        self._edit_ref = edit_ref
+        self._templates: list[str] = []
         self.project_folder: str = ""
         self.project_name: str = ""
         self._build_ui(folder_hint)
 
+    @property
+    def _edit_mode(self) -> bool:
+        return bool(self._edit_ref)
+
     # -- UI construction -------------------------------------------------
     def _build_ui(self, folder_hint: str) -> None:
-        self.setWindowTitle(STRINGS.CRT_TITLE)
-        self.resize(600, 450)
+        folder_hint = str(folder_hint or "")
+        self.setWindowTitle(
+            STRINGS.CRT_EDIT_TITLE if self._edit_mode else STRINGS.CRT_TITLE
+        )
+        self.resize(600, 450 if not self._edit_mode else 260)
         layout = QVBoxLayout(self)
 
         layout.addWidget(QLabel(STRINGS.CRT_NAME))
@@ -64,29 +76,27 @@ class CreateDialog(QDialog):
         layout.addLayout(folder_row)
 
         self.path_label = QLabel(self)
+        self.path_label.setWordWrap(True)
         layout.addWidget(self.path_label)
 
-        self.xlsx_list = QListWidget(self)
-        self.docx_list = QListWidget(self)
-        layout.addWidget(QLabel(STRINGS.CRT_XLSX))
-        layout.addWidget(self.xlsx_list)
-        layout.addLayout(
-            self._list_buttons(self.xlsx_list, "Excel (*.xlsx)")
-        )
-        layout.addWidget(QLabel(STRINGS.CRT_DOCX))
-        layout.addWidget(self.docx_list)
-        layout.addLayout(
-            self._list_buttons(self.docx_list, "Word (*.docx)")
-        )
-
-        self.copy_check = QCheckBox(STRINGS.CRT_COPY, self)
-        self.copy_check.setChecked(True)
-        layout.addWidget(self.copy_check)
+        if self._edit_mode:
+            self._fill_settings()
+        else:
+            self.xlsx_list = QListWidget(self)
+            self.docx_list = QListWidget(self)
+            self.copy_check = QCheckBox(STRINGS.CRT_COPY, self)
+            layout.addWidget(QLabel(STRINGS.CRT_XLSX))
+            layout.addWidget(self.xlsx_list)
+            layout.addLayout(self._list_buttons(self.xlsx_list, "Excel (*.xlsx)"))
+            layout.addWidget(QLabel(STRINGS.CRT_DOCX))
+            layout.addWidget(self.docx_list)
+            layout.addLayout(self._list_buttons(self.docx_list, "Word (*.docx)"))
+            self.copy_check.setChecked(True)
+            layout.addWidget(self.copy_check)
 
         buttons = QDialogButtonBox(self)
-        self.create_btn = buttons.addButton(
-            STRINGS.CRT_CREATE, QDialogButtonBox.AcceptRole
-        )
+        label = STRINGS.CRT_SAVE if self._edit_mode else STRINGS.CRT_CREATE
+        self.create_btn = buttons.addButton(label, QDialogButtonBox.AcceptRole)
         cancel_btn = buttons.addButton(
             STRINGS.CRT_CANCEL, QDialogButtonBox.RejectRole
         )
@@ -94,6 +104,22 @@ class CreateDialog(QDialog):
         cancel_btn.clicked.connect(self.reject)
         layout.addWidget(buttons)
         self._update_create_enabled()
+
+    def _fill_settings(self) -> None:
+        """Prefill settings mode: name (read-only), folder, default template."""
+        pj, config_path = self._store.resolve_project(self._edit_ref)
+        self.project_name = config_path.stem
+        self.name_edit.setText(config_path.stem)
+        self.name_edit.setReadOnly(True)
+        self.folder_edit.setText(pj.folder or "")
+        self._templates = list(pj.templates)
+        self.default_combo = QComboBox(self)
+        self.layout().addWidget(QLabel(STRINGS.CRT_DEFAULT_TPL))
+        for name in self._templates:
+            self.default_combo.addItem(name, name)
+        idx = self.default_combo.findData(pj.default_template)
+        self.default_combo.setCurrentIndex(idx if idx >= 0 else 0)
+        self.layout().addWidget(self.default_combo)
 
     def _list_buttons(self, target: QListWidget, filt: str) -> QHBoxLayout:
         row = QHBoxLayout()
@@ -126,8 +152,14 @@ class CreateDialog(QDialog):
         self._update_create_enabled()
 
     def _update_create_enabled(self) -> None:
+        if not hasattr(self, "create_btn"):
+            return  # signals fire while _fill_settings runs before buttons exist
         name = self.name_edit.text().strip()
         folder = self.folder_edit.text().strip() or str(Path.home())
+        if self._edit_mode:
+            self.create_btn.setEnabled(bool(folder))
+            self.path_label.setText(self._project_paths_text(Path(folder)))
+            return
         taken = bool(name) and self._store.config_exists(name)
         bad_dir = Path(folder).name in (STRINGS.DATA_DIR, STRINGS.TPL_DIR)
         ok = bool(name) and not taken and not bad_dir
@@ -149,21 +181,43 @@ class CreateDialog(QDialog):
         else:
             self.path_label.setStyleSheet("")
             target = Path(folder) / (name or "?")
-            self.path_label.setText(STRINGS.CRT_PATH.format(path=target))
+            self.path_label.setText(self._project_paths_text(target))
+
+    def _project_paths_text(self, base: Path) -> str:
+        """Project folder and its Данные/Шаблоны/Результат as absolute lines."""
+        base = base.resolve()
+        lines = [STRINGS.CRT_PATH.format(path=base)]
+        lines += [
+            str(base / sub)
+            for sub in (
+                STRINGS.DATA_DIR,
+                STRINGS.TPL_DIR,
+                STRINGS.GEN_RESULT_DIR,
+            )
+        ]
+        return "\n".join(lines)
+
+    def _confirm_mkdir(self, path: str) -> bool:
+        """Ask the user to create a missing folder; True if confirmed."""
+        return ask_yes_no(
+            self,
+            self.windowTitle(),
+            STRINGS.CRT_MKDIR_ASK.format(path=path),
+        )
 
     def _on_create(self) -> None:
         folder = self.folder_edit.text().strip() or str(Path.home())
-        if not Path(folder).exists():
-            answer = QMessageBox.question(
-                self,
-                STRINGS.CRT_TITLE,
-                STRINGS.CRT_MKDIR_ASK.format(path=folder),
-            )
-            if answer != QMessageBox.Yes:
+        if self._edit_mode:
+            if not Path(folder).exists() and not self._confirm_mkdir(folder):
                 return
+            self._save_settings(folder)
+            return
+        target = Path(folder).resolve() / self.name_edit.text().strip()
+        if not target.exists() and not self._confirm_mkdir(str(target)):
+            return
         try:
             self._store.init_project(
-                folder,
+                target,
                 self.name_edit.text(),
                 [self.xlsx_list.item(i).text() for i in range(self.xlsx_list.count())],
                 [self.docx_list.item(i).text() for i in range(self.docx_list.count())],
@@ -173,6 +227,19 @@ class CreateDialog(QDialog):
             logger.warning(f"create project failed: {e}", exc_info=True)
             QMessageBox.warning(self, STRINGS.CRT_ERR_TITLE, str(e))
             return
-        self.project_folder = str(Path(folder).resolve())
+        self.project_folder = str(target)
         self.project_name = self.name_edit.text().strip()
+        self.accept()
+
+    def _save_settings(self, folder: str) -> None:
+        try:
+            default = self.default_combo.currentData()
+            if default:
+                self._store.set_default_template(self._edit_ref, default)
+            self._store.set_project_folder(self._edit_ref, folder)
+        except Exception as e:
+            logger.warning(f"save settings failed: {e}", exc_info=True)
+            QMessageBox.warning(self, STRINGS.CRT_SAVE_ERR_TITLE, str(e))
+            return
+        self.project_folder = str(Path(folder).resolve())
         self.accept()

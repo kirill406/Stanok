@@ -8,7 +8,16 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
 from PyQt5.QtCore import QEventLoop, QTimer
-from PyQt5.QtWidgets import QApplication, QFileDialog, QMessageBox
+from PyQt5.QtWidgets import (
+    QApplication,
+    QComboBox,
+    QFileDialog,
+    QLabel,
+    QListWidget,
+    QMessageBox,
+    QPushButton,
+    QSpinBox,
+)
 
 from stanok.gui.main_window import MainWindow
 from stanok.gui.strings import STRINGS
@@ -72,6 +81,58 @@ def _make_home_project(store, tmp_path, name="proj"):
     return tmp_path / name
 
 
+def test_recent_row_shows_default_template_and_limit(qapp, tmp_path, store):
+    folder = make_project(tmp_path / "proj")
+    store.add_recent(str(folder), "proj")
+    win = MainWindow(store=store)
+    row = win.recent_list.itemWidget(win.recent_list.item(0))
+    labels = [w.text() for w in row.findChildren(QLabel)]
+    assert STRINGS.MAIN_TPL.format(name="Договор") in labels
+    spin = row.findChild(QSpinBox)
+    assert spin is not None and spin.value() == 0
+    buttons = [w for w in row.findChildren(QPushButton) if w.text() == STRINGS.MAIN_GENERATE]
+    assert buttons and row.layout().indexOf(spin) < row.layout().indexOf(buttons[0])
+    win.close()
+
+
+def test_recent_row_limit_edit_saves_pj(qapp, tmp_path, store):
+    folder = make_project(tmp_path / "proj")
+    store.add_recent(str(folder), "proj")
+    win = MainWindow(store=store)
+    row = win.recent_list.itemWidget(win.recent_list.item(0))
+    row.findChild(QSpinBox).setValue(5)
+    assert store.load("proj").templates["Договор"].limit == 5
+    win.close()
+
+
+def test_recent_row_limit_save_error_shows(qapp, tmp_path, store, monkeypatch):
+    shown = []
+    monkeypatch.setattr(QMessageBox, "critical", lambda *a: shown.append(a[-1]))
+    folder = make_project(tmp_path / "proj")
+    store.add_recent(str(folder), "proj")
+    win = MainWindow(store=store)
+    monkeypatch.setattr(
+        store,
+        "set_template_limit",
+        lambda *a: (_ for _ in ()).throw(RuntimeError("locked")),
+    )
+    row = win.recent_list.itemWidget(win.recent_list.item(0))
+    row.findChild(QSpinBox).setValue(4)
+    assert shown and "locked" in shown[0]
+    win.close()
+
+
+def test_recent_row_broken_project_shows_placeholder(qapp, tmp_path, store):
+    win = MainWindow(store=store)
+    store.add_recent(str(tmp_path / "gone"), "gone")
+    win.refresh_recent()
+    row = win.recent_list.itemWidget(win.recent_list.item(0))
+    labels = [w.text() for w in row.findChildren(QLabel)]
+    assert STRINGS.MAIN_TPL_UNAVAILABLE in labels
+    assert row.findChild(QSpinBox) is None
+    win.close()
+
+
 def test_browse_opens_selected(qapp, tmp_path, store, monkeypatch):
     import stanok.gui.main_window as mw
     import stanok.gui.open_project_dialog as opd
@@ -90,8 +151,8 @@ def test_browse_opens_selected(qapp, tmp_path, store, monkeypatch):
     monkeypatch.setattr(
         mw,
         "ProjectDialog",
-        lambda ref, st, parent: type(
-            "F", (), {"exec_": lambda self: opened.setdefault("ref", ref)}
+        lambda ref, st, parent, **k: type(
+            "F", (), {"exec_": lambda self: opened.update(ref=ref, **k)}
         )(),
     )
     win = MainWindow(store=store)
@@ -182,7 +243,7 @@ def test_row_click_opens_real_dialog(qapp, tmp_path, store, monkeypatch):
     exec_calls = []
     monkeypatch.setattr(
         "stanok.gui.main_window.ProjectDialog",
-        lambda ref, st, parent: type(
+        lambda ref, st, parent, **k: type(
             "Fake", (), {"exec_": lambda self: exec_calls.append(ref)}
         )(),
     )
@@ -220,7 +281,7 @@ def test_create_dialog_builds_project(qapp, tmp_path, store, monkeypatch):
 
     xlsx, tpl = _src_files(tmp_path)
     monkeypatch.setattr(QMessageBox, "warning", lambda *a: None)
-    monkeypatch.setattr(QMessageBox, "question", lambda *a: QMessageBox.Yes)
+    monkeypatch.setattr("stanok.gui.create_dialog.ask_yes_no", lambda *a, **k: True)
     dlg = CreateDialog(store, str(tmp_path), None)
     assert not dlg.create_btn.isEnabled()
     dlg.name_edit.setText("nov")
@@ -232,7 +293,8 @@ def test_create_dialog_builds_project(qapp, tmp_path, store, monkeypatch):
     assert dlg.create_btn.isEnabled()
     dlg._on_create()
     assert dlg.result()
-    assert (tmp_path / "proj" / "Данные" / "data.xlsx").is_file()
+    assert (tmp_path / "proj" / "nov" / "Данные" / "data.xlsx").is_file()
+    assert (tmp_path / "proj" / "nov" / "Результат").is_dir()
     assert any(r.config == "nov" for r in store.get_recent())
     dlg.close()
 
@@ -279,7 +341,31 @@ def test_create_dialog_preview_path(qapp, tmp_path, store):
     dlg.name_edit.setText("p")
     dlg.folder_edit.setText(str(tmp_path / "box"))
     dlg._update_create_enabled()
-    assert str(tmp_path / "box" / "p") in dlg.path_label.text()
+    text = dlg.path_label.text()
+    base = tmp_path / "box" / "p"
+    assert str(base) in text
+    assert str(base / "Данные") in text
+    assert str(base / "Шаблоны") in text
+    assert str(base / "Результат") in text
+    dlg.close()
+
+
+def test_create_dialog_mkdir_accepted(qapp, tmp_path, store, monkeypatch):
+    from tests.services.test_storage import _src_files
+
+    from stanok.gui.create_dialog import CreateDialog
+
+    xlsx, tpl = _src_files(tmp_path)
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a: None)
+    monkeypatch.setattr("stanok.gui.create_dialog.ask_yes_no", lambda *a, **k: True)
+    dlg = CreateDialog(store, str(tmp_path), None)
+    dlg.name_edit.setText("nov")
+    dlg.folder_edit.setText(str(tmp_path / "base"))
+    dlg.xlsx_list.addItem(str(xlsx))
+    dlg.docx_list.addItem(str(tpl))
+    dlg._on_create()
+    assert dlg.result()
+    assert (tmp_path / "base" / "nov" / "Данные" / "data.xlsx").is_file()
     dlg.close()
 
 
@@ -289,7 +375,7 @@ def test_create_dialog_mkdir_declined(qapp, tmp_path, store, monkeypatch):
     from stanok.gui.create_dialog import CreateDialog
 
     xlsx, tpl = _src_files(tmp_path)
-    monkeypatch.setattr(QMessageBox, "question", lambda *a: QMessageBox.No)
+    monkeypatch.setattr("stanok.gui.create_dialog.ask_yes_no", lambda *a, **k: False)
     dlg = CreateDialog(store, str(tmp_path), None)
     dlg.name_edit.setText("nov")
     dlg.folder_edit.setText(str(tmp_path / "missing"))
@@ -309,10 +395,71 @@ def test_create_dialog_shows_error(qapp, tmp_path, store, monkeypatch):
 
     from stanok.gui.create_dialog import CreateDialog
 
-    monkeypatch.setattr(QMessageBox, "question", lambda *a: QMessageBox.Yes)
+    monkeypatch.setattr("stanok.gui.create_dialog.ask_yes_no", lambda *a, **k: True)
     dlg = CreateDialog(store, str(tmp_path), None)
     dlg.name_edit.setText("  ")
     dlg.folder_edit.setText(str(tmp_path / "proj"))
+    dlg._on_create()
+    assert warnings
+    assert not dlg.result()
+    dlg.close()
+
+
+def test_create_dialog_settings_mode(qapp, tmp_path, store):
+    from stanok.gui.create_dialog import CreateDialog
+
+    folder = make_project(tmp_path / "proj")
+    dlg = CreateDialog(store, "", None, edit_ref=str(folder))
+    assert dlg.windowTitle() == STRINGS.CRT_EDIT_TITLE
+    assert dlg.name_edit.isReadOnly()
+    assert dlg.name_edit.text() == "proj"
+    assert dlg.default_combo.currentData() == "Договор"
+    text = dlg.path_label.text()
+    assert str(folder) in text
+    assert str(folder / "Данные") in text
+    assert str(folder / "Шаблоны") in text
+    assert str(folder / "Результат") in text
+    new_folder = tmp_path / "moved"
+    new_folder.mkdir()
+    dlg.folder_edit.setText(str(new_folder))
+    dlg._on_create()
+    assert dlg.result()
+    pj = store.load("proj")
+    assert pj.folder == str(new_folder.resolve())
+    dlg.close()
+
+
+def test_create_dialog_create_mode_has_no_orphan_widgets(qapp, tmp_path, store):
+    from stanok.gui.create_dialog import CreateDialog
+
+    dlg = CreateDialog(store, str(tmp_path), None)
+    assert dlg.findChildren(QComboBox) == []
+    dlg.close()
+
+
+def test_create_dialog_settings_mode_has_no_orphan_widgets(qapp, tmp_path, store):
+    from stanok.gui.create_dialog import CreateDialog
+
+    folder = make_project(tmp_path / "proj")
+    dlg = CreateDialog(store, "", None, edit_ref=str(folder))
+    assert dlg.findChildren(QListWidget) == []
+    dlg.close()
+
+
+def test_create_dialog_settings_error_warns(qapp, tmp_path, store, monkeypatch):
+    from stanok.gui.create_dialog import CreateDialog
+
+    folder = make_project(tmp_path / "proj")
+    warnings = []
+    monkeypatch.setattr(
+        QMessageBox, "warning", lambda *a: warnings.append(a[-1])
+    )
+    dlg = CreateDialog(store, "", None, edit_ref=str(folder))
+
+    def boom(*a, **k):
+        raise RuntimeError("locked")
+
+    monkeypatch.setattr(store, "set_project_folder", boom)
     dlg._on_create()
     assert warnings
     assert not dlg.result()
@@ -470,13 +617,14 @@ def test_main_create_opens_window2(qapp, tmp_path, store, monkeypatch):
     monkeypatch.setattr(
         mw,
         "ProjectDialog",
-        lambda ref, st, parent: type(
-            "F", (), {"exec_": lambda self: opened.setdefault("ref", ref)}
+        lambda ref, st, parent, **k: type(
+            "F", (), {"exec_": lambda self: opened.update(ref=ref, **k)}
         )(),
     )
     win = MainWindow(store=store)
     win._on_create()
     assert opened["ref"] == "nov"
+    assert opened["highlight_new"] is True
     win.close()
 
 
@@ -489,14 +637,14 @@ def test_open_missing_folder_relocate(qapp, tmp_path, store, monkeypatch):
     new = tmp_path / "newfolder"
     new.mkdir()
 
-    def fake_pd(ref, st, parent):
+    def fake_pd(ref, st, parent, **k):
         calls["n"] += 1
         if calls["n"] == 1:
             raise StorageError("resolve", ["project folder not found: x"])
         return type("F", (), {"exec_": lambda self: None})()
 
     monkeypatch.setattr(mw, "ProjectDialog", fake_pd)
-    monkeypatch.setattr(QMessageBox, "question", lambda *a: QMessageBox.Yes)
+    monkeypatch.setattr(mw, "ask_yes_no", lambda *a, **k: True)
     monkeypatch.setattr(
         QFileDialog, "getExistingDirectory", lambda *a, **k: str(new)
     )
@@ -512,11 +660,11 @@ def test_open_missing_folder_declined(qapp, tmp_path, store, monkeypatch):
     import stanok.gui.main_window as mw
     from stanok.services.storage import StorageError
 
-    def fake_pd(ref, st, parent):
+    def fake_pd(ref, st, parent, **k):
         raise StorageError("resolve", ["project folder not found: x"])
 
     monkeypatch.setattr(mw, "ProjectDialog", fake_pd)
-    monkeypatch.setattr(QMessageBox, "question", lambda *a: QMessageBox.No)
+    monkeypatch.setattr(mw, "ask_yes_no", lambda *a, **k: False)
     win = MainWindow(store=store)
     win._open_project_dialog("x")
     win.close()
@@ -526,11 +674,11 @@ def test_open_missing_folder_pick_cancelled(qapp, tmp_path, store, monkeypatch):
     import stanok.gui.main_window as mw
     from stanok.services.storage import StorageError
 
-    def fake_pd(ref, st, parent):
+    def fake_pd(ref, st, parent, **k):
         raise StorageError("resolve", ["project folder not found: x"])
 
     monkeypatch.setattr(mw, "ProjectDialog", fake_pd)
-    monkeypatch.setattr(QMessageBox, "question", lambda *a: QMessageBox.Yes)
+    monkeypatch.setattr(mw, "ask_yes_no", lambda *a, **k: True)
     monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *a, **k: "")
     win = MainWindow(store=store)
     win._open_project_dialog("x")
@@ -545,11 +693,11 @@ def test_open_missing_folder_relocate_error(qapp, tmp_path, store, monkeypatch):
     new = tmp_path / "newfolder"
     new.mkdir()
 
-    def fake_pd(ref, st, parent):
+    def fake_pd(ref, st, parent, **k):
         raise StorageError("resolve", ["project folder not found: x"])
 
     monkeypatch.setattr(mw, "ProjectDialog", fake_pd)
-    monkeypatch.setattr(QMessageBox, "question", lambda *a: QMessageBox.Yes)
+    monkeypatch.setattr(mw, "ask_yes_no", lambda *a, **k: True)
     monkeypatch.setattr(QMessageBox, "critical", lambda *a: shown.append(a[-1]))
     monkeypatch.setattr(
         QFileDialog, "getExistingDirectory", lambda *a, **k: str(new)
@@ -574,7 +722,7 @@ def test_open_project_dialog_storage_error(qapp, tmp_path, store, monkeypatch):
     monkeypatch.setattr(
         mw,
         "ProjectDialog",
-        lambda *a: (_ for _ in ()).throw(StorageError("load", ["badness"])),
+        lambda *a, **k: (_ for _ in ()).throw(StorageError("load", ["badness"])),
     )
     win = MainWindow(store=store)
     win._open_project_dialog("x")
@@ -588,7 +736,7 @@ def test_open_project_dialog_unexpected_error(qapp, tmp_path, store, monkeypatch
     shown = []
     monkeypatch.setattr(QMessageBox, "critical", lambda *a: shown.append(a[-1]))
     monkeypatch.setattr(
-        mw, "ProjectDialog", lambda *a: (_ for _ in ()).throw(RuntimeError("weird"))
+        mw, "ProjectDialog", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("weird"))
     )
     win = MainWindow(store=store)
     win._open_project_dialog("x")

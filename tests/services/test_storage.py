@@ -546,6 +546,26 @@ def test_init_no_copy_outside_rejected(store, tmp_path):
         )
 
 
+def test_init_copy_reuses_file_already_in_target_dir(store, tmp_path):
+    folder = tmp_path / "proj"
+    (folder / "Данные").mkdir(parents=True)
+    (folder / "Шаблоны").mkdir()
+    xlsx, tpl = _src_files(tmp_path)
+    in_xlsx = folder / "Данные" / "data.xlsx"
+    in_tpl = folder / "Шаблоны" / "tpl.docx"
+    xlsx.rename(in_xlsx)
+    tpl.rename(in_tpl)
+
+    pj = store.init_project(
+        folder, "reuse", [in_xlsx], [in_tpl], copy_files=True
+    )
+
+    assert [p.name for p in (folder / "Данные").iterdir()] == ["data.xlsx"]
+    assert [p.name for p in (folder / "Шаблоны").iterdir()] == ["tpl.docx"]
+    assert pj.data_sources[0].file == "Данные/data.xlsx"
+    assert pj.templates["tpl"].file == "Шаблоны/tpl.docx"
+
+
 def test_init_name_taken_rejected(store, tmp_path, sample_pj):
     store.save(sample_pj, name="taken")
     xlsx, tpl = _src_files(tmp_path)

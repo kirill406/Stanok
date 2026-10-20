@@ -9,6 +9,7 @@ import logging
 import os
 import shutil
 import threading
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
@@ -106,6 +107,16 @@ def _first_bound_counter(pj: ProjectJSON) -> str | None:
         if cdef.table is not None:
             return name
     return None
+
+
+@dataclass
+class ImportReport:
+    """Result of importing .stanok files from one folder."""
+
+    imported: list[str] = field(default_factory=list)
+    failed: list[str] = field(default_factory=list)
+    missing_folder: list[str] = field(default_factory=list)
+    found: int = 0
 
 
 class ProjectStore:
@@ -334,14 +345,90 @@ class ProjectStore:
 
     def _unique_config_name(self, base: str) -> str:
         """Free config stem: base, base (1), base (2), ... (§5.3 spec.md)."""
-        if not self._get_config_path(base).exists():
+        if not self._has_config(self._get_config_path(base)):
             return base
         i = 1
         while True:
             candidate = f"{base} ({i})"
-            if not self._get_config_path(candidate).exists():
+            if not self._has_config(self._get_config_path(candidate)):
                 return candidate
             i += 1
+
+    def import_configs(self, folder: str | Path) -> ImportReport:
+        """Move every *.stanok under folder into Home; update recent projects."""
+        report = ImportReport()
+        root = Path(folder).expanduser()
+        if not root.is_dir():
+            return report
+        with self._lock:
+            for src in self._config_files(root.resolve()):
+                report.found += 1
+                try:
+                    with open(src, encoding="utf-8") as f:
+                        pj = validate_pj(json.load(f))
+                except Exception as e:
+                    logger.warning(f"import config {src}: {e}", exc_info=True)
+                    report.failed.append(src.name)
+                    continue
+                project_dir = self._import_project_folder(pj, src)
+                if project_dir is not None:
+                    pj.folder = str(project_dir)
+                name = self._unique_config_name(src.stem or "project")
+                try:
+                    self.save(pj, name=name)
+                except Exception as e:
+                    logger.warning(
+                        f"save imported config {src}: {e}", exc_info=True
+                    )
+                    report.failed.append(src.name)
+                    continue
+                try:
+                    src.unlink()
+                except OSError as e:
+                    logger.warning(
+                        f"remove imported config {src}: {e}", exc_info=True
+                    )
+                report.imported.append(name)
+                if project_dir is None:
+                    report.missing_folder.append(name)
+                    continue
+                try:
+                    self.add_recent(str(project_dir), name)
+                except Exception as e:
+                    logger.warning(
+                        f"add imported project {name} to recent: {e}",
+                        exc_info=True,
+                    )
+        return report
+
+    def _config_files(self, root: Path) -> list[Path]:
+        """All *.stanok under root, except configs already inside Home."""
+        files: list[Path] = []
+        for path in sorted(root.rglob("*.stanok")):
+            if not path.is_file():
+                continue
+            try:
+                path.resolve().relative_to(self.home_dir)
+                continue
+            except ValueError:
+                pass
+            files.append(path)
+        return files
+
+    def _import_project_folder(
+        self, pj: ProjectJSON, src: Path
+    ) -> Path | None:
+        """Valid PJ.folder, else a nearby folder with Данные and Шаблоны."""
+        if pj.folder:
+            folder = Path(pj.folder).expanduser()
+            if folder.is_dir():
+                return folder.resolve()
+        for parent in (src.parent, *src.parents):
+            if (parent / STRINGS.DATA_DIR).is_dir() and (
+                parent / STRINGS.TPL_DIR
+            ).is_dir():
+                return parent.resolve()
+        return None
 
     def migrate_from_project(self, project_dir: Path) -> ProjectJSON:
         """Migrate project config from project folder to Home."""
@@ -543,6 +630,12 @@ class ProjectStore:
         if copy_files:
             if not src.is_file():
                 raise StorageError("init", [f"file not found: {src}"])
+            try:
+                rel = src.resolve().relative_to(folder)
+            except ValueError:
+                rel = None
+            if rel is not None and rel.parts and rel.parts[0] == dest_dir.name:
+                return rel.as_posix()
             try:
                 dst = _unique_sibling(dest_dir / src.name)
                 shutil.copy2(src, dst)

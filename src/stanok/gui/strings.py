@@ -77,6 +77,14 @@ class STRINGS:
     OPEN_TITLE = "Открыть проект"
     OPEN_EMPTY = "Проекты не найдены: создайте новый проект."
     OPEN_NO_FOLDER = "папка неизвестна"
+    OPEN_PICK = "Выбрать папку"
+    OPEN_IMPORTED = "Добавлено проектов: {count}"
+    OPEN_IMPORT_ERRORS = "Не удалось прочитать: {count}"
+    OPEN_IMPORT_MISSING = "Папка не найдена у проектов: {names}"
+    OPEN_FAILED = (
+        "Не удалось открыть: в папке нет проектов .stanok "
+        "или структуры проекта (Данные, Шаблоны, Результат)."
+    )
 
     # Settings dialog (gui/settings_dialog.py)
     SET_TITLE = "Настройки"

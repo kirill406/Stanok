@@ -106,11 +106,35 @@ class FieldDef(_WarnExtra):
 
 
 class CounterDef(_WarnExtra):
-    last: int = 0
+    pos: int = 0  # one position: source row (0-based) and printed number
     format: str = "1"  # 020: width 1 | 01 | 001 | 0001 (zero-pad); legacy plain/month still render
     table: str | None = None  # bound source file (021); None = numeric counter
-    start_row: int = 0  # 021: position/cursor (variant A: start + current)
-    resume: int = 1  # 021: 1 — cursor persists after run; 0 — keep start_row
+    resume: int = 1  # 1 — pos persists after run; 0 — keep it
+
+    @model_validator(mode="before")
+    @classmethod
+    def _merge_legacy_position(cls, data: Any) -> Any:
+        """Unify pre-unification `last` + `start_row` into one `pos`.
+
+        Legacy PJs kept the printed number and the row cursor separately.
+        For a counter with a source the row is primary, for a numeric counter
+        the printed number is primary.
+        """
+        if not isinstance(data, dict):
+            return data
+        data = dict(data)
+        last = data.pop("last", None)
+        start = data.pop("start_row", None)
+        if "pos" in data:
+            return data
+        if data.get("table") is None:
+            pos = last if last is not None else start
+        else:
+            pos = start if start is not None else last
+        if pos is not None:
+            data["pos"] = pos
+            logger.debug("counter: merged legacy last/start_row into pos=%s", pos)
+        return data
 
     @field_validator("table")
     @classmethod

@@ -41,7 +41,7 @@ def sample_pj():
         "data_sources": [
             {"file": "data.xlsx", "mode": "sequential"}
         ],
-        "counters": {"counter1": {"last": 0, "format": "plain", "table": "data.xlsx"}},
+        "counters": {"counter1": {"pos": 0, "format": "plain", "table": "data.xlsx"}},
         "filename_template": "output_{template}_{i}.docx",
     })
 
@@ -261,6 +261,123 @@ def test_atomic_write_creates_backup(store, sample_pj, tmp_path):
     assert bak_path.exists()
 
 
+def test_load_restores_corrupt_main_from_backup(store, sample_pj):
+    """Corrupt main config is rewritten from the previous save (.bak)."""
+    path = store.save(sample_pj)
+    raw = sample_pj.model_dump(mode="json")
+    raw["templates"]["template1"]["limit"] = 7
+    store.save(validate_pj(raw), name=path.stem)
+    assert store.load(path.stem).templates["template1"].limit == 7
+    path.write_text("{broken")
+    loaded = store.load(path.stem)
+    assert loaded.templates["template1"].limit == 0
+    assert json.loads(path.read_text())["templates"]["template1"]["limit"] == 0
+    assert store._backup_path(path).exists()
+
+
+def test_resolve_restores_missing_main_from_backup(store, sample_pj):
+    """Missing main config (crash between rename steps) is restored from .bak."""
+    path = store.save(sample_pj)
+    store.save(sample_pj)
+    path.unlink()
+    pj, resolved = store.resolve_project(path.stem)
+    assert resolved == path
+    assert pj.templates == sample_pj.templates
+    assert path.exists()
+
+
+def test_load_prefers_valid_tmp_over_backup(store, sample_pj):
+    """A complete `.tmp` from an interrupted save is newer than `.bak`."""
+    path = store.save(sample_pj)
+    raw = sample_pj.model_dump(mode="json")
+    raw["templates"]["template1"]["limit"] = 1
+    store.save(validate_pj(raw), name=path.stem)
+    raw["templates"]["template1"]["limit"] = 9
+    tmp = store._tmp_path(path)
+    tmp.write_text(json.dumps(raw))
+    path.write_text("{broken")
+    loaded = store.load(path.stem)
+    assert loaded.templates["template1"].limit == 9
+    assert json.loads(path.read_text())["templates"]["template1"]["limit"] == 9
+    assert not tmp.exists()
+    assert store._backup_path(path).exists()
+
+
+def test_load_falls_back_to_backup_when_tmp_invalid(store, sample_pj):
+    path = store.save(sample_pj)
+    raw = sample_pj.model_dump(mode="json")
+    raw["templates"]["template1"]["limit"] = 7
+    store.save(validate_pj(raw), name=path.stem)
+    store._tmp_path(path).write_text("{bad")
+    path.write_text("{broken")
+    loaded = store.load(path.stem)
+    assert loaded.templates["template1"].limit == 0
+
+
+def test_load_recovers_tmp_only_first_save(store, sample_pj):
+    path = store._get_config_path("fresh")
+    tmp = store._tmp_path(path)
+    tmp.write_text(json.dumps(sample_pj.model_dump(mode="json")))
+    pj, resolved = store.resolve_project("fresh")
+    assert resolved == path
+    assert pj.templates == sample_pj.templates
+    assert path.exists() and not tmp.exists()
+
+
+def test_recovery_tmp_promote_error_keeps_tmp(store, sample_pj, monkeypatch):
+    import stanok.services.storage as storage
+
+    path = store._get_config_path("fresh")
+    tmp = store._tmp_path(path)
+    tmp.write_text(json.dumps(sample_pj.model_dump(mode="json")))
+    monkeypatch.setattr(
+        storage.os, "replace", lambda *a: (_ for _ in ()).throw(OSError("locked"))
+    )
+    assert store.load("fresh").templates == sample_pj.templates
+    assert tmp.exists() and not path.exists()
+
+
+def test_recovery_backup_write_error_keeps_backup(store, sample_pj, monkeypatch):
+    import stanok.services.storage as storage
+
+    path = store.save(sample_pj)
+    store.save(sample_pj)
+    path.unlink()
+    bak = store._backup_path(path)
+    monkeypatch.setattr(
+        storage.os, "replace", lambda *a: (_ for _ in ()).throw(OSError("locked"))
+    )
+    assert store.load(path.stem).templates == sample_pj.templates
+    assert bak.exists() and not path.exists()
+    assert not store._tmp_path(path).exists()
+
+
+def test_config_exists_counts_backup(store, sample_pj):
+    path = store.save(sample_pj)
+    store.save(sample_pj)
+    path.unlink()
+    assert store.config_exists(path.stem)
+
+
+def test_load_bad_main_and_bad_backup_raises(store, sample_pj):
+    path = store.save(sample_pj)
+    store.save(sample_pj)
+    store._backup_path(path).write_text("{bad")
+    path.write_text("{bad")
+    with pytest.raises(StorageError, match="invalid config"):
+        store.load(path.stem)
+
+
+def test_load_restores_invalid_main_from_backup(store, sample_pj):
+    """Parseable but schema-invalid main config is restored from .bak."""
+    path = store.save(sample_pj)
+    store.save(sample_pj)
+    path.write_text(json.dumps({"version": "0.0.0"}))
+    loaded = store.load(path.stem)
+    assert loaded.templates == sample_pj.templates
+    assert "templates" in json.loads(path.read_text())
+
+
 def test_save_updates_existing(store, sample_pj):
     """Test that save updates existing config."""
     path1 = store.save(sample_pj)
@@ -325,14 +442,17 @@ def test_load_reraise_storage(monkeypatch, store, sample_pj):
 
 
 def test_delete_removes_bak(store, sample_pj):
-    """Test delete removes config and backup."""
+    """Test delete removes config, backup and leftover temp."""
     path = store.save(sample_pj)
     store.save(sample_pj)
     bak = path.with_suffix(path.suffix + ".bak")
+    tmp = store._tmp_path(path)
+    tmp.write_text("{}")
     assert bak.exists()
     store.delete(path.stem)
     assert not path.exists()
     assert not bak.exists()
+    assert not tmp.exists()
 
 
 def test_list_skips_invalid(store, sample_pj):
@@ -725,8 +845,18 @@ def test_delete_project_rmtree_failure(store, tmp_path, monkeypatch):
         raise OSError("locked")
 
     monkeypatch.setattr(shutil, "rmtree", boom)
-    with pytest.raises(StorageError, match="partially removed"):
+    with pytest.raises(StorageError, match="project kept"):
         store.delete_project(folder, delete_folder=True)
+    assert (store.home_dir / "proj.stanok").exists()
+    assert store.load("proj").templates
+
+
+def test_init_project_refuses_backup_only_name(store, sample_pj, tmp_path):
+    path = store.save(sample_pj, name="proj")
+    store.save(sample_pj, name="proj")
+    path.unlink()
+    with pytest.raises(StorageError, match="already exists"):
+        store.init_project(tmp_path / "p", "proj", [], [])
 
 
 def test_migrate_name_collision_uniquified(store, tmp_path, sample_pj):

@@ -1,9 +1,10 @@
 # Copyright (C) 2026 Kirill Borovoy
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Variant 1: show the whole table and pick a cell value.
+"""Variant 1: show the whole table and pick a row.
 
-The dialog lists every data row (0-based index, same as ``start_row``) and
-every column; the user clicks a numeric cell and confirms (or double-clicks).
+The dialog lists every data row (0-based index, same as ``pos``) and every
+column; the user selects a row and confirms (or double-clicks). The row number
+becomes the counter position.
 """
 
 from __future__ import annotations
@@ -62,6 +63,7 @@ class PickerDialog(ValuePickerDialog):
         self.ok_btn = buttons.button(QDialogButtonBox.Ok)
         self.ok_btn.setText(STRINGS.PICK_CHOOSE)
         self.ok_btn.setEnabled(False)
+        buttons.button(QDialogButtonBox.Cancel).setText(STRINGS.MAIN_CANCEL)
         buttons.accepted.connect(self._on_accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)

@@ -26,10 +26,10 @@
     {"file": "Данные/Проекты.xlsx", "mode": "circular"}
   ],
   "counters": {
-    "doc_num": {"last": 42, "format": "plain"},
-    "act_num": {"last": 7, "format": "month"},
-    "emp": {"last": 0, "format": "1", "table": "Данные/Сотрудники.xlsx", "start_row": 0},
-    "proj": {"last": 0, "format": "1", "table": "Данные/Проекты.xlsx", "start_row": 5}
+    "doc_num": {"pos": 42, "format": "plain"},
+    "act_num": {"pos": 7, "format": "month"},
+    "emp": {"pos": 0, "format": "1", "table": "Данные/Сотрудники.xlsx"},
+    "proj": {"pos": 5, "format": "1", "table": "Данные/Проекты.xlsx"}
   },
   "filename_template": "{template} №{Номер}"
 }

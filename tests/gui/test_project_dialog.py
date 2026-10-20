@@ -8,7 +8,13 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
 from PyQt5.QtCore import QEventLoop, QTimer
-from PyQt5.QtWidgets import QApplication, QMessageBox, QSpinBox
+from PyQt5.QtWidgets import (
+    QApplication,
+    QHeaderView,
+    QLabel,
+    QMessageBox,
+    QSpinBox,
+)
 
 from stanok.gui.project_dialog import ProjectDialog
 from stanok.gui.strings import STRINGS
@@ -42,8 +48,85 @@ def test_open_lists_templates(qapp, tmp_path, store):
     dlg = ProjectDialog(str(folder), store=store)
     assert dlg.table.rowCount() == 1
     assert dlg.table.item(0, 0).text() == "Договор"
-    assert dlg.table.cellWidget(0, 1).value() == 0
+    assert dlg.table.cellWidget(0, 2).value() == 0
     assert "proj" in dlg.windowTitle()
+    dlg.close()
+
+
+def test_template_columns_order(qapp, tmp_path, store):
+    folder = make_project(tmp_path / "proj")
+    dlg = ProjectDialog(str(folder), store=store)
+    headers = [dlg.table.horizontalHeaderItem(i).text() for i in range(6)]
+    assert headers == [
+        STRINGS.PROJ_TPL_COL,
+        STRINGS.PROJ_DEFAULT_COL,
+        STRINGS.PROJ_COUNT_COL,
+        STRINGS.PROJ_RUN,
+        STRINGS.PROJ_EDIT,
+        STRINGS.TPL_REMOVE,
+    ]
+    assert dlg.table.cellWidget(0, 4).text() == STRINGS.PROJ_EDIT
+    dlg.close()
+
+
+def test_template_columns_all_interactive(qapp, tmp_path, store):
+    folder = make_project(tmp_path / "proj")
+    dlg = ProjectDialog(str(folder), store=store)
+    header = dlg.table.horizontalHeader()
+    assert not header.stretchLastSection()
+    assert all(
+        header.sectionResizeMode(col) == QHeaderView.Interactive
+        for col in range(6)
+    )
+    dlg.close()
+
+
+def test_sources_types_hint_shown(qapp, tmp_path, store):
+    folder = make_project(tmp_path / "proj")
+    dlg = ProjectDialog(str(folder), store=store)
+    texts = [label.text() for label in dlg.findChildren(QLabel)]
+    assert STRINGS.PROJ_SRC_TYPES_HINT in texts
+    dlg.close()
+
+
+def test_new_project_highlights_sources_and_edit(qapp, tmp_path, store):
+    folder = make_project(tmp_path / "proj")
+    dlg = ProjectDialog(str(folder), store=store, highlight_new=True)
+    assert len(dlg._source_blinks) == 1 and dlg._source_blinks[0].running
+    assert set(dlg._edit_blinks) == {"Договор"}
+    assert dlg._edit_blinks["Договор"].running
+    dlg.close()
+    assert dlg._source_blinks == []
+    assert dlg._edit_blinks == {}
+
+
+def test_existing_project_has_no_hints(qapp, tmp_path, store):
+    folder = make_project(tmp_path / "proj")
+    dlg = ProjectDialog(str(folder), store=store)
+    assert dlg._source_blinks == []
+    assert dlg._edit_blinks == {}
+    dlg.close()
+
+
+def test_source_hint_stops_after_mode_change(qapp, tmp_path, store):
+    folder = make_project(tmp_path / "proj")
+    dlg = ProjectDialog(str(folder), store=store, highlight_new=True)
+    combo = dlg.sources_table.cellWidget(0, 1)
+    combo.setCurrentIndex(combo.findData("circular"))
+    assert dlg._source_blinks == []
+    assert "Договор" in dlg._edit_blinks
+    dlg.close()
+
+
+def test_edit_click_stops_its_hint(qapp, tmp_path, store, monkeypatch):
+    monkeypatch.setattr(
+        "stanok.gui.project_dialog.FieldsDialog",
+        lambda ref, name, st, parent: type("Fake", (), {"exec_": lambda self: None})(),
+    )
+    folder = make_project(tmp_path / "proj")
+    dlg = ProjectDialog(str(folder), store=store, highlight_new=True)
+    dlg.table.cellWidget(0, 4).click()
+    assert dlg._edit_blinks == {}
     dlg.close()
 
 
@@ -54,7 +137,7 @@ def test_run_template_with_limit(qapp, tmp_path, store, monkeypatch):
         tmp_path / "proj", rows=(("А", 1), ("Б", 2), ("В", 3))
     )
     dlg = ProjectDialog(str(folder), store=store)
-    dlg.table.cellWidget(0, 1).setValue(1)
+    dlg.table.cellWidget(0, 2).setValue(1)
     dlg._on_run_template("Договор")
     _await_run(dlg)
     assert infos and "создано 1" in infos[0]
@@ -62,7 +145,7 @@ def test_run_template_with_limit(qapp, tmp_path, store, monkeypatch):
     dlg.close()
 
 
-def test_cell_click_opens_real_dialog(qapp, tmp_path, store, monkeypatch):
+def test_edit_button_opens_real_dialog(qapp, tmp_path, store, monkeypatch):
     exec_calls = []
     monkeypatch.setattr(
         "stanok.gui.project_dialog.FieldsDialog",
@@ -72,7 +155,7 @@ def test_cell_click_opens_real_dialog(qapp, tmp_path, store, monkeypatch):
     )
     folder = make_project(tmp_path / "proj")
     dlg = ProjectDialog(str(folder), store=store)
-    dlg._on_cell_clicked(0, 0)
+    dlg.table.cellWidget(0, 4).click()
     assert exec_calls == [(str(folder), "Договор")]
     dlg.close()
 
@@ -175,7 +258,7 @@ def test_remove_template_with_confirm(qapp, tmp_path, store, monkeypatch):
     folder = make_project(tmp_path / "proj")
     extra = _extra_docx(tmp_path / "extra.docx")
     store.add_template(folder, extra)
-    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.Yes)
+    monkeypatch.setattr("stanok.gui.project_dialog.ask_yes_no", lambda *a, **k: True)
     infos = []
     monkeypatch.setattr(QMessageBox, "information", lambda *a: infos.append(a[-1]))
     dlg = ProjectDialog(str(folder), store=store)
@@ -212,7 +295,7 @@ def test_default_template_radio_changes(qapp, tmp_path, store):
     (folder / "project.stanok").write_text(json.dumps(data, ensure_ascii=False))
     dlg = ProjectDialog(str(folder), store=store)
     assert dlg.table.rowCount() == 2
-    dlg.table.cellWidget(1, 2).setChecked(True)
+    dlg.table.cellWidget(1, 1).setChecked(True)
     pj, _ = store.resolve_project(str(folder))
     assert pj.default_template == "Второй"
     dlg.close()
@@ -259,7 +342,7 @@ def test_template_limit_saved_on_change(qapp, tmp_path, store):
 
     folder = make_project(tmp_path / "proj")
     dlg = ProjectDialog(str(folder), store=store)
-    dlg.table.cellWidget(0, 1).setValue(3)
+    dlg.table.cellWidget(0, 2).setValue(3)
     saved = json.loads((store.home_dir / "proj.stanok").read_text())
     assert saved["templates"]["Договор"]["limit"] == 3
     dlg.close()
@@ -277,7 +360,7 @@ def test_template_limit_change_error_warns(qapp, tmp_path, store, monkeypatch):
         raise RuntimeError("locked")
 
     monkeypatch.setattr(store, "set_template_limit", boom)
-    dlg.table.cellWidget(0, 1).setValue(4)
+    dlg.table.cellWidget(0, 2).setValue(4)
     assert warnings
     dlg.close()
 
@@ -326,6 +409,22 @@ def test_delete_project_closes_dialog(qapp, tmp_path, store, monkeypatch):
     dlg.close()
 
 
+def test_delete_project_confirm_buttons_russian(qapp, tmp_path, store, monkeypatch):
+    folder = make_project(tmp_path / "proj")
+    seen = {}
+
+    def fake_exec(box):
+        seen["yes"] = box.button(QMessageBox.Yes).text()
+        seen["no"] = box.button(QMessageBox.No).text()
+        return QMessageBox.No
+
+    monkeypatch.setattr(QMessageBox, "exec_", fake_exec)
+    dlg = ProjectDialog(str(folder), store=store)
+    dlg._on_delete_project()
+    assert seen == {"yes": "Да", "no": "Нет"}
+    dlg.close()
+
+
 def test_manage_slots_guards_and_errors(qapp, tmp_path, store, monkeypatch):
     from PyQt5.QtWidgets import QFileDialog
 
@@ -335,7 +434,7 @@ def test_manage_slots_guards_and_errors(qapp, tmp_path, store, monkeypatch):
         QMessageBox, "warning", lambda *a: warnings.append(a[-1])
     )
     monkeypatch.setattr(
-        QMessageBox, "question", lambda *a, **k: QMessageBox.No
+        "stanok.gui.project_dialog.ask_yes_no", lambda *a, **k: False
     )
     monkeypatch.setattr(
         QFileDialog, "getOpenFileName", lambda *a, **k: ("", "")
@@ -369,7 +468,7 @@ def test_manage_slots_guards_and_errors(qapp, tmp_path, store, monkeypatch):
     assert dlg.table.rowCount() == 2
 
     monkeypatch.setattr(
-        QMessageBox, "question", lambda *a, **k: QMessageBox.Yes
+        "stanok.gui.project_dialog.ask_yes_no", lambda *a, **k: True
     )
     dlg._on_remove_template("extra2")
     assert dlg.table.rowCount() == 1

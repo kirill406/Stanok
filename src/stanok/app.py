@@ -112,6 +112,21 @@ def _run_gui() -> int:
     return qt_app.exec_()
 
 
+def _install_qt_translation(qt_app) -> None:
+    """Translate Qt's own strings (file dialogs, standard buttons) to Russian."""
+    from PyQt5.QtCore import QLibraryInfo, QTranslator
+
+    if getattr(qt_app, "_stanok_translator", None) is not None:
+        return
+    path = QLibraryInfo.location(QLibraryInfo.TranslationsPath)
+    translator = QTranslator(qt_app)
+    if translator.load("qtbase_ru", path):
+        qt_app.installTranslator(translator)
+        qt_app._stanok_translator = translator  # type: ignore[attr-defined]
+    else:
+        logger.warning("Qt Russian translation not found in %s", path)
+
+
 def create_gui(store=None):
     """Build QApplication + MainWindow without exec_ (tests, embedding).
 
@@ -124,6 +139,7 @@ def create_gui(store=None):
     from .services.storage import ProjectStore
 
     qt_app = QApplication.instance() or QApplication([])
+    _install_qt_translation(qt_app)
     apply_app_icon(qt_app)
     window = MainWindow(store=store if store is not None else ProjectStore())
     return qt_app, window

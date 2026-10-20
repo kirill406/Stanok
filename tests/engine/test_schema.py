@@ -37,10 +37,10 @@ def test_validate_pj_minimal():
 
 def test_validate_pj_full():
     pj = validate_pj(_load("pj_full.stanok"))
-    assert pj.counters["doc_num"].last == 42
+    assert pj.counters["doc_num"].pos == 42
     assert pj.counters["act_num"].format == "month"
     assert pj.data_sources[1].mode == "circular"
-    assert pj.counters["proj"].start_row == 5
+    assert pj.counters["proj"].pos == 5
     assert pj.templates["Договор"].limit == 10
     assert pj.default_template == "Договор"
     assert pj.templates["Договор"].fields["ФИО"].counter_name == "emp"
@@ -225,7 +225,7 @@ def test_field_counter_must_be_bound():
         validate_pj(
             _pj(
                 {"source": "table", "value": "col", "counter_name": "num"},
-                {"num": {"last": 0, "format": "1"}},
+                {"num": {"pos": 0, "format": "1"}},
             )
         )
 
@@ -251,7 +251,7 @@ def test_counter_field_ok():
     pj = validate_pj(
         _pj(
             {"source": "counter", "value": "num"},
-            {"num": {"last": 0, "format": "1"}},
+            {"num": {"pos": 0, "format": "1"}},
             sources=[],
         )
     )
@@ -290,19 +290,29 @@ def test_default_template_defaults_to_first():
     assert pj.default_template == "T"
 
 
-def test_counter_start_row_and_resume_defaults():
+def test_counter_pos_and_resume_defaults():
     from stanok.engine.schema import CounterDef
 
     cdef = CounterDef()
-    assert cdef.start_row == 0
+    assert cdef.pos == 0
     assert cdef.resume == 1
-    assert CounterDef(table="Данные/d.xlsx", start_row=3, resume=0).start_row == 3
+    assert CounterDef(table="Данные/d.xlsx", pos=3, resume=0).pos == 3
+
+
+def test_counter_legacy_position_migrates():
+    from stanok.engine.schema import CounterDef
+
+    assert CounterDef(last=7, start_row=3, table="Данные/d.xlsx").pos == 3
+    assert CounterDef(last=7, start_row=3).pos == 7
+    assert CounterDef(last=7).pos == 7
+    assert CounterDef(start_row=3).pos == 3
+    assert CounterDef(pos=5, last=7, start_row=3).pos == 5
 
 
 def test_counter_table_binding_validate():
     from stanok.engine.schema import CounterDef
 
-    assert CounterDef(last=0, table="Данные/d.xlsx").table == "Данные/d.xlsx"
+    assert CounterDef(pos=0, table="Данные/d.xlsx").table == "Данные/d.xlsx"
     assert CounterDef().table is None
     with pytest.raises(Exception, match="относительным"):
         CounterDef(table="../evil.xlsx")

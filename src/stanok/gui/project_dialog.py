@@ -15,6 +15,7 @@ from PyQt5.QtWidgets import (
     QDialogButtonBox,
     QFileDialog,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QMessageBox,
     QProgressDialog,
@@ -28,7 +29,10 @@ from PyQt5.QtWidgets import (
 
 from ..services.generate import GenerateCommand, GenerateReport
 from ..services.storage import ProjectStore, project_folder
+from .blink import GreenBlink
+from .dialogs import ask_yes_no
 from .fields_dialog import FieldsDialog
+from .report_text import done_text
 from .strings import STRINGS
 from .worker import GenerateWorker
 
@@ -45,7 +49,12 @@ class ProjectDialog(QDialog):
     """Modal project view: sources table + template table with runs (021)."""
 
     def __init__(
-        self, project_ref: str, store: ProjectStore | None = None, parent=None
+        self,
+        project_ref: str,
+        store: ProjectStore | None = None,
+        parent=None,
+        *,
+        highlight_new: bool = False,
     ) -> None:
         super().__init__(parent)
         self._store = store or ProjectStore()
@@ -53,6 +62,10 @@ class ProjectDialog(QDialog):
         self._worker: GenerateWorker | None = None
         self._progress_dialog: QProgressDialog | None = None
         self._running = False
+        self._highlight_new = highlight_new
+        self._edit_buttons: dict[str, QPushButton] = {}
+        self._source_blinks: list[GreenBlink] = []
+        self._edit_blinks: dict[str, GreenBlink] = {}
         self._store.sync_template_fields(project_ref)
         pj, config_path = self._store.resolve_project(project_ref)
         self._pj = pj
@@ -62,6 +75,9 @@ class ProjectDialog(QDialog):
         self._default_group = QButtonGroup(self)
         self._default_group.setExclusive(True)
         self._build_ui()
+        self.finished.connect(self._stop_hints)
+        if self._highlight_new:
+            self._start_hints()
 
     # -- UI construction -------------------------------------------------
     def _build_ui(self) -> None:
@@ -78,19 +94,34 @@ class ProjectDialog(QDialog):
         self.sources_table.verticalHeader().setVisible(False)
         self._reload_sources()
         layout.addWidget(self.sources_table)
+        hint = QLabel(STRINGS.PROJ_SRC_TYPES_HINT, self)
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
 
         self.table = QTableWidget(self)
-        self.table.setColumnCount(5)
+        self.table.setColumnCount(6)
         self.table.setHorizontalHeaderLabels(
             [
                 STRINGS.PROJ_TPL_COL,
-                STRINGS.PROJ_COUNT_COL,
                 STRINGS.PROJ_DEFAULT_COL,
-                "",
-                "",
+                STRINGS.PROJ_COUNT_COL,
+                STRINGS.PROJ_RUN,
+                STRINGS.PROJ_EDIT,
+                STRINGS.TPL_REMOVE,
             ]
         )
-        self.table.cellClicked.connect(self._on_cell_clicked)
+        header = self.table.horizontalHeader()
+        header.setStretchLastSection(False)
+        for col, width in (
+            (0, 240),
+            (1, 130),
+            (2, 80),
+            (3, 140),
+            (4, 140),
+            (5, 90),
+        ):
+            header.setSectionResizeMode(col, QHeaderView.Interactive)
+            header.resizeSection(col, width)
         self._reload_templates()
         layout.addWidget(self.table)
 
@@ -120,6 +151,9 @@ class ProjectDialog(QDialog):
 
     def _reload_sources(self) -> None:
         """Rebuild source rows: file (read-only) + editable mode combo (021)."""
+        for blink in self._source_blinks:
+            blink.stop()
+        self._source_blinks.clear()
         self._pj, _ = self._store.resolve_project(self._project_ref)
         self.sources_table.setRowCount(len(self._pj.data_sources))
         for row, ds in enumerate(self._pj.data_sources):
@@ -149,6 +183,10 @@ class ProjectDialog(QDialog):
             logger.warning(f"reload templates failed: {e}", exc_info=True)
             QMessageBox.warning(self, STRINGS.MAIN_ERROR_TITLE, str(e))
             return
+        for blink in self._edit_blinks.values():
+            blink.stop()
+        self._edit_blinks.clear()
+        self._edit_buttons.clear()
         self._template_names = list(self._pj.templates)
         for btn in list(self._default_group.buttons()):
             self._default_group.removeButton(btn)
@@ -158,16 +196,6 @@ class ProjectDialog(QDialog):
             name_item.setFlags(name_item.flags() & ~Qt.ItemIsEditable)
             self.table.setItem(row, 0, name_item)
             tdef = self._pj.templates[name]
-            spin = QSpinBox(self.table)
-            spin.setRange(0, 1_000_000)
-            spin.setValue(tdef.limit)
-            spin.setToolTip(STRINGS.PROJ_COUNT_TIP)
-            spin.valueChanged.connect(
-                lambda value, template=name: self._on_template_limit_changed(
-                    template, value
-                )
-            )
-            self.table.setCellWidget(row, 1, spin)
             radio = QRadioButton(self.table)
             radio.setToolTip(STRINGS.PROJ_DEFAULT_TIP)
             radio.blockSignals(True)
@@ -178,27 +206,74 @@ class ProjectDialog(QDialog):
                 and self._on_default_changed(template)
             )
             self._default_group.addButton(radio)
-            self.table.setCellWidget(row, 2, radio)
+            self.table.setCellWidget(row, 1, radio)
+            spin = QSpinBox(self.table)
+            spin.setRange(0, 1_000_000)
+            spin.setValue(tdef.limit)
+            spin.setToolTip(STRINGS.PROJ_COUNT_TIP)
+            spin.valueChanged.connect(
+                lambda value, template=name: self._on_template_limit_changed(
+                    template, value
+                )
+            )
+            self.table.setCellWidget(row, 2, spin)
             btn = QPushButton(STRINGS.PROJ_RUN, self.table)
             btn.clicked.connect(
                 lambda _checked=False, template=name: self._on_run_template(template)
             )
             self.table.setCellWidget(row, 3, btn)
+            edit_btn = QPushButton(STRINGS.PROJ_EDIT, self.table)
+            edit_btn.setToolTip(STRINGS.PROJ_EDIT_TIP)
+            edit_btn.clicked.connect(
+                lambda _checked=False, template=name: self._open_fields_dialog(
+                    template
+                )
+            )
+            self.table.setCellWidget(row, 4, edit_btn)
+            self._edit_buttons[name] = edit_btn
             rm_btn = QPushButton(STRINGS.TPL_REMOVE, self.table)
             rm_btn.clicked.connect(
                 lambda _checked=False, template=name: self._on_remove_template(
                     template
                 )
             )
-            self.table.setCellWidget(row, 4, rm_btn)
+            self.table.setCellWidget(row, 5, rm_btn)
+
+    # -- onboarding hints ---------------------------------------------------
+    def _start_hints(self) -> None:
+        """Pulse source types and edit buttons after project creation."""
+        for row in range(self.sources_table.rowCount()):
+            combo = self.sources_table.cellWidget(row, 1)
+            if combo is not None:
+                blink = GreenBlink(combo)
+                blink.start()
+                self._source_blinks.append(blink)
+        for name, button in self._edit_buttons.items():
+            blink = GreenBlink(button)
+            blink.start()
+            self._edit_blinks[name] = blink
+
+    def _stop_source_hints(self) -> None:
+        for blink in self._source_blinks:
+            blink.stop()
+        self._source_blinks.clear()
+
+    def _stop_hints(self, *_args) -> None:
+        self._stop_source_hints()
+        for blink in self._edit_blinks.values():
+            blink.stop()
+        self._edit_blinks.clear()
+
+    def closeEvent(self, event) -> None:
+        self._stop_hints()
+        super().closeEvent(event)
 
     # -- window 3 hook ------------------------------------------------------
-    def _on_cell_clicked(self, row: int, col: int) -> None:
-        if col == 0:
-            self._open_fields_dialog(self._template_names[row])
-
     def _open_fields_dialog(self, template_name: str) -> None:
         """Open window 3 (FieldsDialog, 010); broken config → dialog (016)."""
+        blink = self._edit_blinks.pop(template_name, None)
+        if blink is not None:
+            blink.stop()
         try:
             dialog = FieldsDialog(self._project_ref, template_name, self._store, self)
         except Exception as e:
@@ -224,6 +299,7 @@ class ProjectDialog(QDialog):
             logger.warning(f"set source mode failed: {e}", exc_info=True)
             QMessageBox.warning(self, STRINGS.MAIN_ERROR_TITLE, str(e))
             return
+        self._stop_source_hints()
         self._pj, _ = self._store.resolve_project(self._project_ref)
 
     def _on_default_changed(self, template_name: str) -> None:
@@ -305,10 +381,9 @@ class ProjectDialog(QDialog):
                 self, STRINGS.TPL_REMOVE, STRINGS.TPL_DEFAULT_LOCKED
             )
             return
-        answer = QMessageBox.question(
+        if not ask_yes_no(
             self, STRINGS.TPL_REMOVE, STRINGS.TPL_REMOVE_ASK.format(name=template_name)
-        )
-        if answer != QMessageBox.Yes:
+        ):
             return
         try:
             self._store.remove_template(self._project_ref, template_name)
@@ -326,6 +401,8 @@ class ProjectDialog(QDialog):
         box.setWindowTitle(STRINGS.PROJ_DELETE)
         box.setText(STRINGS.PROJ_DELETE_ASK.format(name=name))
         box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        box.button(QMessageBox.Yes).setText(STRINGS.BTN_YES)
+        box.button(QMessageBox.No).setText(STRINGS.BTN_NO)
         check = QCheckBox(STRINGS.PROJ_DELETE_FOLDER, box)
         box.setCheckBox(check)
         if box.exec_() != QMessageBox.Yes:
@@ -349,7 +426,7 @@ class ProjectDialog(QDialog):
             return
         self._running = True
         row = self._template_names.index(template_name)
-        spin = self.table.cellWidget(row, 1)
+        spin = self.table.cellWidget(row, 2)
         limit = spin.value()
         try:
             self._store.set_template_limit(self._project_ref, template_name, limit)
@@ -390,11 +467,7 @@ class ProjectDialog(QDialog):
 
     def _on_finished(self, report: GenerateReport) -> None:
         self._finish_run()
-        text = STRINGS.APP_DONE.format(
-            created=report.created,
-            errors=len(report.errors),
-            elapsed=f"{report.elapsed:.1f}",
-        )
+        text = done_text(report)
         if report.errors:
             details = "\n".join(f"{i}: {msg}" for i, msg in report.errors)
             QMessageBox.information(

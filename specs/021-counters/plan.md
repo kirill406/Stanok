@@ -10,7 +10,8 @@
   не падать; конструктор ставит первый).
 - `DataSourceDef`: убрать `start_row`.
 - `TemplateDef.limit: int = 0`.
-- `CounterDef`: добавить `start_row: int = 0`, `resume: int = 1` (`table` уже есть).
+- `CounterDef`: одна позиция `pos: int = 0`, `resume: int = 1` (`table` уже есть);
+  legacy `last`/`start_row` сводятся в `pos` при загрузке.
 - `FieldDef`: убрать `table`, добавить `counter_name: str|None`.
 - Model-валидация ProjectJSON: table-поле → `counter_name` есть/существует/
   `table` не `None`; `counter.table ∈ data_sources`; у каждого источника ≥1 счётчик.
@@ -19,8 +20,8 @@
 ## Фаза B: Движок (`engine/resolve.py`, `engine/xmlops.py` при необходимости)
 
 - Переписать `resolve_rows` на композицию: вход — строки **всех** участвующих
-  источников; вычисление `N` по §2.2; построчный выбор по `mode`; счётчики
-  `last += 1` раз-на-документ; курсоры `start_row` по `resume`.
+  источников; вычисление `N` по §2.2; построчный выбор по `mode`; значение
+  counter-поля = `pos + k` (для `constant` — `pos`).
 - Убрать `_is_empty_row`-пропуск; пустая ячейка → пустое значение.
 - Тесты `tests/engine/test_resolve.py`.
 
@@ -28,7 +29,8 @@
 
 - `generate_documents`: читать все участвующие источники шаблона; pre-flight
   колонок по источнику каждого table-поля; убрать `resume`/`resumed_from`/`skipped`;
-  запись `last` и `start_row` по каждому счётчику согласно `resume`; оставить
+  запись `pos` по каждому счётчику согласно `resume` (`constant` не меняется,
+  circular хранит абсолютный счёт); оставить
   `default_template` при запуске без шаблона.
 - `storage`: авто-создание счётчика в `init_project` и `add_source`
   (имя из stem, коллизия `_2`); удаление источника счётчики не трогает.
@@ -50,9 +52,10 @@
 ## Фаза E: Окно 3 + строки + доки
 
 - Окно 3: «Имя файла» наверх; таблица счётчиков с колонками
-  `имя | источник | позиция | resume | last | format`; чекбокс `resume`
+  `имя | источник | формат | позиция | resume`; чекбокс `resume`
   per-counter; предупреждение при правке позиции; table-поле выбирает счётчик
-  и колонку (источник из счётчика).
+  и колонку (источник из счётчика). Изменение позиции обновляет предпросмотр
+  и counter-, и table-полей.
 - `gui/strings.py`: новые ключи, удалить `PROJ_SOURCE*`/`PROJ_DATA`/
   `APP_RESUME_HELP`/`MAIN_RESUME`/`skipped`.
 - Тесты `tests/gui/test_fields_dialog.py`, `test_strings.py`.

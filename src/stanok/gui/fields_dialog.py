@@ -3,7 +3,7 @@
 """Window 3: edit template field sources and values, counters, persist on Save.
 
 021: a table field picks a counter (`counter_name`) which owns the source;
-counters table shows source / position (cursor) / resume / last / width.
+the counters table shows source / format / one position / resume.
 """
 
 from __future__ import annotations
@@ -22,7 +22,6 @@ from PyQt5.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
     QHeaderView,
-    QInputDialog,
     QLabel,
     QLineEdit,
     QMenu,
@@ -41,6 +40,7 @@ from ..services.storage import ProjectStore, project_folder
 from ..engine.schema import CounterDef, FieldDef, FieldSource, ProjectJSON, validate_pj
 from ..engine.resolve import COUNTER_WIDTHS, TODAY_PRESETS, format_today
 from ..tables.excel import ExcelReader
+from .dialogs import ask_save_discard_cancel, ask_text
 from .strings import STRINGS
 from .table_picker import eye_icon, open_picker, picker_available
 
@@ -258,17 +258,6 @@ class FieldsDialog(QDialog):
                     headers.append(h)
         return headers
 
-    def _first_row(self, source_file: str | None) -> dict:
-        """First non-empty row for one source (None = all); {} when none."""
-        return next(
-            (
-                r
-                for r in self._read_table_rows(source_file)
-                if any(v not in (None, "") for v in r.values())
-            ),
-            {},
-        )
-
     def _counter_table(self, cname: str | None) -> str | None:
         """Current source bound to a counter (from its row combo, else PJ)."""
         cst = self._crows.get(cname)
@@ -343,13 +332,12 @@ class FieldsDialog(QDialog):
 
         layout.addWidget(self._section_title(STRINGS.FLD_COUNTERS_TITLE))
         self.ctable = QTableWidget(self)
-        self.ctable.setColumnCount(6)
+        self.ctable.setColumnCount(5)
         header_tips = [
             STRINGS.FLD_CNT_NAME_TIP,
             STRINGS.FLD_CNT_SOURCE_TIP,
             STRINGS.FLD_CNT_FORMAT_TIP,
             STRINGS.FLD_POS_TIP,
-            STRINGS.FLD_CNT_LAST_TIP,
             STRINGS.FLD_CNT_RESUME_TIP,
         ]
         self.ctable.setHorizontalHeaderLabels(
@@ -358,7 +346,6 @@ class FieldsDialog(QDialog):
                 STRINGS.FLD_CNT_SOURCE,
                 STRINGS.FLD_CNT_FORMAT,
                 STRINGS.FLD_CNT_POS,
-                STRINGS.FLD_CNT_LAST,
                 STRINGS.FLD_CNT_RESUME,
             ]
         )
@@ -497,7 +484,7 @@ class FieldsDialog(QDialog):
         st["box"] = box
 
     def _on_counter_create(self) -> None:
-        text, ok = QInputDialog.getText(
+        text, ok = ask_text(
             self, STRINGS.FLD_COUNTER_CREATE, STRINGS.FLD_COUNTER_NAME
         )
         cname = text.strip()
@@ -510,7 +497,7 @@ class FieldsDialog(QDialog):
                 STRINGS.FLD_DUP_COUNTER.format(name=cname),
             )
             return
-        self._pj.counters[cname] = CounterDef(last=0, format="1")
+        self._pj.counters[cname] = CounterDef()
         self._build_counters_table()
         self._fit_tables()
         for st in self._rows.values():
@@ -559,23 +546,17 @@ class FieldsDialog(QDialog):
                 lambda _i=0, counter=cname: self._mark_counter_touched(counter)
             )
             self.ctable.setCellWidget(row, 2, fmt_combo)
-            pos_edit = QLineEdit(str(cdef.start_row), self.ctable)
+            pos_box = QWidget(self.ctable)
+            pos_layout = QHBoxLayout(pos_box)
+            pos_layout.setContentsMargins(0, 0, 0, 0)
+            pos_layout.setSpacing(2)
+            pos_edit = QLineEdit(str(cdef.pos), pos_box)
             pos_edit.setToolTip(STRINGS.FLD_POS_TIP)
             pos_edit.textChanged.connect(
                 lambda _t="", counter=cname: self._mark_counter_touched(counter)
             )
-            self.ctable.setCellWidget(row, 3, pos_edit)
-            last_box = QWidget(self.ctable)
-            last_layout = QHBoxLayout(last_box)
-            last_layout.setContentsMargins(0, 0, 0, 0)
-            last_layout.setSpacing(2)
-            last_edit = QLineEdit(str(cdef.last), last_box)
-            last_edit.setToolTip(STRINGS.FLD_CNT_LAST_TIP)
-            last_edit.textChanged.connect(
-                lambda _t="", counter=cname: self._mark_counter_touched(counter)
-            )
-            last_layout.addWidget(last_edit)
-            pick_btn = QToolButton(last_box)
+            pos_layout.addWidget(pos_edit)
+            pick_btn = QToolButton(pos_box)
             pick_btn.setIcon(eye_icon())
             pick_btn.setAutoRaise(True)
             pick_btn.setCursor(Qt.PointingHandCursor)
@@ -583,21 +564,20 @@ class FieldsDialog(QDialog):
             pick_btn.clicked.connect(
                 lambda _checked=False, counter=cname: self._pick_counter_value(counter)
             )
-            last_layout.addWidget(pick_btn)
-            self.ctable.setCellWidget(row, 4, last_box)
+            pos_layout.addWidget(pick_btn)
+            self.ctable.setCellWidget(row, 3, pos_box)
             resume_check = QCheckBox(self.ctable)
             resume_check.setToolTip(STRINGS.FLD_CNT_RESUME_TIP)
             resume_check.setChecked(not bool(cdef.resume))
             resume_check.stateChanged.connect(
                 lambda _s=0, counter=cname: self._mark_counter_touched(counter)
             )
-            self.ctable.setCellWidget(row, 5, resume_check)
+            self.ctable.setCellWidget(row, 4, resume_check)
             self._crows[cname] = {
                 "table": table_combo,
                 "pos": pos_edit,
+                "pos_box": pos_box,
                 "resume": resume_check,
-                "last": last_edit,
-                "last_box": last_box,
                 "pick": pick_btn,
                 "fmt": fmt_combo,
                 "touched": False,
@@ -626,11 +606,10 @@ class FieldsDialog(QDialog):
     # -- counter previews -------------------------------------------------------
     def _on_counter_source_changed(self, cname: str) -> None:
         self._update_counter_row_state(cname)
-        self._mark_counter_touched(cname)
         for field, st in self._rows.items():
             if st["type"].currentData() == "table" and self._selected_counter(field) == cname:
                 self._refill_columns(field, select=None)
-                self._update_table_value(field)
+        self._mark_counter_touched(cname)
 
     def _counter_table_live(self, cname: str) -> str | None:
         cst = self._crows.get(cname)
@@ -648,7 +627,7 @@ class FieldsDialog(QDialog):
         return None
 
     def _update_counter_row_state(self, cname: str) -> None:
-        """Constant sources keep their row fixed; the picker needs a table."""
+        """Constant sources keep their position fixed; the picker needs a table."""
         cst = self._crows.get(cname)
         if cst is None:
             return
@@ -659,6 +638,13 @@ class FieldsDialog(QDialog):
         pos.setToolTip(
             STRINGS.FLD_POS_CONST_TIP if constant else STRINGS.FLD_POS_TIP
         )
+        resume = cst["resume"]
+        if table is None or constant:
+            resume.setEnabled(False)
+            resume.setToolTip(STRINGS.FLD_CNT_RESUME_NA_TIP)
+        else:
+            resume.setEnabled(True)
+            resume.setToolTip(STRINGS.FLD_CNT_RESUME_TIP)
         pick = cst["pick"]
         if table is None:
             pick.setEnabled(False)
@@ -675,20 +661,25 @@ class FieldsDialog(QDialog):
         if table is None:
             return
         value = open_picker(
-            self, self._folder, table, self._current_counter_last(cname)
+            self, self._folder, table, self._current_counter_pos(cname)
         )
         if value is None:
             return
         cst = self._crows.get(cname)
         if cst is not None:
-            cst["last"].setText(str(value))
+            cst["pos"].setText(str(value))
 
     def _mark_counter_touched(self, cname: str) -> None:
         self._crows[cname]["touched"] = True
         self._mark_dirty()
         for field, st in self._rows.items():
-            if st["type"].currentData() == "counter" and st["cname"].currentData() == cname:
+            if st["cname"].currentData() != cname:
+                continue
+            kind = st["type"].currentData()
+            if kind == "counter":
                 self._update_counter_preview(field)
+            elif kind == "table":
+                self._update_table_value(field)
 
     def _selected_counter(self, name: str) -> str | None:
         return self._rows[name]["cname"].currentData()
@@ -702,17 +693,17 @@ class FieldsDialog(QDialog):
         self._update_counter_preview(name)
         self._mark_row_touched(name)
 
-    def _current_counter_last(self, cname: str | None) -> int | None:
+    def _current_counter_pos(self, cname: str | None) -> int | None:
         if cname is None:
             return None
         cst = self._crows.get(cname)
         if cst is not None:
             try:
-                return int(cst["last"].text())
+                return int(cst["pos"].text())
             except (ValueError, TypeError):
                 return None
         cdef = self._pj.counters.get(cname)
-        return cdef.last if cdef is not None else 0
+        return cdef.pos if cdef is not None else 0
 
     def _counter_format(self, cname: str | None) -> str:
         if cname is None:
@@ -725,27 +716,40 @@ class FieldsDialog(QDialog):
 
     def _update_counter_preview(self, name: str) -> None:
         st = self._rows[name]
-        last = self._current_counter_last(st["cname"].currentData())
+        pos = self._current_counter_pos(st["cname"].currentData())
         width = self._counter_format(st["cname"].currentData())
-        if last is None or last < 0:
+        if pos is None or pos < 0:
             st["cprev"].setText("")
         else:
-            st["cprev"].setText(str(last).zfill(len(width)))
+            st["cprev"].setText(str(pos).zfill(len(width)))
 
     def _update_today_preview(self, name: str) -> None:
         st = self._rows[name]
         value = format_today(st["dfmt"].currentData(), date.today())
         st["dlabel"].setText(str(value))
 
+    def _counter_row_index(self, cname: str | None) -> tuple[list[dict], int | None]:
+        """Rows of the counter source + the row its current position points at."""
+        table = self._counter_table(cname)
+        rows = self._read_table_rows(table)
+        pos = self._current_counter_pos(cname)
+        if table is None or pos is None or pos < 0 or not rows:
+            return rows, None
+        mode = self._mode_of_table(table) or "sequential"
+        idx = pos % len(rows) if mode == "circular" else pos
+        return rows, idx if 0 <= idx < len(rows) else None
+
     def _update_table_value(self, name: str) -> None:
         st = self._rows[name]
-        row = self._first_row(self._counter_table(st["cname"].currentData()))
+        rows, idx = self._counter_row_index(st["cname"].currentData())
+        row = rows[idx] if idx is not None else {}
         column = st["col"].currentText()
-        if column and column in row:
-            st["clabel"].setText(str(row[column]))
-        elif row:
-            first = next(iter(row))
-            st["clabel"].setText(str(row[first]))
+        if row and any(v not in (None, "") for v in row.values()):
+            if column and column in row:
+                st["clabel"].setText(str(row[column]))
+            else:
+                first = next(iter(row))
+                st["clabel"].setText(str(row[first]))
         else:
             st["clabel"].setText("")
 
@@ -824,7 +828,7 @@ class FieldsDialog(QDialog):
                 if cname is None:
                     raise _FieldError(name, "FLD_NO_COUNTER")
                 if cname not in self._pj.counters:
-                    self._pj.counters[cname] = CounterDef(last=0, format="1")
+                    self._pj.counters[cname] = CounterDef()
                 f.source = FieldSource.COUNTER
                 f.value = cname
                 f.counter_name = None
@@ -837,19 +841,15 @@ class FieldsDialog(QDialog):
                 f.counter_name = None
         for cname, cst in self._crows.items():
             try:
-                last = int(cst["last"].text())
                 position = int(cst["pos"].text())
             except ValueError:
-                raise _FieldError(cname, "FLD_CNT_BAD") from None
-            if last < 0:
-                raise _FieldError(cname, "FLD_CNT_BAD")
+                raise _FieldError(cname, "FLD_CNT_POS_BAD") from None
             if position < 0:
                 raise _FieldError(cname, "FLD_CNT_POS_BAD")
             cdef = self._pj.counters[cname]
             cdef.table = cst["table"].currentData()
-            cdef.start_row = position
+            cdef.pos = position
             cdef.resume = 0 if cst["resume"].isChecked() else 1
-            cdef.last = last
             cdef.format = cst["fmt"].currentData() or "1"
         fname = self.fname_edit.text().strip()
         if not fname:
@@ -865,12 +865,8 @@ class FieldsDialog(QDialog):
         if not self._dirty:
             super().reject()
             return
-        answer = QMessageBox.question(
-            self,
-            STRINGS.MAIN_TITLE,
-            STRINGS.FLD_DIRTY_ASK,
-            QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel,
-            QMessageBox.Save,
+        answer = ask_save_discard_cancel(
+            self, STRINGS.MAIN_TITLE, STRINGS.FLD_DIRTY_ASK
         )
         if answer == QMessageBox.Save:
             try:

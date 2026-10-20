@@ -2,9 +2,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """End-to-end generation: tables → resolve → render → docx (single entry).
 
-021: all sources participating in the template run at once; cursors live on
-counters (`start_row`) and persist per `resume`. No launch-point/selection
-dependency.
+021: all sources participating in the template run at once; each counter holds
+one position (`pos`) that is both its source row and printed number and persists
+per `resume`. No launch-point/selection dependency.
 """
 
 from __future__ import annotations
@@ -51,6 +51,8 @@ class GenerateReport:
     errors: list[tuple[int, str]] = field(default_factory=list)
     output_paths: list[Path] = field(default_factory=list)
     elapsed: float = 0.0
+    planned: int = 0  # documents resolved for this run (before errors)
+    limit: int = 0  # template limit (0 = unlimited)
 
 
 def _unique_path(base: Path) -> Path:
@@ -175,10 +177,12 @@ def generate_documents(
     logger.debug(f"resolved {len(fillings)} fillings for {template_name}")
 
     modes = modes_of(pj)
-    origin = {name: (pj.counters[name].last, pj.counters[name].start_row) for name in used}
+    origin = {name: pj.counters[name].pos for name in used}
 
     out_dir = project_dir / RESULT_DIR
     total = len(fillings)
+    report.planned = total
+    report.limit = template_def.limit
     cancelled = False
     processed = 0
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -205,23 +209,26 @@ def generate_documents(
 
     for name in used:
         cdef = pj.counters[name]
-        orig_last, orig_start = origin[name]
-        cdef.last = orig_last + processed
-        if cdef.table is None or not cdef.resume:
+        orig_pos = origin[name]
+        if cdef.table is None:
+            # Numeric counter: no row cursor, numbering always continues.
+            cdef.pos = orig_pos + processed
             continue
-        rows = rows_by_source.get(cdef.table, [])
+        if not cdef.resume:
+            continue
         mode = modes.get(cdef.table, "sequential")
-        if mode == "sequential":
-            cdef.start_row = orig_start + processed
-        elif mode == "circular":
-            cdef.start_row = (orig_start + processed) % len(rows) if rows else orig_start
-        # constant: cursor stays
+        if mode == "constant":
+            # Constant source: the position never changes.
+            continue
+        # Sequential/circular: keep the absolute count; the row wraps at read
+        # time, so the printed number keeps growing.
+        cdef.pos = orig_pos + processed
 
-    # Persist counters/cursors whenever documents were attempted (created +
-    # errors). An all-errored run must still advance, matching `processed`.
+    # Persist positions whenever documents were attempted (created + errors).
+    # An all-errored run must still advance, matching `processed`.
     if processed:
         store.save(pj, name=config_path.stem)
-        logger.info(f"saved PJ counters/cursors to {config_path}")
+        logger.info(f"saved PJ counter positions to {config_path}")
 
     report.elapsed = time.monotonic() - started
     logger.info(

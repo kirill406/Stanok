@@ -23,6 +23,7 @@ from PyQt5.QtWidgets import (
 )
 
 from ..services.storage import ProjectStore
+from .dialogs import ask_yes_no
 from .strings import STRINGS
 
 logger = logging.getLogger(__name__)
@@ -198,12 +199,11 @@ class CreateDialog(QDialog):
 
     def _confirm_mkdir(self, path: str) -> bool:
         """Ask the user to create a missing folder; True if confirmed."""
-        answer = QMessageBox.question(
+        return ask_yes_no(
             self,
             self.windowTitle(),
             STRINGS.CRT_MKDIR_ASK.format(path=path),
         )
-        return answer == QMessageBox.Yes
 
     def _on_create(self) -> None:
         folder = self.folder_edit.text().strip() or str(Path.home())

@@ -96,7 +96,7 @@ def test_window_chain_to_docx(qapp, tmp_path, store, monkeypatch):
     assert "{{" not in text
     saved = json.loads((store.home_dir / "proj.stanok").read_text())
     assert saved["templates"]["Договор"]["fields"]["Город"]["value"] == "Казань"
-    assert saved["counters"]["num"]["last"] == 2
+    assert saved["counters"]["num"]["pos"] == 2
     dlg2.close()
     win.close()
 

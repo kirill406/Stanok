@@ -28,7 +28,7 @@ def make_project(
     headers=("ФИО", "Сумма"),
     rows=(("Иван", 100), ("Петр", 200)),
     mode="sequential",
-    start_row=0,
+    pos=0,
     with_counter=True,
     limit=0,
     resume=1,
@@ -52,10 +52,9 @@ def make_project(
     }
     counters = {
         "data": {
-            "last": 0,
+            "pos": pos,
             "format": "1",
             "table": DATA,
-            "start_row": start_row,
             "resume": resume,
         }
     }
@@ -63,7 +62,7 @@ def make_project(
     text = "Договор {{ФИО}} на сумму {{Сумма}} №{{Номер}}"
     if with_counter:
         fields["Номер"] = {"source": "counter", "value": "num"}
-        counters["num"] = {"last": 0, "format": "1"}
+        counters["num"] = {"pos": 0, "format": "1"}
     else:
         text = "Договор {{ФИО}} на сумму {{Сумма}}"
     doc.add_paragraph(text)
@@ -111,10 +110,10 @@ def test_full_sequential_run(tmp_path, store):
     assert len(report.output_paths) == 2
     assert all(p.exists() for p in report.output_paths)
     saved = _load_saved(store, "proj")
-    assert saved.counters["num"].last == 2
+    assert saved.counters["num"].pos == 2
     # Two table fields share one counter → one bump per document, not two.
-    assert saved.counters["data"].last == 2
-    assert saved.counters["data"].start_row == 2
+    assert saved.counters["data"].pos == 2
+    assert saved.counters["data"].pos == 2
 
 
 def test_limit_truncates(tmp_path, store):
@@ -123,26 +122,37 @@ def test_limit_truncates(tmp_path, store):
     )
     report = generate_documents(GenerateCommand(project_ref=folder), store=store)
     assert report.created == 2
+    assert (report.planned, report.limit) == (2, 2)
     saved = _load_saved(store, "proj")
-    assert saved.counters["num"].last == 2
-    assert saved.counters["data"].start_row == 2
+    assert saved.counters["num"].pos == 2
+    assert saved.counters["data"].pos == 2
 
 
-def test_start_row_skips(tmp_path, store):
-    folder = make_project(tmp_path / "proj", start_row=1)
+def test_limit_reports_data_shortfall(tmp_path, store):
+    """Limit is a cap: sequential stops at the last row (2 docs out of 3)."""
+    folder = make_project(
+        tmp_path / "proj", rows=(("А", 1), ("Б", 2)), limit=3
+    )
+    report = generate_documents(GenerateCommand(project_ref=folder), store=store)
+    assert report.created == 2
+    assert (report.planned, report.limit) == (2, 3)
+
+
+def test_pos_skips(tmp_path, store):
+    folder = make_project(tmp_path / "proj", pos=1)
     report = generate_documents(GenerateCommand(project_ref=folder), store=store)
     assert report.created == 1
     assert "Петр" in report.output_paths[0].name
 
 
 def test_resume_0_keeps_cursor(tmp_path, store):
-    """resume=0 → start_row stays; the numeric counter still advances (021)."""
+    """resume=0 → pos stays; the numeric counter still advances (021)."""
     folder = make_project(tmp_path / "proj", resume=0)
     report = generate_documents(GenerateCommand(project_ref=folder), store=store)
     assert report.created == 2
     saved = _load_saved(store, "proj")
-    assert saved.counters["data"].start_row == 0
-    assert saved.counters["num"].last == 2
+    assert saved.counters["data"].pos == 0
+    assert saved.counters["num"].pos == 2
 
 
 def test_empty_source_returns_empty_report(tmp_path, store):
@@ -160,7 +170,7 @@ def test_empty_rows_still_generate(tmp_path, store):
     assert report.created == 3
     assert report.errors == []
     assert report.output_paths[1].exists()
-    assert _doc_text(report.output_paths[1]) == "Договор  на сумму  №2"
+    assert _doc_text(report.output_paths[1]) == "Договор  на сумму  №1"
 
 
 def test_error_continues_and_advances(monkeypatch, tmp_path, store):
@@ -183,8 +193,8 @@ def test_error_continues_and_advances(monkeypatch, tmp_path, store):
     assert report.errors[0][0] == 2
     assert "boom" in report.errors[0][1]
     saved = _load_saved(store, "proj")
-    assert saved.counters["num"].last == 2
-    assert saved.counters["data"].start_row == 2
+    assert saved.counters["num"].pos == 2
+    assert saved.counters["data"].pos == 2
 
 
 def test_all_failed_still_persists_counters(monkeypatch, tmp_path, store):
@@ -200,8 +210,8 @@ def test_all_failed_still_persists_counters(monkeypatch, tmp_path, store):
     assert report.created == 0
     assert len(report.errors) == 2
     saved = _load_saved(store, "proj")
-    assert saved.counters["num"].last == 2
-    assert saved.counters["data"].start_row == 2
+    assert saved.counters["num"].pos == 2
+    assert saved.counters["data"].pos == 2
 
 
 def test_missing_template_file(tmp_path, store):
@@ -245,8 +255,8 @@ def test_constant_mode_cursor_stays(tmp_path, store):
     report = generate_documents(GenerateCommand(project_ref=folder), store=store)
     assert report.created == 2
     saved = _load_saved(store, "proj")
-    assert saved.counters["data"].start_row == 0
-    assert saved.counters["num"].last == 2
+    assert saved.counters["data"].pos == 0
+    assert saved.counters["num"].pos == 2
 
 
 def test_circular_cycles_and_wraps(tmp_path, store):
@@ -256,8 +266,8 @@ def test_circular_cycles_and_wraps(tmp_path, store):
     report = generate_documents(GenerateCommand(project_ref=folder), store=store)
     assert report.created == 5
     saved = _load_saved(store, "proj")
-    assert saved.counters["num"].last == 5
-    assert saved.counters["data"].start_row == 1  # (0 + 5) % 2
+    assert saved.counters["num"].pos == 5
+    assert saved.counters["data"].pos == 5  # absolute count; row wraps at read
 
 
 def test_config_name_ref_via_recent(tmp_path, store):
@@ -372,7 +382,7 @@ def test_two_sources_composition(tmp_path, store):
     }
     data["data_sources"].append({"file": "Данные/cities.xlsx", "mode": "sequential"})
     data["counters"]["cities"] = {
-        "last": 0, "format": "1", "table": "Данные/cities.xlsx", "resume": 1
+        "pos": 0, "format": "1", "table": "Данные/cities.xlsx", "resume": 1
     }
     _write_pj(folder, data)
 
@@ -381,8 +391,8 @@ def test_two_sources_composition(tmp_path, store):
     texts = sorted(_doc_text(p) for p in report.output_paths)
     assert texts == ["Иван — Москва", "Петр — Тверь"]
     saved = _load_saved(store, "proj")
-    assert saved.counters["data"].start_row == 2
-    assert saved.counters["cities"].start_row == 2
+    assert saved.counters["data"].pos == 2
+    assert saved.counters["cities"].pos == 2
 
 
 def test_save_document_escape_rejected(tmp_path):
@@ -425,7 +435,7 @@ def test_dist_from_counter_and_today(tmp_path, store):
     report = generate_documents(GenerateCommand(project_ref=folder), store=store)
     assert report.created == 1
     name = report.output_paths[0].name
-    assert re.fullmatch(r"Д_1_\d{4}-\d{2}-\d{2}\.docx", name), name
+    assert re.fullmatch(r"Д_0_\d{4}-\d{2}-\d{2}\.docx", name), name
 
 
 def test_progress_callback_cancel(tmp_path, store):
@@ -444,8 +454,8 @@ def test_progress_callback_cancel(tmp_path, store):
     assert report.created == 1
     assert seen[0] == (1, 3)
     saved = _load_saved(store, "proj")
-    assert saved.counters["data"].start_row == 1
-    assert saved.counters["num"].last == 1
+    assert saved.counters["data"].pos == 1
+    assert saved.counters["num"].pos == 1
 
 
 def test_progress_callback_no_cancel(tmp_path, store):

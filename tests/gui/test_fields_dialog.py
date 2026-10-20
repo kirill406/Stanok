@@ -91,7 +91,7 @@ def test_close_clean_no_question(qapp, tmp_path, store, monkeypatch):
     def boom(*a, **k):
         raise AssertionError("question must not appear")
 
-    monkeypatch.setattr(QMessageBox, "question", boom)
+    monkeypatch.setattr("stanok.gui.fields_dialog.ask_save_discard_cancel", boom)
     folder = make_project(tmp_path / "proj")
     dlg = FieldsDialog(str(folder), "Договор", store=store)
     dlg.reject()
@@ -100,7 +100,8 @@ def test_close_clean_no_question(qapp, tmp_path, store, monkeypatch):
 
 def test_close_dirty_discard(qapp, tmp_path, store, monkeypatch):
     monkeypatch.setattr(
-        QMessageBox, "question", lambda *a, **k: QMessageBox.Discard
+        "stanok.gui.fields_dialog.ask_save_discard_cancel",
+        lambda *a, **k: QMessageBox.Discard,
     )
     folder = make_project(tmp_path / "proj")
     _add_constant(folder)
@@ -112,7 +113,7 @@ def test_close_dirty_discard(qapp, tmp_path, store, monkeypatch):
 
 
 def test_close_dirty_save(qapp, tmp_path, store, monkeypatch):
-    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.Save)
+    monkeypatch.setattr("stanok.gui.fields_dialog.ask_save_discard_cancel", lambda *a, **k: QMessageBox.Save)
     folder = make_project(tmp_path / "proj")
     _add_constant(folder)
     dlg = FieldsDialog(str(folder), "Договор", store=store)
@@ -123,7 +124,7 @@ def test_close_dirty_save(qapp, tmp_path, store, monkeypatch):
 
 
 def test_close_dirty_cancel_stays(qapp, tmp_path, store, monkeypatch):
-    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.Cancel)
+    monkeypatch.setattr("stanok.gui.fields_dialog.ask_save_discard_cancel", lambda *a, **k: QMessageBox.Cancel)
     folder = make_project(tmp_path / "proj")
     _add_constant(folder)
     dlg = FieldsDialog(str(folder), "Договор", store=store)
@@ -238,7 +239,8 @@ def test_dirty_save_failure_stays_open(qapp, tmp_path, store, monkeypatch):
         QMessageBox, "critical", lambda *a: shown.append(a[-1])
     )
     monkeypatch.setattr(
-        QMessageBox, "question", lambda *a, **k: QMessageBox.Save
+        "stanok.gui.fields_dialog.ask_save_discard_cancel",
+        lambda *a, **k: QMessageBox.Save,
     )
 
     def boom(*a, **k):
@@ -285,10 +287,9 @@ def test_table_counter_and_column_saved(qapp, tmp_path, store):
     data = json.loads(pj_path.read_text())
     data["data_sources"].append({"file": "Данные/data2.xlsx", "mode": "sequential"})
     data["counters"]["data2"] = {
-        "last": 0,
+        "pos": 0,
         "format": "1",
         "table": "Данные/data2.xlsx",
-        "start_row": 0,
         "resume": 1,
     }
     pj_path.write_text(json.dumps(data, ensure_ascii=False))
@@ -316,11 +317,9 @@ def test_legacy_table_without_file(qapp, tmp_path, store):
 
 
 def test_counter_create_via_table(qapp, tmp_path, store, monkeypatch):
-    from PyQt5.QtWidgets import QInputDialog
-
     folder = make_project(tmp_path / "proj")
     monkeypatch.setattr(
-        QInputDialog, "getText", lambda *a, **k: ("doc", True)
+        "stanok.gui.fields_dialog.ask_text", lambda *a, **k: ("doc", True)
     )
     dlg = FieldsDialog(str(folder), "Договор", store=store)
     assert dlg.ctable.rowCount() == 2
@@ -336,10 +335,9 @@ def test_counter_create_via_table(qapp, tmp_path, store, monkeypatch):
     saved = _saved_pj(store)
     assert saved["templates"]["Договор"]["fields"]["ФИО"]["value"] == "doc"
     assert saved["counters"]["doc"] == {
-        "last": 0,
+        "pos": 0,
         "format": "001",
         "table": None,
-        "start_row": 0,
         "resume": 1,
     }
     dlg.close()
@@ -358,14 +356,12 @@ def test_resume_checkbox_inverted_label(qapp, tmp_path, store):
 
 
 def test_counter_create_duplicate_warns(qapp, tmp_path, store, monkeypatch):
-    from PyQt5.QtWidgets import QInputDialog
-
     folder = make_project(tmp_path / "proj")
     warnings = []
     monkeypatch.setattr(
         QMessageBox, "warning", lambda *a: warnings.append(a[-1])
     )
-    monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: ("num", True))
+    monkeypatch.setattr("stanok.gui.fields_dialog.ask_text", lambda *a, **k: ("num", True))
     dlg = FieldsDialog(str(folder), "Договор", store=store)
     dlg._on_counter_create()
     assert warnings and "num" in warnings[0]
@@ -404,7 +400,7 @@ def test_counter_row_has_no_value_editor(qapp, tmp_path, store):
     dlg = FieldsDialog(str(folder), "Договор", store=store)
     _set_type(dlg, "ФИО", "counter")
     st = dlg._rows["ФИО"]
-    assert "last" not in st
+    assert "cprev" in st
     st["cname"].setCurrentIndex(st["cname"].findData("num"))
     assert st["cprev"].text() == "0"
     dlg.close()
@@ -428,7 +424,8 @@ def test_dirty_close_save_blocked_stays_open(qapp, tmp_path, store, monkeypatch)
         QMessageBox, "warning", lambda *a: warnings.append(a[-1])
     )
     monkeypatch.setattr(
-        QMessageBox, "question", lambda *a, **k: QMessageBox.Save
+        "stanok.gui.fields_dialog.ask_save_discard_cancel",
+        lambda *a, **k: QMessageBox.Save,
     )
     monkeypatch.setattr(FieldsDialog, "_ask_source_recovery", lambda self, name: None)
     dlg = FieldsDialog(str(folder), "Договор", store=store)
@@ -447,20 +444,18 @@ def test_counter_select_existing_loads(qapp, tmp_path, store):
     st["cname"].setCurrentIndex(st["cname"].findData("num"))
     cfmt = dlg._crows["num"]["fmt"]
     cfmt.setCurrentIndex(cfmt.findData("01"))
-    dlg._crows["num"]["last"].setText("7")
+    dlg._crows["num"]["pos"].setText("7")
     assert st["cprev"].text() == "07"
     dlg._on_save()
     saved = _saved_pj(store)
-    assert saved["counters"]["num"]["last"] == 7
+    assert saved["counters"]["num"]["pos"] == 7
     assert saved["counters"]["num"]["format"] == "01"
     dlg.close()
 
 
 def test_counter_create_cancel_noop(qapp, tmp_path, store, monkeypatch):
-    from PyQt5.QtWidgets import QInputDialog
-
     folder = make_project(tmp_path / "proj")
-    monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: ("", False))
+    monkeypatch.setattr("stanok.gui.fields_dialog.ask_text", lambda *a, **k: ("", False))
     dlg = FieldsDialog(str(folder), "Договор", store=store)
     dlg._on_counter_create()
     assert dlg.ctable.rowCount() == 2
@@ -499,15 +494,15 @@ def test_counter_select_other_counter(qapp, tmp_path, store):
     dlg = FieldsDialog(str(folder), "Договор", store=store)
     dlg._pj.counters["doc2"] = __import__(
         "stanok.engine.schema", fromlist=["CounterDef"]
-    ).CounterDef(last=5, format="001")
+    ).CounterDef(pos=5, format="001")
     _set_type(dlg, "ФИО", "counter")
     st = dlg._rows["ФИО"]
     st["cname"].setCurrentIndex(st["cname"].findData("doc2"))
     assert st["cprev"].text() == "005"
     dlg._on_save()
     saved = _saved_pj(store)
-    assert saved["counters"]["doc2"]["last"] == 5
-    assert saved["counters"]["num"]["last"] == 0
+    assert saved["counters"]["doc2"]["pos"] == 5
+    assert saved["counters"]["num"]["pos"] == 0
     dlg.close()
 
 
@@ -613,22 +608,22 @@ def test_counters_table_binding_saves(qapp, tmp_path, store):
     assert dlg._crows["num"]["table"].currentData() is None
     bind = dlg._crows["num"]["table"]
     bind.setCurrentIndex(bind.findData("Данные/data.xlsx"))
-    dlg._crows["num"]["last"].setText("9")
+    dlg._crows["num"]["pos"].setText("9")
     dlg._on_save()
     saved = _saved_pj(store)["counters"]["num"]
     assert saved["table"] == "Данные/data.xlsx"
-    assert saved["last"] == 9
+    assert saved["pos"] == 9
     dlg.close()
 
 
-def test_counters_table_bad_last_blocks(qapp, tmp_path, store, monkeypatch):
+def test_counters_table_bad_pos_blocks(qapp, tmp_path, store, monkeypatch):
     folder = make_project(tmp_path / "proj")
     warnings = []
     monkeypatch.setattr(
         QMessageBox, "warning", lambda *a: warnings.append(a[-1])
     )
     dlg = FieldsDialog(str(folder), "Договор", store=store)
-    dlg._crows["num"]["last"].setText("xx")
+    dlg._crows["num"]["pos"].setText("xx")
     dlg._on_save()
     assert any("num" in w for w in warnings)
     dlg.close()
@@ -648,7 +643,7 @@ def test_dangling_counter_resurrected(qapp, tmp_path, store):
     assert st["cname"].currentData() == "num"
     dlg._on_save()
     saved = _saved_pj(store)
-    assert saved["counters"]["num"]["last"] == 0
+    assert saved["counters"]["num"]["pos"] == 0
     assert saved["templates"]["Договор"]["fields"]["Номер"]["value"] == "num"
     dlg.close()
 
@@ -660,7 +655,7 @@ def test_counters_table_negative_blocks(qapp, tmp_path, store, monkeypatch):
         QMessageBox, "warning", lambda *a: warnings.append(a[-1])
     )
     dlg = FieldsDialog(str(folder), "Договор", store=store)
-    dlg._crows["num"]["last"].setText("-1")
+    dlg._crows["num"]["pos"].setText("-1")
     dlg._on_save()
     assert any("num" in w for w in warnings)
     dlg.close()
@@ -815,16 +810,14 @@ def test_counters_table_column_order(qapp, tmp_path, store, monkeypatch):
         STRINGS.FLD_CNT_SOURCE,
         STRINGS.FLD_CNT_FORMAT,
         STRINGS.FLD_CNT_POS,
-        STRINGS.FLD_CNT_LAST,
         STRINGS.FLD_CNT_RESUME,
     ]
     st = dlg._crows["data"]
     assert dlg.ctable.cellWidget(0, 1) is st["table"]
     assert dlg.ctable.cellWidget(0, 2) is st["fmt"]
-    assert dlg.ctable.cellWidget(0, 3) is st["pos"]
-    assert dlg.ctable.cellWidget(0, 4) is st["last_box"]
-    assert dlg.ctable.cellWidget(0, 5) is st["resume"]
-    assert st["last_box"].findChild(QLineEdit) is st["last"]
+    assert dlg.ctable.cellWidget(0, 3) is st["pos_box"]
+    assert dlg.ctable.cellWidget(0, 4) is st["resume"]
+    assert st["pos_box"].findChild(QLineEdit) is st["pos"]
     assert not st["pick"].isEnabled()
     assert st["pick"].toolTip() == STRINGS.FLD_PICK_DISABLED_TIP
     tips = [
@@ -836,13 +829,11 @@ def test_counters_table_column_order(qapp, tmp_path, store, monkeypatch):
         STRINGS.FLD_CNT_SOURCE_TIP,
         STRINGS.FLD_CNT_FORMAT_TIP,
         STRINGS.FLD_POS_TIP,
-        STRINGS.FLD_CNT_LAST_TIP,
         STRINGS.FLD_CNT_RESUME_TIP,
     ]
     assert st["table"].toolTip() == STRINGS.FLD_CNT_SOURCE_TIP
     assert st["fmt"].toolTip() == STRINGS.FLD_CNT_FORMAT_TIP
     assert st["pos"].toolTip() == STRINGS.FLD_POS_TIP
-    assert st["last"].toolTip() == STRINGS.FLD_CNT_LAST_TIP
     assert st["resume"].toolTip() == STRINGS.FLD_CNT_RESUME_TIP
     assert STRINGS.FLD_CNT_HINT in [
         w.text() for w in dlg.findChildren(QLabel)
@@ -866,6 +857,7 @@ def test_counter_constant_mode_row_read_only(qapp, tmp_path, store):
     st = dlg._crows["data"]
     assert st["pos"].isReadOnly()
     assert st["pos"].toolTip() == STRINGS.FLD_POS_CONST_TIP
+    assert not st["resume"].isEnabled()
     combo = st["table"]
     combo.setCurrentIndex(combo.findData(None))
     assert not st["pos"].isReadOnly()
@@ -875,14 +867,24 @@ def test_counter_constant_mode_row_read_only(qapp, tmp_path, store):
     dlg.close()
 
 
-def test_counter_last_updates_field_preview(qapp, tmp_path, store):
+def test_counter_pos_updates_field_preview(qapp, tmp_path, store):
     folder = make_project(tmp_path / "proj")
     dlg = FieldsDialog(str(folder), "Договор", store=store)
     st = dlg._crows["num"]
-    st["last"].setText("7")
+    st["pos"].setText("7")
     assert dlg._rows["Номер"]["cprev"].text() == "7"
     st["fmt"].setCurrentIndex(st["fmt"].findData("0001"))
     assert dlg._rows["Номер"]["cprev"].text() == "0007"
+    dlg.close()
+
+
+def test_counter_pos_updates_table_field_preview(qapp, tmp_path, store):
+    folder = make_project(tmp_path / "proj")
+    dlg = FieldsDialog(str(folder), "Договор", store=store)
+    st = dlg._crows["data"]
+    assert dlg._rows["ФИО"]["clabel"].text() == "Иван"
+    st["pos"].setText("1")
+    assert dlg._rows["ФИО"]["clabel"].text() == "Петр"
     dlg.close()
 
 
@@ -897,7 +899,7 @@ def test_counter_pick_writes_value_and_preview(qapp, tmp_path, store, monkeypatc
     assert st["pick"].isEnabled()
     assert st["pick"].toolTip() == STRINGS.FLD_PICK_TIP
     st["pick"].click()
-    assert st["last"].text() == "42"
+    assert st["pos"].text() == "42"
     assert dlg._crows["data"]["touched"] is True
     dlg.close()
 

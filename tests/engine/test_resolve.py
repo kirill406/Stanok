@@ -34,8 +34,8 @@ def _pj(**overrides) -> dict:
         "default_template": "Д",
         "data_sources": [{"file": SRC, "mode": "sequential"}],
         "counters": {
-            "emp": {"format": "1", "table": SRC, "start_row": 0},
-            "n": {"last": 42, "format": "plain"},
+            "emp": {"format": "1", "table": SRC, "pos": 0},
+            "n": {"pos": 42, "format": "plain"},
         },
         "filename_template": "{template} №{Номер}",
     }
@@ -51,24 +51,24 @@ def test_basic_composition():
     assert len(fjs) == 2
     assert fjs[0].fields == {
         "ФИО": "Иванов",
-        "Номер": "43",
+        "Номер": "42",
         "Дата": TODAY,
         "Город": "Москва",
     }
-    assert fjs[0].dist == "Д №43"
+    assert fjs[0].dist == "Д №42"
     assert names == ["emp", "n"]
 
 
 def test_counters_advance_across_docs():
     fjs, _ = resolve_rows({SRC: ROWS[:2]}, _pj(), "Д", today=TODAY)
-    assert [f.fields["Номер"] for f in fjs] == ["43", "44"]
+    assert [f.fields["Номер"] for f in fjs] == ["42", "43"]
 
 
 def test_pj_not_mutated():
     pj = _pj()
     resolve_rows({SRC: ROWS[:2]}, pj, "Д", today=TODAY)
-    assert pj.counters["n"].last == 42
-    assert pj.counters["emp"].start_row == 0
+    assert pj.counters["n"].pos == 42
+    assert pj.counters["emp"].pos == 0
 
 
 def test_used_counters_and_sources():
@@ -77,11 +77,14 @@ def test_used_counters_and_sources():
     assert participating_sources(pj, "Д") == [SRC]
 
 
-def test_mode_constant_repeats_first_row():
+def test_mode_constant_repeats_first_row_and_number():
     pj = _pj()
     pj.data_sources[0].mode = "constant"
+    pj.templates["Д"].limit = 3
+    pj.templates["Д"].fields["Номер"].value = "emp"
     fjs, _ = resolve_rows({SRC: ROWS[:3]}, pj, "Д", today=TODAY)
-    assert [f.fields["ФИО"] for f in fjs] == ["Иванов"]
+    assert [f.fields["ФИО"] for f in fjs] == ["Иванов"] * 3
+    assert [f.fields["Номер"] for f in fjs] == ["0"] * 3
 
 
 def test_mode_circular_single_lap():
@@ -97,7 +100,7 @@ def test_circular_cycles_to_limit():
     pj.templates["Д"].limit = 5
     fjs, _ = resolve_rows({SRC: ROWS[:2]}, pj, "Д", today=TODAY)
     assert [f.fields["ФИО"] for f in fjs] == ["Иванов", "Петров"] * 2 + ["Иванов"]
-    assert [f.fields["Номер"] for f in fjs] == ["43", "44", "45", "46", "47"]
+    assert [f.fields["Номер"] for f in fjs] == ["42", "43", "44", "45", "46"]
 
 
 def test_constant_with_limit():
@@ -108,9 +111,9 @@ def test_constant_with_limit():
     assert [f.fields["ФИО"] for f in fjs] == ["Иванов"] * 3
 
 
-def test_start_row_limits_sequential():
+def test_pos_limits_sequential():
     pj = _pj()
-    pj.counters["emp"].start_row = 1
+    pj.counters["emp"].pos = 1
     fjs, _ = resolve_rows({SRC: ROWS}, pj, "Д", today=TODAY)
     assert len(fjs) == 2
     assert fjs[0].fields["ФИО"] == "Петров"
@@ -162,15 +165,15 @@ def test_multi_source_composition():
 def test_counter_month_format():
     pj = _pj()
     pj.counters["n"].format = "month"
-    pj.counters["n"].last = 7
+    pj.counters["n"].pos = 7
     fjs, _ = resolve_rows({SRC: ROWS[:1]}, pj, "Д", today=TODAY)
-    assert fjs[0].fields["Номер"] == "2026-10-008"
+    assert fjs[0].fields["Номер"] == "2026-10-007"
 
 
 def test_counter_month_overflow():
     pj = _pj()
     pj.counters["n"].format = "month"
-    pj.counters["n"].last = 999
+    pj.counters["n"].pos = 1000
     with pytest.raises(ResolveError, match="overflow"):
         resolve_rows({SRC: ROWS[:1]}, pj, "Д", today=TODAY)
 
@@ -179,7 +182,7 @@ def test_counter_width_padding():
     pj = _pj()
     pj.counters["n"].format = "001"
     fjs, _ = resolve_rows({SRC: ROWS[:1]}, pj, "Д", today=TODAY)
-    assert fjs[0].fields["Номер"] == "043"
+    assert fjs[0].fields["Номер"] == "042"
 
 
 def test_missing_column_raises():

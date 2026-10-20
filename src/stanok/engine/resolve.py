@@ -4,13 +4,13 @@
 
 021: a document is composed from several sources at once. A table field points to
 a counter (`counter_name`); the counter is bound to a source (`table`) and holds
-a row cursor (`start_row`). Number of documents N = min(limit, available rows of
-sequential counters); with no sequential counters — one circle of circular ones.
+one position (`pos`) that is both the source row and the printed number.
+Number of documents N = min(limit, available rows of sequential counters);
+with no sequential counters — one circle of circular ones.
 """
 
 import logging
 import re
-from dataclasses import dataclass
 from datetime import date
 from typing import Any
 
@@ -32,14 +32,6 @@ RU_MONTHS_GENITIVE = STRINGS.RU_MONTHS_GENITIVE.split("|")
 TODAY_PRESETS = ("dmy", "day", "month_ru", "month_num", "year", "ru_long")
 
 COUNTER_WIDTHS = ("1", "01", "001", "0001")
-
-
-@dataclass
-class CounterState:
-    """Counter outcome of a run: printed number + row cursor."""
-
-    last: int
-    start_row: int
 
 
 def _format_dist(
@@ -124,15 +116,15 @@ def _modes(pj: ProjectJSON) -> dict[str, str]:
     return {ds.file: ds.mode for ds in pj.data_sources}
 
 
-def _row_index(mode: str, start: int, k: int, length: int) -> int | None:
+def _row_index(mode: str, pos: int, k: int, length: int) -> int | None:
     if length <= 0:
         return None
     if mode == "sequential":
-        idx = start + k
+        idx = pos + k
     elif mode == "circular":
-        idx = (start + k) % length
+        idx = (pos + k) % length
     elif mode == "constant":
-        idx = start
+        idx = pos
     else:
         raise ResolveError("mode", [f"unknown mode: {mode}"])
     return idx if 0 <= idx < length else None
@@ -154,7 +146,7 @@ def _document_count(
         rows = rows_by_source.get(cdef.table, [])
         mode = modes.get(cdef.table, "sequential")
         if mode == "sequential":
-            seq_avail.append(max(0, len(rows) - cdef.start_row))
+            seq_avail.append(max(0, len(rows) - cdef.pos))
         elif mode == "circular":
             circ_lens.append(len(rows))
     candidates: list[int] = []
@@ -174,7 +166,6 @@ def _document_count(
 def _resolve_field(
     fdef: FieldDef,
     pj: ProjectJSON,
-    state: dict[str, CounterState],
     rows_by_source: dict[str, list[dict]],
     modes: dict[str, str],
     k: int,
@@ -187,7 +178,7 @@ def _resolve_field(
         cdef = pj.counters[cname]
         rows = rows_by_source.get(cdef.table, [])
         mode = modes.get(cdef.table, "sequential")
-        idx = _row_index(mode, state[cname].start_row, k, len(rows))
+        idx = _row_index(mode, cdef.pos, k, len(rows))
         if idx is None:
             return None
         col_name = fdef.value
@@ -201,7 +192,9 @@ def _resolve_field(
     if fdef.source == FieldSource.COUNTER:
         cname = fdef.value
         cdef = pj.counters[cname]
-        return _format_counter(state[cname].last, cdef.format, cname, today)
+        mode = modes.get(cdef.table) if cdef.table is not None else None
+        value = cdef.pos if mode == "constant" else cdef.pos + k
+        return _format_counter(value, cdef.format, cname, today)
     if fdef.source == FieldSource.TODAY:
         return format_today(fdef.value, today)
     raise ResolveError("fields", [f"unknown field source: {fdef.source}"])
@@ -216,8 +209,8 @@ def resolve_rows(
     """Compose documents from all participating sources (021).
 
     Pure function: input PJ is never mutated. Caller (services) persists
-    counters and cursors into PJ (byte/row advancement depends on how many
-    documents actually got written, so finalization lives in the service).
+    counter positions into PJ (advancement depends on how many documents
+    actually got written, so finalization lives in the service).
 
     Args:
         rows_by_source: data-source file → its data rows (dicts, no header).
@@ -238,22 +231,16 @@ def resolve_rows(
     for name in names:
         if name not in pj.counters:
             raise ResolveError("counters", [f"counter not defined: {name}"])
-    state = {
-        name: CounterState(last=pj.counters[name].last, start_row=pj.counters[name].start_row)
-        for name in names
-    }
 
     n = _document_count(pj, tdef, names, rows_by_source, modes)
 
     results: list[FillingJSON] = []
     for k in range(n):
-        for name in names:
-            state[name].last += 1
         fields: dict[str, Any] = {}
         for fname, fdef in tdef.fields.items():
             try:
                 fields[fname] = _resolve_field(
-                    fdef, pj, state, rows_by_source, modes, k, today
+                    fdef, pj, rows_by_source, modes, k, today
                 )
             except ResolveError:
                 raise

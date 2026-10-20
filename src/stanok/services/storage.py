@@ -141,13 +141,30 @@ class ProjectStore:
             )
         return resolved
 
+    @staticmethod
+    def _backup_path(path: Path) -> Path:
+        """`<name>.stanok` → `<name>.stanok.bak`."""
+        return path.with_suffix(path.suffix + ".bak")
+
+    @staticmethod
+    def _tmp_path(path: Path) -> Path:
+        """`<name>.stanok` → `<name>.stanok.tmp`."""
+        return path.with_suffix(path.suffix + ".tmp")
+
+    def _has_config(self, path: Path) -> bool:
+        """Whether the main config or a recoverable copy exists."""
+        return any(
+            candidate.exists()
+            for candidate in (path, self._tmp_path(path), self._backup_path(path))
+        )
+
     def _atomic_write_json(self, path: Path, data: dict) -> None:
         """Write JSON atomically: tmp + fsync -> backup + rename."""
         path = self._validate_path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
 
-        tmp_path = path.with_suffix(path.suffix + ".tmp")
-        bak_path = path.with_suffix(path.suffix + ".bak")
+        tmp_path = self._tmp_path(path)
+        bak_path = self._backup_path(path)
 
         try:
             with open(tmp_path, "w", encoding="utf-8") as f:
@@ -177,8 +194,8 @@ class ProjectStore:
             return json.load(f)
 
     def config_exists(self, name: str) -> bool:
-        """Whether a project config with this name exists in Home."""
-        return self._get_config_path(name).exists()
+        """Whether a project config (or its recoverable copy) exists in Home."""
+        return self._has_config(self._get_config_path(name))
 
     def _get_config_path(self, name: str) -> Path:
         """Get path for config file in Home."""
@@ -211,10 +228,13 @@ class ProjectStore:
             return path
 
     def load(self, name: str) -> ProjectJSON:
-        """Load project config by name."""
+        """Load a project config; recover it from `.tmp`/`.bak` if unreadable."""
         with self._lock:
             path = self._get_config_path(name)
             if not path.exists():
+                recovered = self._recover_config(path, name)
+                if recovered is not None:
+                    return recovered
                 raise StorageError("load", [f"project not found: {name}"])
             try:
                 return validate_pj(self._read_json(path))
@@ -222,17 +242,69 @@ class ProjectStore:
                 raise
             except Exception as e:
                 logger.error(f"load config {path}: {e}", exc_info=True)
+                recovered = self._recover_config(path, name)
+                if recovered is not None:
+                    return recovered
                 raise StorageError("load", [f"invalid config {name}: {e}"]) from e
 
+    def _recover_config(self, path: Path, name: str) -> ProjectJSON | None:
+        """Recover an unreadable config: newest valid `.tmp`, then `.bak`."""
+        for source in (self._tmp_path(path), self._backup_path(path)):
+            if not source.exists():
+                continue
+            try:
+                pj = validate_pj(self._read_json(source))
+            except Exception as e:
+                logger.warning(f"recovery source {source}: {e}", exc_info=True)
+                continue
+            logger.warning(f"restored project config {name} from {source}")
+            self._promote_recovered(source, path, pj)
+            return pj
+        return None
+
+    def _promote_recovered(self, source: Path, path: Path, pj: ProjectJSON) -> None:
+        """Make the recovered copy the main config; keep `.bak` as a backup."""
+        if source == self._tmp_path(path):
+            # The interrupted save already wrote a complete tmp file.
+            try:
+                os.replace(source, path)
+                return
+            except Exception as e:
+                logger.warning(f"promote {source} to {path}: {e}", exc_info=True)
+                return
+        self._write_recovered(path, pj)
+
+    def _write_recovered(self, path: Path, pj: ProjectJSON) -> None:
+        """Rewrite a corrupt/missing main config from the loaded backup."""
+        tmp_path = self._tmp_path(path)
+        try:
+            path = self._validate_path(path)
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(pj.model_dump(mode="json"), f, ensure_ascii=False, indent=2)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp_path, path)
+        except Exception as e:
+            logger.warning(f"restore config {path}: {e}", exc_info=True)
+            if tmp_path.exists():
+                try:
+                    tmp_path.unlink()
+                except OSError as cleanup_error:
+                    logger.warning(
+                        f"remove temp {tmp_path}: {cleanup_error}", exc_info=True
+                    )
+
     def delete(self, name: str) -> None:
-        """Delete project config and backup."""
+        """Delete project config and its recoverable copies."""
         with self._lock:
             path = self._get_config_path(name)
-            bak_path = path.with_suffix(path.suffix + ".bak")
-            if path.exists():
-                path.unlink()
-            if bak_path.exists():
-                bak_path.unlink()
+            for candidate in (
+                path,
+                self._tmp_path(path),
+                self._backup_path(path),
+            ):
+                if candidate.exists():
+                    candidate.unlink()
             logger.info("deleted project config %s", name)
 
     def list(self) -> list[ProjectJSON]:
@@ -301,14 +373,14 @@ class ProjectStore:
                 pj = self.migrate_from_project(ref_path)
                 return pj, self._get_config_path(ref_path.resolve().name)
             config_path = self._get_config_path(ref_path.name)
-            if config_path.exists():
+            if self._has_config(config_path):
                 pj = self.load(ref_path.name)
                 self._remember_folder(pj, ref_path, config_path)
                 return pj, config_path
             raise StorageError("resolve", [f"project not found: {ref}"])
 
         config_path = self._get_config_path(ref_path.name)
-        if config_path.exists():
+        if self._has_config(config_path):
             return self.load(ref_path.name), config_path
 
         # Config name known only from recent: resolve by remembered folder.
@@ -383,7 +455,7 @@ class ProjectStore:
             name = (name or "").strip()
             if not name or "/" in name or "\\" in name or name in (".", ".."):
                 raise StorageError("init", [f"invalid project name: {name!r}"])
-            if self._get_config_path(name).exists():
+            if self.config_exists(name):
                 raise StorageError("init", [f"project already exists: {name}"])
             if not xlsx:
                 raise StorageError("init", ["no Excel files selected"])
@@ -416,7 +488,7 @@ class ProjectStore:
             counters: dict[str, dict] = {}
             for r in rel_xlsx:
                 cname = _counter_name(set(counters), r)
-                counters[cname] = {"last": 0, "format": "1", "table": r}
+                counters[cname] = {"pos": 0, "format": "1", "table": r}
             default_counter = next(iter(counters), None)
             templates: dict[str, dict] = {}
             for f in docx:
@@ -714,7 +786,7 @@ class ProjectStore:
                 )
             pj.data_sources.append(DataSourceDef(file=rel))
             cname = _counter_name(set(pj.counters), rel)
-            pj.counters[cname] = CounterDef(last=0, format="1", table=rel)
+            pj.counters[cname] = CounterDef(table=rel)
             self.save(pj, name=config_path.stem)
             logger.info(
                 "attached data source %s (counter %s) to %s",
@@ -736,19 +808,19 @@ class ProjectStore:
                 raise StorageError(
                     "delete", ["refusing to delete home directory"]
                 )
+            # Remove the folder first: a locked file must not leave the user
+            # with a deleted config and a half-deleted project.
+            if delete_folder and folder is not None and folder.exists():
+                try:
+                    shutil.rmtree(folder)
+                except OSError as e:
+                    logger.warning(f"rmtree {folder} failed: {e}")
+                    raise StorageError(
+                        "delete", [f"folder not removed, project kept: {e}"]
+                    ) from e
             self.delete(config_path.stem)
             if folder is not None:
                 self.remove_recent(str(folder), config_path.stem)
-            if delete_folder and folder is not None:
-                if folder.exists():
-                    try:
-                        shutil.rmtree(folder)
-                    except OSError as e:
-                        logger.warning(f"rmtree {folder} failed: {e}")
-                        raise StorageError(
-                            "delete",
-                            [f"config deleted, folder partially removed: {e}"],
-                        ) from e
             logger.info("deleted project %s", config_path.stem)
 
 

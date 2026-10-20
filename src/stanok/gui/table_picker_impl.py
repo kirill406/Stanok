@@ -22,6 +22,7 @@ from PyQt5.QtWidgets import (
 )
 
 from .strings import STRINGS
+from .theme import set_button_role
 from .table_picker import TableGrid, ValuePickerDialog
 
 
@@ -41,19 +42,29 @@ class PickerDialog(ValuePickerDialog):
         self._fill()
 
     def _build(self) -> None:
-        self.resize(760, 480)
+        self.resize(780, 520)
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 18, 20, 18)
+        layout.setSpacing(10)
+        title = QLabel(STRINGS.FLD_PICK_TITLE, self)
+        title.setObjectName("pageTitle")
+        layout.addWidget(title)
         self.hint = QLabel(STRINGS.PICK_TABLE_HINT, self)
+        self.hint.setObjectName("muted")
         self.hint.setWordWrap(True)
         layout.addWidget(self.hint)
         self.value_label = QLabel(
             STRINGS.PICK_WILL_WRITE.format(value=STRINGS.PICK_NO_VALUE), self
         )
+        self.value_label.setObjectName("sectionTitle")
         layout.addWidget(self.value_label)
         self.table = QTableWidget(self)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.table.setAlternatingRowColors(True)
+        self.table.setShowGrid(False)
+        self.table.verticalHeader().setDefaultSectionSize(34)
         self.table.itemSelectionChanged.connect(self._on_selection_changed)
         self.table.cellDoubleClicked.connect(self._on_double_click)
         layout.addWidget(self.table)
@@ -62,6 +73,7 @@ class PickerDialog(ValuePickerDialog):
         )
         self.ok_btn = buttons.button(QDialogButtonBox.Ok)
         self.ok_btn.setText(STRINGS.PICK_CHOOSE)
+        set_button_role(self.ok_btn, "primary")
         self.ok_btn.setEnabled(False)
         buttons.button(QDialogButtonBox.Cancel).setText(STRINGS.MAIN_CANCEL)
         buttons.accepted.connect(self._on_accept)
@@ -95,6 +107,7 @@ class PickerDialog(ValuePickerDialog):
                 item.setData(Qt.UserRole, value)
                 self.table.setItem(row, col, item)
         self.table.resizeColumnsToContents()
+        self.table.horizontalHeader().setStretchLastSection(True)
 
     def _clear_choice(self) -> None:
         self._cell = None

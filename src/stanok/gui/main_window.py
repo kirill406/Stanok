@@ -31,6 +31,8 @@ from .dialogs import ask_yes_no
 from .project_dialog import ProjectDialog
 from .report_text import done_text
 from .strings import STRINGS
+from .theme import set_button_role
+from .widgets import ElidedLabel
 from .worker import GenerateWorker
 
 logger = logging.getLogger(__name__)
@@ -58,16 +60,34 @@ class MainWindow(QMainWindow):
         self.resize(900, 650)
         root = QWidget(self)
         layout = QVBoxLayout(root)
+        layout.setContentsMargins(24, 20, 24, 20)
+        layout.setSpacing(12)
+
+        title = QLabel(STRINGS.MAIN_TITLE, root)
+        title.setObjectName("appTitle")
+        layout.addWidget(title)
+        subtitle = QLabel(STRINGS.MAIN_SUBTITLE, root)
+        subtitle.setObjectName("appSubtitle")
+        layout.addWidget(subtitle)
 
         group = QGroupBox(STRINGS.MAIN_PROJECT_GROUP, root)
         group_layout = QVBoxLayout(group)
+        group_layout.setContentsMargins(14, 18, 14, 14)
+        group_layout.setSpacing(10)
         self.recent_list = QListWidget(group)
+        self.recent_list.setSpacing(4)
         self.recent_list.itemClicked.connect(self._on_row_clicked)
         group_layout.addWidget(self.recent_list)
+        self.empty_label = QLabel(STRINGS.MAIN_EMPTY, group)
+        self.empty_label.setObjectName("muted")
+        self.empty_label.setWordWrap(True)
+        self.empty_label.setAlignment(Qt.AlignCenter)
+        group_layout.addWidget(self.empty_label)
 
         buttons = QHBoxLayout()
+        buttons.setSpacing(8)
         self.generate_all_btn = QPushButton(STRINGS.MAIN_GENERATE_ALL, group)
-        self.generate_all_btn.setStyleSheet("background-color: #2e7d32; color: white;")
+        set_button_role(self.generate_all_btn, "primary")
         self.generate_all_btn.clicked.connect(self._on_generate_all)
         buttons.addWidget(self.generate_all_btn)
         self.browse_btn = QPushButton(STRINGS.MAIN_OPEN, group)
@@ -80,7 +100,7 @@ class MainWindow(QMainWindow):
         self.settings_btn.clicked.connect(self._on_settings)
         buttons.addWidget(self.settings_btn)
         group_layout.addLayout(buttons)
-        layout.addWidget(group)
+        layout.addWidget(group, 1)
 
         self.progress_bar = QProgressBar(root)
         self.progress_bar.setRange(0, 100)
@@ -95,14 +115,22 @@ class MainWindow(QMainWindow):
         """Reload recent-projects list, one row per project + button."""
         self.recent_list.clear()
         for item in self._store.get_recent():
-            label = f"{item.folder} [{item.config}]"
             entry = QListWidgetItem(self.recent_list)
             entry.setData(Qt.UserRole, item.config)
             row = QWidget()
             row_layout = QHBoxLayout(row)
-            row_layout.setContentsMargins(4, 2, 4, 2)
-            name = QLabel(label, row)
-            row_layout.addWidget(name, 1)
+            row_layout.setContentsMargins(8, 6, 8, 6)
+            row_layout.setSpacing(10)
+            identity = QVBoxLayout()
+            identity.setSpacing(1)
+            name = ElidedLabel(item.config, row, Qt.ElideRight)
+            name.setObjectName("rowTitle")
+            path = ElidedLabel(item.folder, row, Qt.ElideMiddle)
+            path.setObjectName("rowSubtitle")
+            path.setToolTip(item.folder)
+            identity.addWidget(name)
+            identity.addWidget(path)
+            row_layout.addLayout(identity, 1)
             self._add_template_controls(row, row_layout, item.config)
             btn = QPushButton(STRINGS.MAIN_GENERATE, row)
             btn.clicked.connect(
@@ -119,6 +147,9 @@ class MainWindow(QMainWindow):
             entry.setSizeHint(row.sizeHint())
             self.recent_list.addItem(entry)
             self.recent_list.setItemWidget(entry, row)
+        has_recent = self.recent_list.count() > 0
+        self.recent_list.setVisible(has_recent)
+        self.empty_label.setVisible(not has_recent)
 
     def _add_template_controls(self, row: QWidget, layout: QHBoxLayout, ref: str) -> None:
         """Show the default template name + editable limit before «Сгенерировать»."""

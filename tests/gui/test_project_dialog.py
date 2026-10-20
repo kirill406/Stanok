@@ -100,6 +100,19 @@ def test_new_project_highlights_sources_and_edit(qapp, tmp_path, store):
     assert dlg._edit_blinks == {}
 
 
+def test_source_hint_stops_when_popup_opens(qapp, tmp_path, store):
+    folder = make_project(tmp_path / "proj")
+    dlg = ProjectDialog(str(folder), store=store, highlight_new=True)
+    combo = dlg.sources_table.cellWidget(0, 1)
+    assert "background-color: white" in combo.view().styleSheet()
+    assert len(dlg._source_blinks) == 1
+    combo.showPopup()
+    combo.hidePopup()
+    assert dlg._source_blinks == []
+    assert combo.styleSheet() == ""
+    dlg.close()
+
+
 def test_existing_project_has_no_hints(qapp, tmp_path, store):
     folder = make_project(tmp_path / "proj")
     dlg = ProjectDialog(str(folder), store=store)

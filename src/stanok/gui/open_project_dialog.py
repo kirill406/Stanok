@@ -22,6 +22,7 @@ from ..services.import_export import ProjectLayout, detect_project_layout
 from ..services.storage import ProjectStore
 from .create_dialog import CreateDialog
 from .strings import STRINGS
+from .theme import set_button_role
 
 logger = logging.getLogger(__name__)
 
@@ -35,12 +36,25 @@ class OpenProjectDialog(QDialog):
         self.selected_config: str = ""
         self.created_config: str = ""
         self.setWindowTitle(STRINGS.OPEN_TITLE)
-        self.resize(560, 400)
+        self.resize(600, 440)
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 18, 20, 18)
+        layout.setSpacing(10)
+
+        title = QLabel(STRINGS.OPEN_TITLE, self)
+        title.setObjectName("pageTitle")
+        layout.addWidget(title)
+        subtitle = QLabel(STRINGS.OPEN_SUBTITLE, self)
+        subtitle.setObjectName("pageSubtitle")
+        layout.addWidget(subtitle)
 
         self.list = QListWidget(self)
+        self.list.setSpacing(4)
+        self.list.setTextElideMode(Qt.ElideMiddle)
+        self.list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         layout.addWidget(self.list)
         self.empty_label = QLabel(STRINGS.OPEN_EMPTY, self)
+        self.empty_label.setObjectName("muted")
         self.empty_label.setVisible(False)
         layout.addWidget(self.empty_label)
 
@@ -51,6 +65,7 @@ class OpenProjectDialog(QDialog):
         self.open_btn = buttons.addButton(
             STRINGS.MAIN_OPEN, QDialogButtonBox.AcceptRole
         )
+        set_button_role(self.open_btn, "primary")
         cancel_btn = buttons.addButton(
             STRINGS.SET_CANCEL, QDialogButtonBox.RejectRole
         )

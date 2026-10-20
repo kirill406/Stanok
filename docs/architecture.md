@@ -108,7 +108,7 @@ src/stanok/
 │   ├── projects.py  # создать/открыть/удалить проект, именованные конфиги (открыть — 005, создать/шаблоны/удалить — 014/015 в storage)
 │   ├── import_export.py # распознавание папки проекта для импорта (022)
 │   └── storage.py   # ProjectStore: файлы, уникальные имена, атомарная запись, импорт
-├── gui/              # тонкий Qt: окна → вызовы services, ноль бизнес-логики (окна 1–4, worker, strings, dialogs, blink, bootstrap)
+├── gui/              # тонкий Qt: окна → вызовы services, ноль бизнес-логики (окна 1–4, worker, strings, dialogs, blink, theme, widgets, bootstrap)
 └── tables/           # бэкенды чтения (excel.py сейчас; csv/ — позже)
 ```
 

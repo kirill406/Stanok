@@ -42,7 +42,11 @@ class STRINGS:
 
     # Main window (gui/main_window.py)
     MAIN_TITLE = "Станок"
-    MAIN_PROJECT_GROUP = "Проект"
+    MAIN_SUBTITLE = "Генерация документов по шаблонам Word"
+    MAIN_PROJECT_GROUP = "Проекты"
+    MAIN_EMPTY = (
+        "Проектов пока нет. Создайте новый проект или откройте существующий."
+    )
     MAIN_OPEN = "Открыть проект"
     MAIN_GENERATE = "Сгенерировать"
     MAIN_GENERATE_ALL = "Сгенерировать все"
@@ -75,6 +79,7 @@ class STRINGS:
 
     # Open project dialog (gui/open_project_dialog.py, 020)
     OPEN_TITLE = "Открыть проект"
+    OPEN_SUBTITLE = "Выберите сохранённый проект или импортируйте папку"
     OPEN_EMPTY = "Проекты не найдены: создайте новый проект."
     OPEN_NO_FOLDER = "папка неизвестна"
     OPEN_PICK = "Выбрать папку"
@@ -113,7 +118,7 @@ class STRINGS:
     CRT_CANCEL = "Отмена"
     CRT_ERR_TITLE = "Не удалось создать проект"
     CRT_SAVE_ERR_TITLE = "Не удалось сохранить настройки"
-    CRT_PATH = "Файлы проекта: {path}"
+    CRT_PATH = "Файлы проекта:\n{path}"
     CRT_NAME_TAKEN = "Проект «{name}» уже существует — выберите другое имя"
     CRT_BAD_DIR = "Нельзя создавать проект внутри «{name}»"
     CRT_MKDIR_ASK = "Папки «{path}» нет. Создать её?"
@@ -129,7 +134,9 @@ class STRINGS:
 
     # Project dialog (gui/project_dialog.py, window 2)
     PROJ_TITLE = "Проект: {name}"
+    PROJ_FOLDER = "Папка: {path}"
     PROJ_SOURCES_TITLE = "Источники:"
+    PROJ_TEMPLATES_TITLE = "Шаблоны:"
     PROJ_SRC_COL_FILE = "Файл"
     PROJ_SRC_COL_TYPE = "Тип"
     PROJ_SRC_TYPES_HINT = (

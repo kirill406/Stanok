@@ -25,6 +25,7 @@ from PyQt5.QtWidgets import (
 from ..services.storage import ProjectStore
 from .dialogs import ask_yes_no
 from .strings import STRINGS
+from .theme import set_button_role
 
 logger = logging.getLogger(__name__)
 
@@ -57,8 +58,16 @@ class CreateDialog(QDialog):
         self.setWindowTitle(
             STRINGS.CRT_EDIT_TITLE if self._edit_mode else STRINGS.CRT_TITLE
         )
-        self.resize(600, 450 if not self._edit_mode else 260)
+        self.resize(620, 480 if not self._edit_mode else 280)
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(22, 20, 22, 20)
+        layout.setSpacing(9)
+
+        title = QLabel(
+            STRINGS.CRT_EDIT_TITLE if self._edit_mode else STRINGS.CRT_TITLE, self
+        )
+        title.setObjectName("pageTitle")
+        layout.addWidget(title)
 
         layout.addWidget(QLabel(STRINGS.CRT_NAME))
         self.name_edit = QLineEdit(self)
@@ -84,6 +93,8 @@ class CreateDialog(QDialog):
         else:
             self.xlsx_list = QListWidget(self)
             self.docx_list = QListWidget(self)
+            self.xlsx_list.setMinimumHeight(80)
+            self.docx_list.setMinimumHeight(80)
             self.copy_check = QCheckBox(STRINGS.CRT_COPY, self)
             layout.addWidget(QLabel(STRINGS.CRT_XLSX))
             layout.addWidget(self.xlsx_list)
@@ -97,6 +108,7 @@ class CreateDialog(QDialog):
         buttons = QDialogButtonBox(self)
         label = STRINGS.CRT_SAVE if self._edit_mode else STRINGS.CRT_CREATE
         self.create_btn = buttons.addButton(label, QDialogButtonBox.AcceptRole)
+        set_button_role(self.create_btn, "primary")
         cancel_btn = buttons.addButton(
             STRINGS.CRT_CANCEL, QDialogButtonBox.RejectRole
         )
@@ -129,6 +141,7 @@ class CreateDialog(QDialog):
         remove_btn.clicked.connect(lambda: self._on_remove_selected(target))
         row.addWidget(add_btn)
         row.addWidget(remove_btn)
+        row.addStretch(1)
         return row
 
     # -- slots -----------------------------------------------------------
@@ -171,16 +184,16 @@ class CreateDialog(QDialog):
         self, name: str, folder: str, taken: bool, bad_dir: bool
     ) -> None:
         if taken:
-            self.path_label.setStyleSheet("color: #b71c1c;")
+            self.path_label.setStyleSheet("color: #b42318;")
             self.path_label.setText(STRINGS.CRT_NAME_TAKEN.format(name=name))
         elif bad_dir:
-            self.path_label.setStyleSheet("color: #b71c1c;")
+            self.path_label.setStyleSheet("color: #b42318;")
             self.path_label.setText(
                 STRINGS.CRT_BAD_DIR.format(name=Path(folder).name)
             )
         else:
             self.path_label.setStyleSheet("")
-            target = Path(folder) / (name or "?")
+            target = Path(folder) / (name or "")
             self.path_label.setText(self._project_paths_text(target))
 
     def _project_paths_text(self, base: Path) -> str:

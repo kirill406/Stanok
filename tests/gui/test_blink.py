@@ -8,7 +8,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
 from PyQt5.QtTest import QTest
-from PyQt5.QtWidgets import QApplication, QPushButton
+from PyQt5.QtWidgets import QApplication, QComboBox, QPushButton
 
 from stanok.gui.blink import GreenBlink
 
@@ -30,3 +30,16 @@ def test_green_blink_start_and_stop_restore_style(qapp):
     blink.stop()
     assert not blink.running
     assert button.styleSheet() == "color: red;"
+
+
+def test_combo_blink_styles_only_combo_surface(qapp):
+    combo = QComboBox()
+    combo.addItem("x")
+    blink = GreenBlink(combo, duration_ms=80)
+    blink.start()
+    QTest.qWait(30)
+    style = combo.styleSheet()
+    assert "QComboBox { background-color: rgba(76, 175, 80" in style
+    assert "QComboBox QAbstractItemView" not in style
+    blink.stop()
+    assert combo.styleSheet() == ""

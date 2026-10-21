@@ -4,6 +4,7 @@
 
 import logging
 import os
+import re
 from datetime import datetime
 from enum import Enum
 from importlib.metadata import version as pkg_version, PackageNotFoundError
@@ -279,8 +280,11 @@ def _get_package_version() -> str:
 
 
 def _parse_version(v: str) -> tuple:
-    core = v.split("-", 1)[0]
-    return tuple(int(p) for p in core.split("."))
+    """Return the numeric core; accepts both ``0.2.0-alpha`` and ``0.2.0a0``."""
+    match = re.match(r"^(\d+)\.(\d+)\.(\d+)", v.strip())
+    if match is None:
+        return (0, 0, 0)
+    return tuple(int(part) for part in match.groups())
 
 
 def current_version() -> str:

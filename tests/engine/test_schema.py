@@ -134,7 +134,13 @@ def test_future_version_rejected():
 
 def test_migrate_same_version_passthrough():
     data = _load("pj_minimal.stanok")
+    data["version"] = schema.current_version()
     assert migrate(dict(data))["version"] == schema.current_version()
+
+
+def test_parse_version_accepts_pep440_prerelease():
+    assert schema._parse_version("0.2.0a0") == (0, 2, 0)
+    assert schema._parse_version("0.2.0-alpha") == (0, 2, 0)
 
 
 def test_aj_recent_capped_and_deduped():

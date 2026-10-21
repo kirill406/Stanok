@@ -7,6 +7,7 @@
 
 ### Добавлено
 
+- Диалог необработанной ошибки просит связаться с разработчиком и приложить файл лога
 - Логирование: старт/конец каждой сессии с версией `stanok`, версией PJ, режимом GUI/CLI, PID, домашней папкой и кодом выхода; глобальные хуки `sys.excepthook`, `threading.excepthook` и `qInstallMessageHandler`; необработанные ошибки пишутся как `CRITICAL` с traceback и показываются в диалоге, не закрывая GUI
 - Логирование генерации: фактический шаблон и файл, лимит, режимы и стартовые позиции счётчиков, строки по источникам, неучаствующие источники, `planned`, `resolved`, `created`, `errors`, `skipped_limit`, `skipped_exhausted`, путь результата и созданные документы
 - `GenerateReport`: поля `resolved`, `skipped_limit`, `skipped_exhausted`, `output_dir`; `engine.resolve.available_documents` считает доступные строки без учёта лимита

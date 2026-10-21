@@ -26,6 +26,7 @@ from PyQt5.QtWidgets import (
 )
 
 from ..services.generate import GenerateCommand, GenerateReport
+from ..engine.schema import SchemaError
 from ..services.storage import ProjectStore, StorageError
 from .dialogs import ask_yes_no
 from .project_dialog import ProjectDialog
@@ -157,8 +158,14 @@ class MainWindow(QMainWindow):
             pj, _ = self._store.resolve_project(ref)
             template = pj.default_template
             limit = pj.templates[template].limit
-        except Exception as e:
+        except (StorageError, SchemaError, OSError, ValueError) as e:
             logger.warning(f"default template of {ref}: {e}", exc_info=True)
+            layout.addWidget(QLabel(STRINGS.MAIN_TPL_UNAVAILABLE, row))
+            return
+        except Exception as e:
+            logger.critical(
+                f"unexpected default template of {ref}: {e}", exc_info=True
+            )
             layout.addWidget(QLabel(STRINGS.MAIN_TPL_UNAVAILABLE, row))
             return
         layout.addWidget(QLabel(STRINGS.MAIN_TPL.format(name=template), row))
@@ -175,9 +182,15 @@ class MainWindow(QMainWindow):
         """Persist a row's default-template limit as soon as it changes."""
         try:
             self._store.set_template_limit(ref, template, value)
-        except Exception as e:
+        except (StorageError, SchemaError, OSError, ValueError) as e:
             logger.warning(
                 f"set template limit {ref}/{template}: {e}", exc_info=True
+            )
+            self._show_error(f"{STRINGS.MAIN_ERROR_TITLE}: {e}")
+        except Exception as e:
+            logger.critical(
+                f"unexpected set template limit {ref}/{template}: {e}",
+                exc_info=True,
             )
             self._show_error(f"{STRINGS.MAIN_ERROR_TITLE}: {e}")
 
@@ -218,7 +231,9 @@ class MainWindow(QMainWindow):
                 self._show_error(f"{STRINGS.MAIN_ERROR_TITLE}: {e}")
             return
         except Exception as e:
-            logger.warning(f"open project dialog {ref}: {e}", exc_info=True)
+            logger.critical(
+                f"unexpected open project dialog {ref}: {e}", exc_info=True
+            )
             self._show_error(f"{STRINGS.MAIN_ERROR_TITLE}: {e}")
             return
         dialog.exec_()
@@ -237,8 +252,14 @@ class MainWindow(QMainWindow):
             return
         try:
             self._store.set_project_folder(ref, folder)
-        except Exception as e:
+        except (StorageError, SchemaError, OSError, ValueError) as e:
             logger.warning(f"relocate project {ref}: {e}", exc_info=True)
+            self._show_error(f"{STRINGS.MAIN_ERROR_TITLE}: {e}")
+            return
+        except Exception as e:
+            logger.critical(
+                f"unexpected relocate project {ref}: {e}", exc_info=True
+            )
             self._show_error(f"{STRINGS.MAIN_ERROR_TITLE}: {e}")
             return
         self.refresh_recent()

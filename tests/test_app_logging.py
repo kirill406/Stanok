@@ -90,3 +90,53 @@ def test_run_gui_path(monkeypatch):
     )
     assert appmod.main([]) == 0
     assert calls == ["show", "exec"]
+
+
+def _reset_root() -> None:
+    root = logging.getLogger()
+    for h in list(root.handlers):
+        root.removeHandler(h)
+    if hasattr(root, "_stanok_configured"):
+        delattr(root, "_stanok_configured")
+
+
+def test_main_writes_session_separators(tmp_path, monkeypatch):
+    import stanok.app as appmod
+
+    monkeypatch.setenv("STANOK_HOME", str(tmp_path / "home"))
+    _reset_root()
+
+    class FakeWindow:
+        def show(self):
+            pass
+
+    class FakeQt:
+        def exec_(self):
+            return 0
+
+    monkeypatch.setattr(appmod, "create_gui", lambda: (FakeQt(), FakeWindow()))
+    try:
+        assert appmod.main([]) == 0
+        text = (tmp_path / "home" / LOG_FILE).read_text(encoding="utf-8")
+    finally:
+        _reset_root()
+    from stanok import __version__
+    from stanok.engine.schema import current_version
+
+    assert "===== START" in text
+    assert f"stanok {__version__}" in text
+    assert f"PJ {current_version()}" in text
+    assert "mode=GUI" in text
+    assert "===== END" in text
+    assert "exit=0" in text
+
+
+def test_unhandled_exception_hook_logs_and_notifies(monkeypatch, caplog):
+    import stanok.app as appmod
+
+    shown = []
+    monkeypatch.setattr(appmod, "_notify_crash", shown.append)
+    with caplog.at_level(logging.CRITICAL):
+        appmod._handle_unhandled(ValueError, ValueError("boom"), None)
+    assert shown == ["boom"]
+    assert "unhandled exception: ValueError: boom" in caplog.text

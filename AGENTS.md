@@ -45,9 +45,16 @@
 ## Prohibitions (AI Must Never)
 - Never Commit `.env` or any file with real credentials
 - Never Use `print()` for logging — use Python `logging` module
-- Every `except Exception as e` must log with the original level + `exc_info=True` in an f-string 
-  with cause-identifying context: `logger.warning/debug/error(f'<what+context>: {e}', exc_info=True)`;
-  catch the specific expected error first, then the generic `Exception`, logging both
+- Never Allow a silent crash: every unhandled exception must reach the log. Global
+  `sys.excepthook`, `threading.excepthook` and `qInstallMessageHandler` stay installed by `app.py`;
+  GUI errors also get a dialog, and the window stays open when state is intact
+- Never Use an overly broad `except Exception` when a concrete error is expected: catch the
+  specific exception(s) first at their real level, then the generic `Exception`. The generic branch
+  must log `CRITICAL` with cause-identifying context and `e`:
+  `logger.critical(f'<what+context>: {e}', exc_info=True)`
+- Every log call uses an f-string; no `%`-formatting or bare string concatenation
+- Add DEBUG messages for startup/exit, config load/save, source reads, generation plan/results and
+  GUI action boundaries; never log secrets or full personal data
 - Never Put executable logic or heavy imports (Qt) in `__init__.py` — bootstrap lives in `app.py`
 - Never Skip tests before push once `tests/` exists
 - Never Add new env var without updating `.env.example` (empty value)
@@ -59,6 +66,8 @@
 - Thin entry: `run.py` contains no logic, only `sys.path` setup + `main()` call
 - Package import is side-effect free (`import stanok` must not start anything)
 - Layers: gui → services → engine (never vice versa, never sideways); one filling mechanism (Filling JSON → docx)
+- Logging is owned by `app.py`: session START/END with app/PJ versions, mode, PID and Home;
+  file `~/.stanok/stanok.log`; global exception hooks and Qt message routing stay installed
 - Prefer graphics over prose for structures: mermaid diagrams for layers, flows and data pipelines in docs/specs; 
   keep diagrams next to the text they explain
 - License is GPL-3.0-or-later:

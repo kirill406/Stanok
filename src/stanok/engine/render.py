@@ -17,8 +17,13 @@ def render(fj: FillingJSON, template_path: Path) -> Document:
     """Substitute fj.fields into template, return in-memory document."""
     try:
         doc = Document(str(template_path))
-    except Exception as e:
+    except (OSError, ValueError, KeyError) as e:
         logger.error(f"render open {template_path}: {e}", exc_info=True)
+        raise RenderError("template", [f"cannot open template: {e}"]) from e
+    except Exception as e:
+        logger.critical(
+            f"unexpected render open {template_path}: {e}", exc_info=True
+        )
         raise RenderError("template", [f"cannot open template: {e}"]) from e
 
     mapping = {k: _stringify(v) for k, v in fj.fields.items()}
@@ -27,7 +32,12 @@ def render(fj: FillingJSON, template_path: Path) -> Document:
             substitute_paragraph(paragraph, mapping)
     except RenderError:
         raise
-    except Exception as e:
+    except (AttributeError, TypeError, ValueError, KeyError) as e:
         logger.error(f"render {template_path}: {e}", exc_info=True)
+        raise RenderError("template", [str(e)]) from e
+    except Exception as e:
+        logger.critical(
+            f"unexpected render {template_path}: {e}", exc_info=True
+        )
         raise RenderError("template", [str(e)]) from e
     return doc

@@ -16,6 +16,11 @@ class STRINGS:
     APP_REF_HELP = "Папка проекта или имя конфига"
     APP_TEMPLATE_HELP = "Имя шаблона"
     APP_INTERRUPTED = "генерация прервана: {error}"
+    APP_ERROR_LINE = "  ошибка {index}: {error}"
+    APP_CRASH = (
+        "Непредвиденная ошибка: {error}\n\n"
+        "Подробности записаны в файл лога."
+    )
     APP_DONE = "Готово: создано {created}, ошибок {errors} за {elapsed} с"
     APP_DONE_SHORT = (
         "Готово: создано {created} из {limit} (строки закончились), "

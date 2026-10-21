@@ -234,8 +234,11 @@ flowchart LR
 
 ### 7.1 Логирование
 - Общий лог приложения: `~/.stanok/stanok.log` (RotatingFileHandler, переживает перезапуск)
+- Каждая сессия: `===== START ... =====` с версией `stanok`, версией PJ, режимом (GUI/CLI), PID и домашней папкой; парный `===== END ... exit=N =====`
 - Ошибки GUI — диалогом пользователю + записью в лог
-- Уровни: DEBUG, INFO, WARN, ERROR (модуль `logging`, не `print`)
+- Необработанные исключения: `sys.excepthook`, `threading.excepthook`, `qInstallMessageHandler`; уровень `CRITICAL` + traceback, GUI остаётся открытым
+- Уровни: DEBUG, INFO, WARNING, ERROR, CRITICAL (модуль `logging`, не `print`); INFO по умолчанию, DEBUG включается в настройках
+- Генерация: фактический шаблон, лимит, режимы, стартовые позиции, строки источников, `planned/resolved/created/errors/skipped_limit/skipped_exhausted`, путь результата
 
 ---
 

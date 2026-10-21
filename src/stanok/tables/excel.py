@@ -6,6 +6,7 @@ import logging
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
+from zipfile import BadZipFile
 
 import openpyxl
 from openpyxl.utils import get_column_letter
@@ -58,8 +59,11 @@ class ExcelReader:
                 wb.close()
         except TableReadError:
             raise
-        except Exception as e:
+        except (OSError, ValueError, KeyError, BadZipFile) as e:
             logger.error(f"read table {path}: {e}", exc_info=True)
+            raise TableReadError(path, e) from e
+        except Exception as e:
+            logger.critical(f"unexpected read table {path}: {e}", exc_info=True)
             raise TableReadError(path, e) from e
 
     @staticmethod

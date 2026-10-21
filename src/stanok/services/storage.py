@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import codecs
 import json
 import logging
 import os
@@ -201,8 +202,35 @@ class ProjectStore:
 
     def _read_json(self, path: Path) -> dict:
         path = self._validate_path(path)
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
+        raw = path.read_bytes()
+        if raw.startswith(codecs.BOM_UTF8):
+            payload = raw.removeprefix(codecs.BOM_UTF8)
+            data = json.loads(payload)
+            self._rewrite_without_bom(path, payload)
+            logger.info("removed UTF-8 BOM from %s", path)
+            return data
+        return json.loads(raw)
+
+    def _rewrite_without_bom(self, path: Path, payload: bytes) -> None:
+        """Atomically rewrite a config as UTF-8 without BOM; raise on failure."""
+        path = self._validate_path(path)
+        tmp_path = self._tmp_path(path)
+        try:
+            with open(tmp_path, "wb") as f:
+                f.write(payload)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp_path, path)
+        except Exception as e:
+            logger.warning(f"rewrite without BOM {path}: {e}", exc_info=True)
+            if tmp_path.exists():
+                try:
+                    tmp_path.unlink()
+                except OSError as cleanup_error:
+                    logger.warning(
+                        f"remove temp {tmp_path}: {cleanup_error}", exc_info=True
+                    )
+            raise
 
     def config_exists(self, name: str) -> bool:
         """Whether a project config (or its recoverable copy) exists in Home."""

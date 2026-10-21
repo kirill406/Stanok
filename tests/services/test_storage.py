@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Tests for ProjectStore: atomic save/load, Home migration, recent projects."""
 
+import codecs
 import json
 import threading
 from pathlib import Path
@@ -273,6 +274,61 @@ def test_load_restores_corrupt_main_from_backup(store, sample_pj):
     assert loaded.templates["template1"].limit == 0
     assert json.loads(path.read_text())["templates"]["template1"]["limit"] == 0
     assert store._backup_path(path).exists()
+
+
+def test_load_removes_utf8_bom_without_backup_restore(store, sample_pj):
+    """A valid BOM-edited main config is rewritten, not rolled back to .bak."""
+    path = store.save(sample_pj)
+    raw = sample_pj.model_dump(mode="json")
+    raw["templates"]["template1"]["limit"] = 7
+    store.save(validate_pj(raw), name=path.stem)
+
+    edited = sample_pj.model_dump(mode="json")
+    edited["templates"]["template1"]["limit"] = 5
+    payload = json.dumps(edited, ensure_ascii=False).encode("utf-8")
+    path.write_bytes(codecs.BOM_UTF8 + payload)
+
+    loaded = store.load(path.stem)
+    assert loaded.templates["template1"].limit == 5
+    assert not path.read_bytes().startswith(codecs.BOM_UTF8)
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert saved["templates"]["template1"]["limit"] == 5
+
+
+def test_load_restores_backup_when_bom_payload_invalid(store, sample_pj):
+    """Invalid JSON after BOM removal falls back to the previous config."""
+    path = store.save(sample_pj)
+    raw = sample_pj.model_dump(mode="json")
+    raw["templates"]["template1"]["limit"] = 7
+    store.save(validate_pj(raw), name=path.stem)
+
+    path.write_bytes(codecs.BOM_UTF8 + b"{broken")
+
+    loaded = store.load(path.stem)
+    assert loaded.templates["template1"].limit == 0
+    assert not path.read_bytes().startswith(codecs.BOM_UTF8)
+
+
+def test_load_restores_backup_when_bom_rewrite_fails(store, sample_pj, monkeypatch):
+    """If BOM repair cannot be written, fall back to the previous config."""
+    path = store.save(sample_pj)
+    raw = sample_pj.model_dump(mode="json")
+    raw["templates"]["template1"]["limit"] = 7
+    store.save(validate_pj(raw), name=path.stem)
+
+    edited = sample_pj.model_dump(mode="json")
+    edited["templates"]["template1"]["limit"] = 5
+    payload = json.dumps(edited, ensure_ascii=False).encode("utf-8")
+    path.write_bytes(codecs.BOM_UTF8 + payload)
+
+    monkeypatch.setattr(
+        store,
+        "_rewrite_without_bom",
+        lambda *a, **k: (_ for _ in ()).throw(OSError("locked")),
+    )
+    loaded = store.load(path.stem)
+    assert loaded.templates["template1"].limit == 0
+    assert not path.read_bytes().startswith(codecs.BOM_UTF8)
 
 
 def test_resolve_restores_missing_main_from_backup(store, sample_pj):

@@ -211,6 +211,24 @@ def test_headers_read_failure_warns(qapp, tmp_path, store, monkeypatch):
     dlg.close()
 
 
+def test_headers_skip_blank_columns_with_warning(qapp, tmp_path, store, monkeypatch):
+    folder = make_project(
+        tmp_path / "proj",
+        headers=("ФИО", None, "Сумма"),
+        rows=(("Иван", "лишнее", 100),),
+    )
+    warnings = []
+    monkeypatch.setattr(
+        QMessageBox, "warning", lambda *a: warnings.append(a[-1])
+    )
+    dlg = FieldsDialog(str(folder), "Договор", store=store)
+    assert warnings
+    assert "B" in warnings[0]
+    assert "пропущены столбцы" in warnings[0]
+    assert dlg._rows["ФИО"]["col"].count() == 2
+    dlg.close()
+
+
 def test_save_failure_shows_critical(qapp, tmp_path, store, monkeypatch):
     folder = make_project(tmp_path / "proj")
     _add_constant(folder)

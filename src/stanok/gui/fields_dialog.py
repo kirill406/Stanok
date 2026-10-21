@@ -123,10 +123,18 @@ class FieldsDialog(QDialog):
                 if path is None:
                     continue
                 try:
-                    rows.extend(ExcelReader().read(path))
+                    reader = ExcelReader()
+                    rows.extend(reader.read(path))
                 except Exception as e:
                     logger.warning(f"headers for {f} failed: {e}", exc_info=True)
                     self._warn_source(f, f"{f}: {e}")
+                else:
+                    skipped = reader.skipped_columns.get(path, [])
+                    if skipped:
+                        message = STRINGS.TBL_SKIPPED_COLUMNS.format(
+                            columns=", ".join(skipped)
+                        )
+                        self._warn_source(f, f"{f}: {message}")
         self._rows_cache[key] = rows
         return rows
 

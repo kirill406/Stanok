@@ -53,6 +53,7 @@ class GenerateReport:
     elapsed: float = 0.0
     planned: int = 0  # documents resolved for this run (before errors)
     limit: int = 0  # template limit (0 = unlimited)
+    skipped_columns: dict[str, list[str]] = field(default_factory=dict)
 
 
 def _unique_path(base: Path) -> Path:
@@ -170,6 +171,9 @@ def generate_documents(
         except Exception as e:
             logger.error(f"source {file} failed: {e}", exc_info=True)
             raise TemplateError(f"data source not readable: {file}: {e}") from e
+        skipped = reader.skipped_columns.get(path, [])
+        if skipped:
+            report.skipped_columns[file] = skipped
 
     _check_table_columns(rows_by_source, template_def, pj)
 

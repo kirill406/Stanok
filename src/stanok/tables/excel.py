@@ -23,22 +23,36 @@ class TableReadError(Exception):
 
 
 class ExcelReader:
+    def __init__(self) -> None:
+        self.skipped_columns: dict[Path, list[str]] = {}
+
     def read(self, path: Path) -> list[dict[str, Any]]:
+        self.skipped_columns.pop(path, None)
         try:
             wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
             try:
                 ws = wb.active
                 rows = ws.iter_rows(values_only=True)
-                headers = self._read_headers(path, next(rows, []))
-                width = len(headers)
+                headers, indices, skipped = self._read_headers(path, next(rows, []))
+                if skipped:
+                    self.skipped_columns[path] = skipped
+                    logger.warning(
+                        f"table {path}: skipped columns without headers: "
+                        f"{', '.join(skipped)}"
+                    )
                 result = []
                 for row in rows:
-                    cells = list(row[:width]) + [None] * max(0, width - len(row))
-                    if all(v is None or v == "" for v in cells):
+                    cells = list(row)
+                    values = [
+                        cells[i] if i < len(cells) else None for i in indices
+                    ]
+                    if all(v is None or v == "" for v in values):
                         # Пустая строка — dict с None значениями
                         result.append({h: None for h in headers})
                         continue
-                    result.append({h: self._normalize(v) for h, v in zip(headers, cells)})
+                    result.append(
+                        {h: self._normalize(v) for h, v in zip(headers, values)}
+                    )
                 return result
             finally:
                 wb.close()
@@ -49,20 +63,23 @@ class ExcelReader:
             raise TableReadError(path, e) from e
 
     @staticmethod
-    def _read_headers(path: Path, raw_row: tuple) -> list[str]:
+    def _read_headers(
+        path: Path, raw_row: tuple
+    ) -> tuple[list[str], list[int], list[str]]:
         raw = [str(h).strip() if h is not None else "" for h in raw_row]
         # Хвостовые пустые колонки — обрезать (обычное дело в живых файлах).
         last = max((i for i, h in enumerate(raw) if h), default=-1)
         if last < 0:
             raise TableReadError(path, ValueError(STRINGS.TBL_NO_HEADERS))
-        headers = raw[: last + 1]
-        # Пустой заголовок в середине — колонку нельзя адресовать.
-        for i, h in enumerate(headers):
+        headers: list[str] = []
+        indices: list[int] = []
+        skipped: list[str] = []
+        for i, h in enumerate(raw[: last + 1]):
             if not h:
-                raise TableReadError(
-                    path,
-                    ValueError(STRINGS.TBL_BLANK_HEADER.format(column=get_column_letter(i + 1))),
-                )
+                skipped.append(get_column_letter(i + 1))
+                continue
+            headers.append(h)
+            indices.append(i)
         # Дубли — тихая потеря данных, запрещены.
         seen, dups = set(), set()
         for h in headers:
@@ -74,7 +91,7 @@ class ExcelReader:
                 path,
                 ValueError(STRINGS.TBL_DUP_HEADERS.format(headers=", ".join(sorted(dups)))),
             )
-        return headers
+        return headers, indices, skipped
 
     def _normalize(self, v: Any) -> Any:
         if v is None:

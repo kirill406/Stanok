@@ -28,6 +28,7 @@ class STRINGS:
 
     # Generation (services/generate.py)
     GEN_RESULT_DIR = "Результат"
+    GEN_SKIPPED_COLUMNS = "Пропущены столбцы без заголовков:\n{items}"
 
     # Storage (services/storage.py)
     STORAGE_DEFAULT_TPL = (
@@ -37,7 +38,9 @@ class STRINGS:
     # Tables (tables/excel.py)
     TBL_READ_FAILED = "Не удалось прочитать таблицу {path}: {cause}"
     TBL_NO_HEADERS = "первая строка пустая: нет заголовков"
-    TBL_BLANK_HEADER = "пустой заголовок в колонке {column}"
+    TBL_SKIPPED_COLUMNS = (
+        "пропущены столбцы без заголовков: {columns}; их данные недоступны"
+    )
     TBL_DUP_HEADERS = "повторяющиеся заголовки: {headers}"
 
     # Main window (gui/main_window.py)

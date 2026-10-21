@@ -116,6 +116,17 @@ def test_full_sequential_run(tmp_path, store):
     assert saved.counters["data"].pos == 2
 
 
+def test_generate_reports_skipped_columns(tmp_path, store):
+    folder = make_project(
+        tmp_path / "proj",
+        headers=("ФИО", None, "Сумма"),
+        rows=(("Иван", "лишнее", 100),),
+    )
+    report = generate_documents(GenerateCommand(project_ref=folder), store=store)
+    assert report.created == 1
+    assert report.skipped_columns == {DATA: ["B"]}
+
+
 def test_limit_truncates(tmp_path, store):
     folder = make_project(
         tmp_path / "proj", rows=(("А", 1), ("Б", 2), ("В", 3)), limit=2

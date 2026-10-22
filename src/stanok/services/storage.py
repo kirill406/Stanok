@@ -189,7 +189,7 @@ class ProjectStore:
         )
 
     def _atomic_write_json(self, path: Path, data: dict) -> None:
-        """Write JSON atomically: tmp + fsync -> backup + rename."""
+        """Write JSON atomically: tmp + fsync -> backup copy + replace."""
         path = self._validate_path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -213,16 +213,38 @@ class ProjectStore:
             raise
 
         if path.exists():
-            if bak_path.exists():
-                bak_path.unlink()
-            path.rename(bak_path)
+            # Copy, not rename: the main config must exist at every moment.
+            try:
+                shutil.copy2(path, bak_path)
+            except OSError as e:
+                logger.warning(f"backup config {path}: {e}", exc_info=True)
+            except Exception as e:
+                logger.critical(
+                    f"unexpected backup config {path}: {e}", exc_info=True
+                )
 
         try:
-            tmp_path.rename(path)
+            os.replace(tmp_path, path)
         except OSError as e:
-            logger.warning(f"atomic rename failed for {path}: {e}", exc_info=True)
-            shutil.copy2(tmp_path, path)
-            tmp_path.unlink()
+            logger.warning(
+                f"atomic replace failed for {path}: {e}", exc_info=True
+            )
+            try:
+                shutil.copy2(tmp_path, path)
+                tmp_path.unlink()
+            except OSError as copy_error:
+                logger.warning(
+                    f"copy config fallback {path}: {copy_error}; "
+                    f"keeping temp {tmp_path}",
+                    exc_info=True,
+                )
+                raise copy_error from e
+            except Exception as copy_error:
+                logger.critical(
+                    f"unexpected copy config fallback {path}: {copy_error}",
+                    exc_info=True,
+                )
+                raise
         logger.debug(f"wrote config atomically: {path}")
 
     def _read_json(self, path: Path) -> dict:

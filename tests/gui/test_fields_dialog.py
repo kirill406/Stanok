@@ -7,6 +7,7 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import json
+import logging
 import shutil
 
 import pytest
@@ -893,6 +894,35 @@ def test_counter_pos_updates_field_preview(qapp, tmp_path, store):
     assert dlg._rows["Номер"]["cprev"].text() == "7"
     st["fmt"].setCurrentIndex(st["fmt"].findData("0001"))
     assert dlg._rows["Номер"]["cprev"].text() == "0007"
+    dlg.close()
+
+
+def test_counter_change_skips_constant_field(qapp, tmp_path, store):
+    folder = make_project(tmp_path / "proj")
+    _add_constant(folder)
+    dlg = FieldsDialog(str(folder), "Договор", store=store)
+    dlg._crows["num"]["pos"].setText("7")
+    assert dlg._rows["Номер"]["cprev"].text() == "7"
+    assert dlg._rows["Город"]["const"].text() == "Москва"
+    dlg.close()
+
+
+def test_counter_change_error_logged_and_shown(
+    qapp, tmp_path, store, monkeypatch, caplog
+):
+    folder = make_project(tmp_path / "proj")
+    dlg = FieldsDialog(str(folder), "Договор", store=store)
+    shown = []
+    monkeypatch.setattr(QMessageBox, "critical", lambda *a: shown.append(a[-1]))
+
+    def boom(_cname):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(dlg, "_update_counter_row_state", boom)
+    with caplog.at_level(logging.CRITICAL):
+        dlg._on_counter_source_changed("data")
+    assert "counter change source failed" in caplog.text
+    assert shown and "boom" in shown[0]
     dlg.close()
 
 

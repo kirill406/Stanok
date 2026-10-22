@@ -81,6 +81,23 @@ def test_template_columns_all_interactive(qapp, tmp_path, store):
     dlg.close()
 
 
+def test_long_template_name_grows_row(qapp, tmp_path, store):
+    import json
+
+    folder = make_project(tmp_path / "proj")
+    path = folder / "project.stanok"
+    data = json.loads(path.read_text())
+    name = "Очень длинное название шаблона " * 4
+    data["templates"][name] = json.loads(json.dumps(data["templates"]["Договор"]))
+    path.write_text(json.dumps(data, ensure_ascii=False))
+    dlg = ProjectDialog(str(folder), store=store)
+    row = dlg.table.rowCount() - 1
+    dlg.table.setColumnWidth(0, 80)
+    qapp.processEvents()
+    assert dlg.table.rowHeight(row) > 42
+    dlg.close()
+
+
 def test_sources_types_hint_shown(qapp, tmp_path, store):
     folder = make_project(tmp_path / "proj")
     dlg = ProjectDialog(str(folder), store=store)

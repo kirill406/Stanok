@@ -856,6 +856,7 @@ def test_counters_table_column_order(qapp, tmp_path, store, monkeypatch):
     assert st["resume"].toolTip() == STRINGS.FLD_CNT_RESUME_TIP
     labels = [w.text() for w in dlg.findChildren(QLabel)]
     assert STRINGS.FLD_CNT_DEFINITION in labels
+    assert "число в памяти компьютера" in STRINGS.FLD_CNT_DEFINITION
     assert STRINGS.FLD_CNT_HINT in labels
     dlg.close()
 

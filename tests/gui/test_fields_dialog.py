@@ -1042,3 +1042,21 @@ def test_counter_create_button_click(qapp, tmp_path, store, monkeypatch):
     assert "Клиент" in dlg._pj.counters
     assert not shown
     dlg.close()
+
+
+def test_counter_pick_works_for_constant_source(
+    qapp, tmp_path, store, monkeypatch
+):
+    import stanok.gui.fields_dialog as fields_module
+
+    folder = make_project(tmp_path / "proj", mode="constant")
+    monkeypatch.setattr(fields_module, "picker_available", lambda: True)
+    monkeypatch.setattr(fields_module, "open_picker", lambda *a, **k: 1)
+    dlg = FieldsDialog(str(folder), "Договор", store=store)
+    st = dlg._crows["data"]
+    assert st["pos"].isReadOnly()
+    assert st["pick"].isEnabled()
+    st["pick"].click()
+    assert st["pos"].text() == "1"
+    assert dlg._rows["ФИО"]["clabel"].text() == "Петр"
+    dlg.close()

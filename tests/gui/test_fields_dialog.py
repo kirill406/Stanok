@@ -854,9 +854,9 @@ def test_counters_table_column_order(qapp, tmp_path, store, monkeypatch):
     assert st["fmt"].toolTip() == STRINGS.FLD_CNT_FORMAT_TIP
     assert st["pos"].toolTip() == STRINGS.FLD_POS_TIP
     assert st["resume"].toolTip() == STRINGS.FLD_CNT_RESUME_TIP
-    assert STRINGS.FLD_CNT_HINT in [
-        w.text() for w in dlg.findChildren(QLabel)
-    ]
+    labels = [w.text() for w in dlg.findChildren(QLabel)]
+    assert STRINGS.FLD_CNT_DEFINITION in labels
+    assert STRINGS.FLD_CNT_HINT in labels
     dlg.close()
 
 

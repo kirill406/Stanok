@@ -372,6 +372,10 @@ class FieldsDialog(QDialog):
         layout.addWidget(self.table)
 
         layout.addWidget(self._section_title(STRINGS.FLD_COUNTERS_TITLE))
+        definition = QLabel(STRINGS.FLD_CNT_DEFINITION, self)
+        definition.setObjectName("muted")
+        definition.setWordWrap(True)
+        layout.addWidget(definition)
         self.ctable = QTableWidget(self)
         self.ctable.setColumnCount(5)
         self.ctable.setAlternatingRowColors(True)

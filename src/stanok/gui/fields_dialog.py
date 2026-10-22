@@ -85,7 +85,9 @@ def _counter_action(action: str):
             try:
                 return func(self, *args, **kwargs)
             except Exception as e:
-                target = args[0] if args else ""
+                target = (
+                    args[0] if args and not isinstance(args[0], bool) else ""
+                )
                 self._counter_failed(action, target, e)
 
         return wrapper
@@ -531,7 +533,7 @@ class FieldsDialog(QDialog):
         st["box"] = box
 
     @_counter_action("create")
-    def _on_counter_create(self) -> None:
+    def _on_counter_create(self, _checked: bool = False) -> None:
         text, ok = ask_text(
             self, STRINGS.FLD_COUNTER_CREATE, STRINGS.FLD_COUNTER_NAME
         )
@@ -545,6 +547,7 @@ class FieldsDialog(QDialog):
                 STRINGS.FLD_DUP_COUNTER.format(name=cname),
             )
             return
+        logger.debug(f"counter created: {cname} in {self._template_name}")
         self._pj.counters[cname] = CounterDef()
         self._build_counters_table()
         self._fit_tables()

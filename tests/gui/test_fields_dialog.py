@@ -1026,3 +1026,19 @@ def test_restore_source_copy_error_warns(qapp, tmp_path, store, monkeypatch):
     )
     assert warnings
     dlg.close()
+
+
+def test_counter_create_button_click(qapp, tmp_path, store, monkeypatch):
+    import stanok.gui.fields_dialog as fields_module
+
+    folder = make_project(tmp_path / "proj")
+    dlg = FieldsDialog(str(folder), "Договор", store=store)
+    monkeypatch.setattr(
+        fields_module, "ask_text", lambda *a, **k: ("Клиент", True)
+    )
+    shown = []
+    monkeypatch.setattr(QMessageBox, "critical", lambda *a: shown.append(a[-1]))
+    dlg.counter_add_btn.click()
+    assert "Клиент" in dlg._pj.counters
+    assert not shown
+    dlg.close()

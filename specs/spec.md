@@ -1,11 +1,11 @@
 # Спецификация: Проект "Станок"
 
 **Статус:** Active
-**Версия:** 0.0.0
+**Версия:** 0.2.0-alpha
 **Автор:** Kirill Borovoy
 **Ревьюеры:** -
 **Создано:** 2026-09-20
-**Обновлено:** 2026-10-05
+**Обновлено:** 2026-10-20
 
 ---
 
@@ -224,9 +224,9 @@ flowchart LR
 
 Десктопное офлайн-приложение: сетевой поверхности, аутентификации и
 пользовательских данных на сервере нет.
-- [ ] Ввод: строгая валидация JSON-конфигов, sanitize имён файлов
-- [ ] Секреты: `.env` никогда не коммитится (pre-commit: trufflehog3)
-- [ ] Аудит: mutating-операции логируются в `~/.stanok/stanok.log`
+- [x] Ввод: строгая валидация JSON-конфигов, sanitize имён файлов
+- [x] Секреты: `.env` никогда не коммитится (pre-commit: trufflehog3)
+- [x] Аудит: mutating-операции логируются в `~/.stanok/stanok.log`
 
 ---
 
@@ -234,8 +234,11 @@ flowchart LR
 
 ### 7.1 Логирование
 - Общий лог приложения: `~/.stanok/stanok.log` (RotatingFileHandler, переживает перезапуск)
+- Каждая сессия: `===== START ... =====` с версией `stanok`, версией PJ, режимом (GUI/CLI), PID и домашней папкой; парный `===== END ... exit=N =====`
 - Ошибки GUI — диалогом пользователю + записью в лог
-- Уровни: DEBUG, INFO, WARN, ERROR (модуль `logging`, не `print`)
+- Необработанные исключения: `sys.excepthook`, `threading.excepthook`, `qInstallMessageHandler`; уровень `CRITICAL` + traceback, GUI остаётся открытым
+- Уровни: DEBUG, INFO, WARNING, ERROR, CRITICAL (модуль `logging`, не `print`); INFO по умолчанию, DEBUG включается в настройках
+- Генерация: фактический шаблон, лимит, режимы, стартовые позиции, строки источников, `planned/resolved/created/errors/skipped_limit/skipped_exhausted`, путь результата
 
 ---
 

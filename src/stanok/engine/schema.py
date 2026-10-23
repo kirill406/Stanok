@@ -4,13 +4,21 @@
 
 import logging
 import os
+import re
 from datetime import datetime
 from enum import Enum
 from importlib.metadata import version as pkg_version, PackageNotFoundError
 from pathlib import PurePosixPath
 from typing import Any, Callable
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 from ..gui.strings import STRINGS
 
@@ -88,7 +96,7 @@ class _WarnExtra(BaseModel):
         allowed = set(type(self).model_fields)
         unknown = [k for k in self.__pydantic_extra__ or {} if k not in allowed]
         if unknown:
-            logger.warning("unknown keys ignored: %s", unknown)
+            logger.warning(f"unknown keys ignored: {unknown}")
         return self
 
 
@@ -133,7 +141,7 @@ class CounterDef(_WarnExtra):
             pos = start if start is not None else last
         if pos is not None:
             data["pos"] = pos
-            logger.debug("counter: merged legacy last/start_row into pos=%s", pos)
+            logger.debug(f"counter: merged legacy last/start_row into pos={pos}")
         return data
 
     @field_validator("table")
@@ -183,7 +191,7 @@ class ProjectJSON(_WarnExtra):
         if not value:
             return None
         if not os.path.isabs(value):
-            logger.warning("project folder is not absolute: %s", value)
+            logger.warning(f"project folder is not absolute: {value}")
         return value
 
     @model_validator(mode="after")
@@ -279,8 +287,11 @@ def _get_package_version() -> str:
 
 
 def _parse_version(v: str) -> tuple:
-    core = v.split("-", 1)[0]
-    return tuple(int(p) for p in core.split("."))
+    """Return the numeric core; accepts both ``0.2.0-alpha`` and ``0.2.0a0``."""
+    match = re.match(r"^(\d+)\.(\d+)\.(\d+)", v.strip())
+    if match is None:
+        return (0, 0, 0)
+    return tuple(int(part) for part in match.groups())
 
 
 def current_version() -> str:
@@ -325,36 +336,39 @@ def normalize(raw: dict) -> dict:
 def validate_pj(data: dict) -> ProjectJSON:
     try:
         return ProjectJSON(**normalize(data))
-    except Exception as e:
-        from pydantic import ValidationError
-
-        if isinstance(e, ValidationError):
-            raise PJValidationError("$", _format_errors(e)) from e
+    except ValidationError as e:
+        raise PJValidationError("$", _format_errors(e)) from e
+    except (TypeError, ValueError, KeyError) as e:
         logger.error(f"validate PJ: {e}", exc_info=True)
+        raise
+    except Exception as e:
+        logger.critical(f"unexpected validate PJ: {e}", exc_info=True)
         raise
 
 
 def validate_aj(data: dict) -> ApplicationJSON:
     try:
         return ApplicationJSON(**normalize(data))
-    except Exception as e:
-        from pydantic import ValidationError
-
-        if isinstance(e, ValidationError):
-            raise AJValidationError("$", _format_errors(e)) from e
+    except ValidationError as e:
+        raise AJValidationError("$", _format_errors(e)) from e
+    except (TypeError, ValueError, KeyError) as e:
         logger.error(f"validate AJ: {e}", exc_info=True)
+        raise
+    except Exception as e:
+        logger.critical(f"unexpected validate AJ: {e}", exc_info=True)
         raise
 
 
 def validate_fj(data: dict) -> FillingJSON:
     try:
         return FillingJSON(**normalize(data))
-    except Exception as e:
-        from pydantic import ValidationError
-
-        if isinstance(e, ValidationError):
-            raise FillingValidationError("$", _format_errors(e)) from e
+    except ValidationError as e:
+        raise FillingValidationError("$", _format_errors(e)) from e
+    except (TypeError, ValueError, KeyError) as e:
         logger.error(f"validate FJ: {e}", exc_info=True)
+        raise
+    except Exception as e:
+        logger.critical(f"unexpected validate FJ: {e}", exc_info=True)
         raise
 
 

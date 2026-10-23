@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Tests for ProjectStore: atomic save/load, Home migration, recent projects."""
 
+import codecs
 import json
 import threading
 from pathlib import Path
@@ -275,6 +276,61 @@ def test_load_restores_corrupt_main_from_backup(store, sample_pj):
     assert store._backup_path(path).exists()
 
 
+def test_load_removes_utf8_bom_without_backup_restore(store, sample_pj):
+    """A valid BOM-edited main config is rewritten, not rolled back to .bak."""
+    path = store.save(sample_pj)
+    raw = sample_pj.model_dump(mode="json")
+    raw["templates"]["template1"]["limit"] = 7
+    store.save(validate_pj(raw), name=path.stem)
+
+    edited = sample_pj.model_dump(mode="json")
+    edited["templates"]["template1"]["limit"] = 5
+    payload = json.dumps(edited, ensure_ascii=False).encode("utf-8")
+    path.write_bytes(codecs.BOM_UTF8 + payload)
+
+    loaded = store.load(path.stem)
+    assert loaded.templates["template1"].limit == 5
+    assert not path.read_bytes().startswith(codecs.BOM_UTF8)
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert saved["templates"]["template1"]["limit"] == 5
+
+
+def test_load_restores_backup_when_bom_payload_invalid(store, sample_pj):
+    """Invalid JSON after BOM removal falls back to the previous config."""
+    path = store.save(sample_pj)
+    raw = sample_pj.model_dump(mode="json")
+    raw["templates"]["template1"]["limit"] = 7
+    store.save(validate_pj(raw), name=path.stem)
+
+    path.write_bytes(codecs.BOM_UTF8 + b"{broken")
+
+    loaded = store.load(path.stem)
+    assert loaded.templates["template1"].limit == 0
+    assert not path.read_bytes().startswith(codecs.BOM_UTF8)
+
+
+def test_load_restores_backup_when_bom_rewrite_fails(store, sample_pj, monkeypatch):
+    """If BOM repair cannot be written, fall back to the previous config."""
+    path = store.save(sample_pj)
+    raw = sample_pj.model_dump(mode="json")
+    raw["templates"]["template1"]["limit"] = 7
+    store.save(validate_pj(raw), name=path.stem)
+
+    edited = sample_pj.model_dump(mode="json")
+    edited["templates"]["template1"]["limit"] = 5
+    payload = json.dumps(edited, ensure_ascii=False).encode("utf-8")
+    path.write_bytes(codecs.BOM_UTF8 + payload)
+
+    monkeypatch.setattr(
+        store,
+        "_rewrite_without_bom",
+        lambda *a, **k: (_ for _ in ()).throw(OSError("locked")),
+    )
+    loaded = store.load(path.stem)
+    assert loaded.templates["template1"].limit == 0
+    assert not path.read_bytes().startswith(codecs.BOM_UTF8)
+
+
 def test_resolve_restores_missing_main_from_backup(store, sample_pj):
     """Missing main config (crash between rename steps) is restored from .bak."""
     path = store.save(sample_pj)
@@ -403,19 +459,55 @@ def test_default_home_dir(monkeypatch, tmp_path):
     assert (store.home_dir / "settings.json").exists()
 
 
-def test_atomic_rename_fallback(monkeypatch, store, sample_pj):
-    """Test Windows copy fallback when rename fails."""
-    real_rename = Path.rename
+def test_atomic_replace_fallback(monkeypatch, store, sample_pj):
+    """Test Windows copy fallback when atomic replace fails."""
+    import stanok.services.storage as storage
 
-    def boom_once(self, target):
+    def boom(*_args):
+        raise OSError("locked")
+
+    monkeypatch.setattr(storage.os, "replace", boom)
+    path = store.save(sample_pj)
+    assert path.exists()
+    assert not path.with_suffix(path.suffix + ".tmp").exists()
+
+
+def test_atomic_write_keeps_main_when_replace_and_copy_fail(
+    monkeypatch, store, sample_pj
+):
+    """A failed save must leave the old main config in place."""
+    import stanok.services.storage as storage
+
+    path = store.save(sample_pj)
+    old = path.read_text(encoding="utf-8")
+    raw = sample_pj.model_dump(mode="json")
+    raw["templates"]["template1"]["limit"] = 7
+
+    real_rename = Path.rename
+    real_copy = storage.shutil.copy2
+
+    def locked_rename(self, target):
         if self.suffix == ".tmp":
             raise OSError("locked")
         return real_rename(self, target)
 
-    monkeypatch.setattr(Path, "rename", boom_once)
-    path = store.save(sample_pj)
-    assert path.exists()
-    assert not path.with_suffix(path.suffix + ".tmp").exists()
+    def locked_tmp_copy(src, dst, *args, **kwargs):
+        if Path(src).suffix == ".tmp":
+            raise OSError("locked")
+        return real_copy(src, dst, *args, **kwargs)
+
+    def locked_replace(*_args):
+        raise OSError("locked")
+
+    monkeypatch.setattr(Path, "rename", locked_rename)
+    monkeypatch.setattr(storage.os, "replace", locked_replace)
+    monkeypatch.setattr(storage.shutil, "copy2", locked_tmp_copy)
+
+    with pytest.raises(OSError, match="locked"):
+        store._atomic_write_json(path, raw)
+    assert path.read_text(encoding="utf-8") == old
+    assert store._backup_path(path).exists()
+    assert store._tmp_path(path).exists()
 
 
 def test_extract_name_variants(store, sample_pj):

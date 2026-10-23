@@ -116,13 +116,27 @@ def test_full_sequential_run(tmp_path, store):
     assert saved.counters["data"].pos == 2
 
 
+def test_generate_reports_skipped_columns(tmp_path, store):
+    folder = make_project(
+        tmp_path / "proj",
+        headers=("ФИО", None, "Сумма"),
+        rows=(("Иван", "лишнее", 100),),
+    )
+    report = generate_documents(GenerateCommand(project_ref=folder), store=store)
+    assert report.created == 1
+    assert report.skipped_columns == {DATA: ["B"]}
+
+
 def test_limit_truncates(tmp_path, store):
     folder = make_project(
         tmp_path / "proj", rows=(("А", 1), ("Б", 2), ("В", 3)), limit=2
     )
     report = generate_documents(GenerateCommand(project_ref=folder), store=store)
     assert report.created == 2
-    assert (report.planned, report.limit) == (2, 2)
+    assert (report.planned, report.resolved, report.limit) == (2, 2, 2)
+    assert report.skipped_limit == 1
+    assert report.skipped_exhausted == 0
+    assert report.output_dir == folder / "Результат"
     saved = _load_saved(store, "proj")
     assert saved.counters["num"].pos == 2
     assert saved.counters["data"].pos == 2
@@ -135,7 +149,9 @@ def test_limit_reports_data_shortfall(tmp_path, store):
     )
     report = generate_documents(GenerateCommand(project_ref=folder), store=store)
     assert report.created == 2
-    assert (report.planned, report.limit) == (2, 3)
+    assert (report.planned, report.resolved, report.limit) == (2, 2, 3)
+    assert report.skipped_limit == 0
+    assert report.skipped_exhausted == 1
 
 
 def test_pos_skips(tmp_path, store):

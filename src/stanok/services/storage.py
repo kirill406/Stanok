@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import codecs
 import json
 import logging
 import os
@@ -21,6 +22,7 @@ from ..engine.schema import (
     FieldSource,
     ProjectJSON,
     RecentItem,
+    SchemaError,
     StorageError,
     TemplateDef,
     validate_aj,
@@ -30,6 +32,16 @@ from ..engine.xmlops import PLACEHOLDER_RE, iter_paragraphs
 from ..gui.strings import STRINGS
 
 logger = logging.getLogger(__name__)
+
+
+def _remove_tmp(path: Path) -> None:
+    """Best-effort removal of a temp file after a failed write."""
+    if not path.exists():
+        return
+    try:
+        path.unlink()
+    except OSError as e:
+        logger.warning(f"remove temp {path}: {e}", exc_info=True)
 
 
 def project_folder(
@@ -64,8 +76,15 @@ def _scan_placeholders(docx_path: Path) -> list[str]:
 
     try:
         doc = Document(str(docx_path))
-    except Exception as e:
+    except (OSError, ValueError, KeyError) as e:
         logger.warning(f"unreadable template {docx_path}: {e}", exc_info=True)
+        raise StorageError(
+            "init", [f"cannot read template {docx_path.name}: {e}"]
+        ) from e
+    except Exception as e:
+        logger.critical(
+            f"unexpected unreadable template {docx_path}: {e}", exc_info=True
+        )
         raise StorageError(
             "init", [f"cannot read template {docx_path.name}: {e}"]
         ) from e
@@ -170,7 +189,7 @@ class ProjectStore:
         )
 
     def _atomic_write_json(self, path: Path, data: dict) -> None:
-        """Write JSON atomically: tmp + fsync -> backup + rename."""
+        """Write JSON atomically: tmp + fsync -> backup copy + replace."""
         path = self._validate_path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -182,27 +201,84 @@ class ProjectStore:
                 json.dump(data, f, ensure_ascii=False, indent=2)
                 f.flush()
                 os.fsync(f.fileno())
-        except Exception:
-            if tmp_path.exists():
-                tmp_path.unlink()
+        except (OSError, TypeError, ValueError) as e:
+            logger.error(f"write temp config {tmp_path}: {e}", exc_info=True)
+            _remove_tmp(tmp_path)
+            raise
+        except Exception as e:
+            logger.critical(
+                f"unexpected write temp config {tmp_path}: {e}", exc_info=True
+            )
+            _remove_tmp(tmp_path)
             raise
 
         if path.exists():
-            if bak_path.exists():
-                bak_path.unlink()
-            path.rename(bak_path)
+            # Copy, not rename: the main config must exist at every moment.
+            try:
+                shutil.copy2(path, bak_path)
+            except OSError as e:
+                logger.warning(f"backup config {path}: {e}", exc_info=True)
+            except Exception as e:
+                logger.critical(
+                    f"unexpected backup config {path}: {e}", exc_info=True
+                )
 
         try:
-            tmp_path.rename(path)
+            os.replace(tmp_path, path)
         except OSError as e:
-            logger.warning(f"atomic rename failed for {path}: {e}", exc_info=True)
-            shutil.copy2(tmp_path, path)
-            tmp_path.unlink()
+            logger.warning(
+                f"atomic replace failed for {path}: {e}", exc_info=True
+            )
+            try:
+                shutil.copy2(tmp_path, path)
+                tmp_path.unlink()
+            except OSError as copy_error:
+                logger.warning(
+                    f"copy config fallback {path}: {copy_error}; "
+                    f"keeping temp {tmp_path}",
+                    exc_info=True,
+                )
+                raise copy_error from e
+            except Exception as copy_error:
+                logger.critical(
+                    f"unexpected copy config fallback {path}: {copy_error}",
+                    exc_info=True,
+                )
+                raise
+        logger.debug(f"wrote config atomically: {path}")
 
     def _read_json(self, path: Path) -> dict:
         path = self._validate_path(path)
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
+        raw = path.read_bytes()
+        logger.debug(f"read json {path}: {len(raw)} bytes")
+        if raw.startswith(codecs.BOM_UTF8):
+            payload = raw.removeprefix(codecs.BOM_UTF8)
+            data = json.loads(payload)
+            self._rewrite_without_bom(path, payload)
+            logger.info(f"removed UTF-8 BOM from {path}")
+            return data
+        return json.loads(raw)
+
+    def _rewrite_without_bom(self, path: Path, payload: bytes) -> None:
+        """Atomically rewrite a config as UTF-8 without BOM; raise on failure."""
+        path = self._validate_path(path)
+        tmp_path = self._tmp_path(path)
+        try:
+            with open(tmp_path, "wb") as f:
+                f.write(payload)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp_path, path)
+        except (OSError, TypeError, ValueError) as e:
+            logger.warning(f"rewrite without BOM {path}: {e}", exc_info=True)
+            _remove_tmp(tmp_path)
+            raise
+        except Exception as e:
+            logger.critical(
+                f"unexpected rewrite without BOM {path}: {e}", exc_info=True
+            )
+            _remove_tmp(tmp_path)
+            raise
 
     def config_exists(self, name: str) -> bool:
         """Whether a project config (or its recoverable copy) exists in Home."""
@@ -234,29 +310,41 @@ class ProjectStore:
         """Save project config atomically, return path."""
         with self._lock:
             path = self._get_config_path(name or self._extract_project_name(pj))
+            logger.debug(f"saving project config: name={name} path={path}")
             self._atomic_write_json(path, pj.model_dump(mode="json"))
-            logger.info("saved project config to %s", path)
+            logger.info(f"saved project config to {path}")
             return path
 
     def load(self, name: str) -> ProjectJSON:
         """Load a project config; recover it from `.tmp`/`.bak` if unreadable."""
         with self._lock:
             path = self._get_config_path(name)
+            logger.debug(f"loading project config: name={name} path={path}")
             if not path.exists():
                 recovered = self._recover_config(path, name)
                 if recovered is not None:
                     return recovered
                 raise StorageError("load", [f"project not found: {name}"])
             try:
-                return validate_pj(self._read_json(path))
+                pj = validate_pj(self._read_json(path))
             except StorageError:
                 raise
-            except Exception as e:
+            except (OSError, ValueError, SchemaError) as e:
                 logger.error(f"load config {path}: {e}", exc_info=True)
                 recovered = self._recover_config(path, name)
                 if recovered is not None:
                     return recovered
                 raise StorageError("load", [f"invalid config {name}: {e}"]) from e
+            except Exception as e:
+                logger.critical(
+                    f"unexpected load config {path}: {e}", exc_info=True
+                )
+                raise StorageError("load", [f"invalid config {name}: {e}"]) from e
+            logger.debug(
+                f"loaded project {name}: version={pj.version} "
+                f"templates={len(pj.templates)} sources={len(pj.data_sources)}"
+            )
+            return pj
 
     def _recover_config(self, path: Path, name: str) -> ProjectJSON | None:
         """Recover an unreadable config: newest valid `.tmp`, then `.bak`."""
@@ -265,8 +353,13 @@ class ProjectStore:
                 continue
             try:
                 pj = validate_pj(self._read_json(source))
-            except Exception as e:
+            except (OSError, ValueError, SchemaError) as e:
                 logger.warning(f"recovery source {source}: {e}", exc_info=True)
+                continue
+            except Exception as e:
+                logger.critical(
+                    f"unexpected recovery source {source}: {e}", exc_info=True
+                )
                 continue
             logger.warning(f"restored project config {name} from {source}")
             self._promote_recovered(source, path, pj)
@@ -279,9 +372,15 @@ class ProjectStore:
             # The interrupted save already wrote a complete tmp file.
             try:
                 os.replace(source, path)
+                logger.debug(f"promoted recovered config {source} to {path}")
+                return
+            except OSError as e:
+                logger.warning(f"promote {source} to {path}: {e}", exc_info=True)
                 return
             except Exception as e:
-                logger.warning(f"promote {source} to {path}: {e}", exc_info=True)
+                logger.critical(
+                    f"unexpected promote {source} to {path}: {e}", exc_info=True
+                )
                 return
         self._write_recovered(path, pj)
 
@@ -295,15 +394,14 @@ class ProjectStore:
                 f.flush()
                 os.fsync(f.fileno())
             os.replace(tmp_path, path)
-        except Exception as e:
+        except (OSError, TypeError, ValueError) as e:
             logger.warning(f"restore config {path}: {e}", exc_info=True)
-            if tmp_path.exists():
-                try:
-                    tmp_path.unlink()
-                except OSError as cleanup_error:
-                    logger.warning(
-                        f"remove temp {tmp_path}: {cleanup_error}", exc_info=True
-                    )
+            _remove_tmp(tmp_path)
+        except Exception as e:
+            logger.critical(
+                f"unexpected restore config {path}: {e}", exc_info=True
+            )
+            _remove_tmp(tmp_path)
 
     def delete(self, name: str) -> None:
         """Delete project config and its recoverable copies."""
@@ -316,7 +414,8 @@ class ProjectStore:
             ):
                 if candidate.exists():
                     candidate.unlink()
-            logger.info("deleted project config %s", name)
+                    logger.debug(f"deleted config file {candidate}")
+            logger.info(f"deleted project config {name}")
 
     def list(self) -> list[ProjectJSON]:
         """List all project configs sorted by mtime (newest first)."""
@@ -326,9 +425,14 @@ class ProjectStore:
                 try:
                     pj = validate_pj(self._read_json(path))
                     configs.append((path.stat().st_mtime, pj))
-                except Exception as e:
+                except (OSError, ValueError, SchemaError) as e:
                     logger.warning(f"skipping invalid config {path}: {e}")
+                except Exception as e:
+                    logger.critical(
+                        f"unexpected list config {path}: {e}", exc_info=True
+                    )
             configs.sort(key=lambda x: x[0], reverse=True)
+            logger.debug(f"listed {len(configs)} project configs")
             return [pj for _, pj in configs]
 
     def list_named(self) -> list[tuple[str, ProjectJSON]]:
@@ -338,9 +442,14 @@ class ProjectStore:
             for path in self.home_dir.glob("*.stanok"):
                 try:
                     out.append((path.stem, validate_pj(self._read_json(path))))
-                except Exception as e:
+                except (OSError, ValueError, SchemaError) as e:
                     logger.warning(f"skipping invalid config {path}: {e}")
+                except Exception as e:
+                    logger.critical(
+                        f"unexpected list named config {path}: {e}", exc_info=True
+                    )
             out.sort(key=lambda x: x[0].lower())
+            logger.debug(f"listed {len(out)} named project configs")
             return out
 
     def _unique_config_name(self, base: str) -> str:
@@ -366,8 +475,14 @@ class ProjectStore:
                 try:
                     with open(src, encoding="utf-8") as f:
                         pj = validate_pj(json.load(f))
-                except Exception as e:
+                except (OSError, ValueError, SchemaError) as e:
                     logger.warning(f"import config {src}: {e}", exc_info=True)
+                    report.failed.append(src.name)
+                    continue
+                except Exception as e:
+                    logger.critical(
+                        f"unexpected import config {src}: {e}", exc_info=True
+                    )
                     report.failed.append(src.name)
                     continue
                 project_dir = self._import_project_folder(pj, src)
@@ -376,9 +491,16 @@ class ProjectStore:
                 name = self._unique_config_name(src.stem or "project")
                 try:
                     self.save(pj, name=name)
-                except Exception as e:
+                except (OSError, SchemaError) as e:
                     logger.warning(
                         f"save imported config {src}: {e}", exc_info=True
+                    )
+                    report.failed.append(src.name)
+                    continue
+                except Exception as e:
+                    logger.critical(
+                        f"unexpected save imported config {src}: {e}",
+                        exc_info=True,
                     )
                     report.failed.append(src.name)
                     continue
@@ -394,11 +516,21 @@ class ProjectStore:
                     continue
                 try:
                     self.add_recent(str(project_dir), name)
-                except Exception as e:
+                except (OSError, SchemaError) as e:
                     logger.warning(
                         f"add imported project {name} to recent: {e}",
                         exc_info=True,
                     )
+                except Exception as e:
+                    logger.critical(
+                        f"unexpected add imported project {name} to recent: {e}",
+                        exc_info=True,
+                    )
+        logger.info(
+            f"imported configs from {root}: found={report.found} "
+            f"imported={len(report.imported)} failed={len(report.failed)} "
+            f"missing_folder={len(report.missing_folder)}"
+        )
         return report
 
     def _config_files(self, root: Path) -> list[Path]:
@@ -447,11 +579,12 @@ class ProjectStore:
         name = self._unique_config_name(project_dir.resolve().name)
         self.save(pj, name=name)
         legacy_config.unlink()
-        logger.info("migrated project config from %s as %s", project_dir, name)
+        logger.info(f"migrated project config from {project_dir} as {name}")
         return pj
 
     def resolve_project(self, ref: str | Path) -> tuple[ProjectJSON, Path]:
         """Resolve project reference to (PJ, config_path)."""
+        logger.debug(f"resolving project ref: {ref}")
         ref_path = Path(ref) if isinstance(ref, str) else ref
 
         if ref_path.exists() and ref_path.is_dir():
@@ -463,11 +596,13 @@ class ProjectStore:
             if self._has_config(config_path):
                 pj = self.load(ref_path.name)
                 self._remember_folder(pj, ref_path, config_path)
+                logger.debug(f"resolved project folder {ref_path} -> {config_path}")
                 return pj, config_path
             raise StorageError("resolve", [f"project not found: {ref}"])
 
         config_path = self._get_config_path(ref_path.name)
         if self._has_config(config_path):
+            logger.debug(f"resolved project config name {ref_path.name}")
             return self.load(ref_path.name), config_path
 
         # Config name known only from recent: resolve by remembered folder.
@@ -487,7 +622,7 @@ class ProjectStore:
             return
         pj.folder = resolved
         self.save(pj, name=config_path.stem if config_path else None)
-        logger.info("remembered project folder %s", resolved)
+        logger.info(f"remembered project folder {resolved}")
 
     def set_project_folder(self, ref: str | Path, folder: str | Path) -> None:
         """Point an existing project at a new folder (relocate, 020)."""
@@ -499,14 +634,18 @@ class ProjectStore:
     def get_recent(self) -> list[RecentItem]:
         """Get recent projects from ApplicationJSON."""
         settings_file = self.home_dir / "settings.json"
-        if settings_file.exists():
-            return validate_aj(self._read_json(settings_file)).recent
-        return []
+        if not settings_file.exists():
+            logger.debug("recent projects: settings.json is absent")
+            return []
+        recent = validate_aj(self._read_json(settings_file)).recent
+        logger.debug(f"recent projects: {len(recent)}")
+        return recent
 
     def add_recent(self, folder: str, config: str) -> None:
         """Add or update recent project entry (dedupe, cap 10)."""
         with self._lock:
             settings_file = self.home_dir / "settings.json"
+            logger.debug(f"add recent project: folder={folder} config={config}")
             data = self._read_json(settings_file) if settings_file.exists() else {}
             aj = validate_aj(data)
             key = (folder, config)
@@ -521,7 +660,7 @@ class ProjectStore:
             self._atomic_write_json(
                 self.home_dir / "settings.json", aj.model_dump(mode="json")
             )
-            logger.info("updated recent projects, count=%d", len(aj.recent))
+            logger.info(f"updated recent projects, count={len(aj.recent)}")
 
 
     def init_project(
@@ -550,6 +689,10 @@ class ProjectStore:
                 raise StorageError("init", ["no Word templates selected"])
 
             folder = Path(folder).resolve()
+            logger.debug(
+                f"init project: name={name} folder={folder} "
+                f"xlsx={len(xlsx)} docx={len(docx)} copy_files={copy_files}"
+            )
             if folder.name in (STRINGS.DATA_DIR, STRINGS.TPL_DIR):
                 raise StorageError(
                     "init",
@@ -563,7 +706,9 @@ class ProjectStore:
                 tpl_dir.mkdir(parents=True, exist_ok=True)
                 result_dir.mkdir(parents=True, exist_ok=True)
             except OSError as e:
-                logger.warning(f"cannot create project folder {folder}: {e}")
+                logger.warning(
+                    f"cannot create project folder {folder}: {e}", exc_info=True
+                )
                 raise StorageError(
                     "init", [f"cannot create folder {folder}: {e}"]
                 ) from e
@@ -611,7 +756,7 @@ class ProjectStore:
             )
             self.save(pj, name=name)
             self.add_recent(str(folder), name)
-            logger.info("initialized project %s in %s", name, folder)
+            logger.info(f"initialized project {name} in {folder}")
             return pj
 
     def _place_source(
@@ -640,7 +785,9 @@ class ProjectStore:
                 dst = _unique_sibling(dest_dir / src.name)
                 shutil.copy2(src, dst)
             except OSError as e:
-                logger.warning(f"copy {src} -> {dest_dir} failed: {e}")
+                logger.warning(
+                    f"copy {src} -> {dest_dir} failed: {e}", exc_info=True
+                )
                 raise StorageError(
                     "init", [f"cannot copy {src.name}: {e}"]
                 ) from e
@@ -702,7 +849,7 @@ class ProjectStore:
                     added[name] = new
             if added:
                 self.save(pj, name=config_path.stem)
-                logger.info("synced template fields: %s", added)
+                logger.info(f"synced template fields: {added}")
             return added
 
     def touch_recent(self, ref: str | Path) -> None:
@@ -730,31 +877,40 @@ class ProjectStore:
             self._atomic_write_json(
                 self.home_dir / "settings.json", aj.model_dump(mode="json")
             )
-            logger.info("removed recent project %s", config)
+            logger.info(f"removed recent project {config}")
 
     def get_setting(self, key: str, default=None):
         """Read one AJ setting (018)."""
         settings_file = self.home_dir / "settings.json"
         if not settings_file.exists():
             return default
+        logger.debug(f"reading setting {key} from {settings_file}")
         try:
             data = self._read_json(settings_file)
-            return validate_aj(data).settings.get(key, default)
-        except Exception as e:
+            value = validate_aj(data).settings.get(key, default)
+            logger.debug(f"read setting {key}: {value!r}")
+            return value
+        except (OSError, ValueError, SchemaError) as e:
             logger.warning(f"read setting {key} failed: {e}", exc_info=True)
+            return default
+        except Exception as e:
+            logger.critical(
+                f"unexpected read setting {key}: {e}", exc_info=True
+            )
             return default
 
     def set_setting(self, key: str, value) -> None:
         """Write one AJ setting atomically (018)."""
         with self._lock:
             settings_file = self.home_dir / "settings.json"
+            logger.debug(f"setting {key}={value!r} in {settings_file}")
             data = self._read_json(settings_file) if settings_file.exists() else {}
             aj = validate_aj(data)
             aj.settings[key] = value
             self._atomic_write_json(
                 self.home_dir / "settings.json", aj.model_dump(mode="json")
             )
-            logger.info("updated setting %s", key)
+            logger.info(f"updated setting {key}")
 
     def add_template(
         self, ref: str | Path, docx: str | Path, copy_files: bool = True
@@ -798,7 +954,7 @@ class ProjectStore:
                 },
             )
             self.save(pj, name=config_path.stem)
-            logger.info("attached template %s to %s", stem, config_path.stem)
+            logger.info(f"attached template {stem} to {config_path.stem}")
             return stem
 
     def remove_template(self, ref: str | Path, name: str) -> None:
@@ -818,7 +974,7 @@ class ProjectStore:
                 raise StorageError("templates", [STRINGS.STORAGE_DEFAULT_TPL])
             del pj.templates[name]
             self.save(pj, name=config_path.stem)
-            logger.info("removed template %s from %s", name, config_path.stem)
+            logger.info(f"removed template {name} from {config_path.stem}")
 
     def set_default_template(self, ref: str | Path, name: str) -> None:
         """Choose the project's default template (021); used by window 1."""
@@ -828,7 +984,7 @@ class ProjectStore:
                 raise StorageError("templates", [f"template not found: {name}"])
             pj.default_template = name
             self.save(pj, name=config_path.stem)
-            logger.info("default template of %s -> %s", config_path.stem, name)
+            logger.info(f"default template of {config_path.stem} -> {name}")
 
     def set_template_limit(self, ref: str | Path, name: str, limit: int) -> None:
         """Persist a per-template document limit (021); 0 = no limit."""
@@ -838,7 +994,7 @@ class ProjectStore:
                 raise StorageError("templates", [f"template not found: {name}"])
             pj.templates[name].limit = max(0, int(limit))
             self.save(pj, name=config_path.stem)
-            logger.info("template %s limit of %s -> %s", name, config_path.stem, limit)
+            logger.info(f"template {name} limit of {config_path.stem} -> {limit}")
 
     def set_source_mode(self, ref: str | Path, file: str, mode: str) -> None:
         """Persist one data source's mode (021): sequential/circular/constant."""
@@ -851,7 +1007,7 @@ class ProjectStore:
                 if ds.file == file:
                     ds.mode = mode
                     self.save(pj, name=config_path.stem)
-                    logger.info("source %s mode of %s -> %s", file, config_path.stem, mode)
+                    logger.info(f"source {file} mode of {config_path.stem} -> {mode}")
                     return
             raise StorageError("data", [f"data source not found: {file}"])
 
@@ -882,10 +1038,8 @@ class ProjectStore:
             pj.counters[cname] = CounterDef(table=rel)
             self.save(pj, name=config_path.stem)
             logger.info(
-                "attached data source %s (counter %s) to %s",
-                rel,
-                cname,
-                config_path.stem,
+                f"attached data source {rel} (counter {cname}) to "
+                f"{config_path.stem}"
             )
             return rel
 
@@ -914,7 +1068,7 @@ class ProjectStore:
             self.delete(config_path.stem)
             if folder is not None:
                 self.remove_recent(str(folder), config_path.stem)
-            logger.info("deleted project %s", config_path.stem)
+            logger.info(f"deleted project {config_path.stem}")
 
 
 def resolve_project(ref: str | Path, store: ProjectStore) -> tuple:

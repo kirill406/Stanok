@@ -16,11 +16,16 @@ from datetime import date
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
-from ..engine.render import render
-from ..engine.resolve import modes_of, participating_sources, resolve_rows
+from ..engine.render import RenderError, render
+from ..engine.resolve import (
+    available_documents,
+    modes_of,
+    participating_sources,
+    resolve_rows,
+)
 from ..engine.schema import ProjectJSON, TemplateDef
 from ..gui.strings import STRINGS
-from ..tables.excel import ExcelReader
+from ..tables.excel import ExcelReader, TableReadError
 from .storage import ProjectStore, project_folder
 
 if TYPE_CHECKING:
@@ -52,7 +57,12 @@ class GenerateReport:
     output_paths: list[Path] = field(default_factory=list)
     elapsed: float = 0.0
     planned: int = 0  # documents resolved for this run (before errors)
+    resolved: int = 0  # fillings produced by resolve
     limit: int = 0  # template limit (0 = unlimited)
+    skipped_limit: int = 0  # available rows not taken because of the limit
+    skipped_exhausted: int = 0  # limit not reached because data ended
+    skipped_columns: dict[str, list[str]] = field(default_factory=dict)
+    output_dir: Path | None = None
 
 
 def _unique_path(base: Path) -> Path:
@@ -149,8 +159,9 @@ def generate_documents(
     started = time.monotonic()
     report = GenerateReport()
     store = store or ProjectStore()
-    logger.info(
-        f"generate started: ref={cmd.project_ref} template={cmd.template or 'default'}"
+    logger.debug(
+        f"generate command: ref={cmd.project_ref} "
+        f"template={cmd.template or 'default'}"
     )
 
     pj, config_path = store.resolve_project(cmd.project_ref)
@@ -161,30 +172,72 @@ def generate_documents(
     if not template_path.is_file():
         raise TemplateError(f"template file not found: {template_path}")
 
+    out_dir = project_dir / RESULT_DIR
+    report.output_dir = out_dir
+    logger.info(
+        f"generate started: ref={cmd.project_ref} config={config_path.name} "
+        f"project_dir={project_dir} template={template_name} "
+        f"file={template_def.file} limit={template_def.limit} out_dir={out_dir}"
+    )
+
+    participating = participating_sources(pj, template_name)
+    logger.debug(f"generate participating sources: {participating}")
+    for source in pj.data_sources:
+        if source.file not in participating:
+            logger.info(
+                f"source {source.file} not used by template {template_name} "
+                f"(mode={source.mode})"
+            )
+
     rows_by_source: dict[str, list[dict[str, Any]]] = {}
     reader = ExcelReader()
-    for file in participating_sources(pj, template_name):
+    for file in participating:
         path = project_dir / file
+        logger.debug(f"reading source {file}: {path}")
         try:
             rows_by_source[file] = reader.read(path)
-        except Exception as e:
+        except TableReadError as e:
             logger.error(f"source {file} failed: {e}", exc_info=True)
             raise TemplateError(f"data source not readable: {file}: {e}") from e
+        except Exception as e:
+            logger.critical(
+                f"unexpected source read failure {file}: {e}", exc_info=True
+            )
+            raise TemplateError(f"data source not readable: {file}: {e}") from e
+        logger.debug(f"source {file}: rows={len(rows_by_source[file])}")
+        skipped = reader.skipped_columns.get(path, [])
+        if skipped:
+            report.skipped_columns[file] = skipped
+            logger.warning(f"source {file} skipped columns: {skipped}")
 
     _check_table_columns(rows_by_source, template_def, pj)
 
     fillings, used = resolve_rows(rows_by_source, pj, template_name, today)
-    logger.debug(f"resolved {len(fillings)} fillings for {template_name}")
-
     modes = modes_of(pj)
     origin = {name: pj.counters[name].pos for name in used}
-
-    out_dir = project_dir / RESULT_DIR
     total = len(fillings)
+    available = available_documents(pj, template_name, rows_by_source)
+    logger.debug(
+        f"resolved {total} fillings for {template_name}: "
+        f"available={available} limit={template_def.limit} "
+        f"modes={modes} start_positions={origin}"
+    )
+
     report.planned = total
+    report.resolved = total
     report.limit = template_def.limit
+    if template_def.limit > 0:
+        report.skipped_limit = max(0, available - total)
+        report.skipped_exhausted = max(0, template_def.limit - total)
+    if total == 0:
+        logger.warning(
+            f"generate produced no documents: template={template_name} "
+            f"available={available} limit={template_def.limit}"
+        )
+
     cancelled = False
     processed = 0
+    logger.debug(f"creating result dir: {out_dir}")
     out_dir.mkdir(parents=True, exist_ok=True)
     for k, fj in enumerate(fillings, start=1):
         processed += 1
@@ -193,17 +246,28 @@ def generate_documents(
             path = _save_document(doc, out_dir, fj.dist, k)
             report.output_paths.append(path)
             report.created += 1
+            logger.debug(f"document {k}/{total} created: {path}")
+        except (RenderError, TemplateError, OSError, ValueError) as e:
+            logger.warning(f"row {k}/{total} failed: {e}", exc_info=True)
+            report.errors.append((k, str(e)))
         except Exception as e:
-            logger.warning(f"row {k} failed: {e}", exc_info=True)
+            logger.critical(
+                f"row {k}/{total} unexpected failure: {e}", exc_info=True
+            )
             report.errors.append((k, str(e)))
         if progress is not None:
             try:
                 if progress(report.created, total):
-                    logger.info(f"generate cancelled after {report.created} docs")
+                    logger.info(
+                        f"generate cancelled after {report.created}/{total} docs"
+                    )
                     cancelled = True
                     break
             except Exception as e:
-                logger.warning(f"progress callback failed: {e}", exc_info=True)
+                logger.critical(
+                    f"progress callback failed at {report.created}/{total}: {e}",
+                    exc_info=True,
+                )
     if cancelled:
         logger.info("generate cancelled by user")
 
@@ -232,7 +296,11 @@ def generate_documents(
 
     report.elapsed = time.monotonic() - started
     logger.info(
-        f"generate finished: created={report.created} "
-        f"errors={len(report.errors)} elapsed={report.elapsed:.2f}s"
+        f"generate finished: ref={cmd.project_ref} template={template_name} "
+        f"planned={report.planned} resolved={report.resolved} "
+        f"created={report.created} errors={len(report.errors)} "
+        f"skipped_limit={report.skipped_limit} "
+        f"skipped_exhausted={report.skipped_exhausted} "
+        f"elapsed={report.elapsed:.2f}s out_dir={out_dir}"
     )
     return report

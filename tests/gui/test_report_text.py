@@ -25,3 +25,15 @@ def test_report_text_shortfall_mentions_limit():
 def test_report_text_unlimited_uses_plain_done():
     report = GenerateReport(created=2, planned=2, limit=0, elapsed=1.0)
     assert "из 0" not in done_text(report)
+
+
+def test_report_text_lists_skipped_columns():
+    report = GenerateReport(
+        created=1,
+        planned=1,
+        elapsed=1.0,
+        skipped_columns={"data.xlsx": ["B", "D"]},
+    )
+    text = done_text(report)
+    assert "data.xlsx" in text
+    assert "B, D" in text

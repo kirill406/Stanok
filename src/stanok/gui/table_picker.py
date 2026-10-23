@@ -12,7 +12,6 @@ from __future__ import annotations
 import importlib
 import logging
 from dataclasses import dataclass
-from importlib.util import find_spec
 from pathlib import Path
 from typing import Any
 
@@ -78,11 +77,16 @@ def eye_icon(size: int = 16) -> QIcon:
 
 
 def picker_available() -> bool:
-    """True when a variant module provides ``PickerDialog``."""
+    """True when a variant module provides ``PickerDialog``.
+
+    Import the module literally (not via ``find_spec``): PyInstaller only
+    bundles modules it can see as import statements.
+    """
     try:
-        return find_spec(PICKER_MODULE) is not None
+        from . import table_picker_impl  # noqa: F401
     except (ImportError, ValueError):
         return False
+    return True
 
 
 class ValuePickerDialog(QDialog):

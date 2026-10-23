@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 import shutil
 from datetime import date
+from functools import wraps
 from pathlib import Path, PurePosixPath
 
 from PyQt5.QtCore import Qt
@@ -45,6 +46,7 @@ from .dialogs import ask_save_discard_cancel, ask_text
 from .strings import STRINGS
 from .theme import set_button_role
 from .table_picker import eye_icon, open_picker, picker_available
+from .widgets import fit_table_rows
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +74,25 @@ class _FieldError(Exception):
         super().__init__(f"{msg}: {field}")
         self.field = field
         self.msg = msg
+
+
+def _counter_action(action: str):
+    """Catch unexpected errors in counter widgets: log + keep dialog open."""
+
+    def decorate(func):
+        @wraps(func)
+        def wrapper(self, *args, **kwargs):
+            try:
+                return func(self, *args, **kwargs)
+            except Exception as e:
+                target = (
+                    args[0] if args and not isinstance(args[0], bool) else ""
+                )
+                self._counter_failed(action, target, e)
+
+        return wrapper
+
+    return decorate
 
 
 class FieldsDialog(QDialog):
@@ -123,10 +144,18 @@ class FieldsDialog(QDialog):
                 if path is None:
                     continue
                 try:
-                    rows.extend(ExcelReader().read(path))
+                    reader = ExcelReader()
+                    rows.extend(reader.read(path))
                 except Exception as e:
                     logger.warning(f"headers for {f} failed: {e}", exc_info=True)
                     self._warn_source(f, f"{f}: {e}")
+                else:
+                    skipped = reader.skipped_columns.get(path, [])
+                    if skipped:
+                        message = STRINGS.TBL_SKIPPED_COLUMNS.format(
+                            columns=", ".join(skipped)
+                        )
+                        self._warn_source(f, f"{f}: {message}")
         self._rows_cache[key] = rows
         return rows
 
@@ -343,6 +372,10 @@ class FieldsDialog(QDialog):
         layout.addWidget(self.table)
 
         layout.addWidget(self._section_title(STRINGS.FLD_COUNTERS_TITLE))
+        definition = QLabel(STRINGS.FLD_CNT_DEFINITION, self)
+        definition.setObjectName("muted")
+        definition.setWordWrap(True)
+        layout.addWidget(definition)
         self.ctable = QTableWidget(self)
         self.ctable.setColumnCount(5)
         self.ctable.setAlternatingRowColors(True)
@@ -395,10 +428,11 @@ class FieldsDialog(QDialog):
     def _fit_tables(self) -> None:
         """Size tables to content; scrolling is owned by the outer QScrollArea."""
         for table in (self.table, self.ctable):
+            fit_table_rows(table, minimum=32)
             table.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
             height = table.horizontalHeader().height()
             for row in range(table.rowCount()):
-                height += max(table.rowHeight(row), 24)
+                height += table.rowHeight(row)
             height += 2 * table.frameWidth() + 2
             table.setFixedHeight(height)
 
@@ -502,7 +536,8 @@ class FieldsDialog(QDialog):
         self.table.setCellWidget(row, 2, box)
         st["box"] = box
 
-    def _on_counter_create(self) -> None:
+    @_counter_action("create")
+    def _on_counter_create(self, _checked: bool = False) -> None:
         text, ok = ask_text(
             self, STRINGS.FLD_COUNTER_CREATE, STRINGS.FLD_COUNTER_NAME
         )
@@ -516,6 +551,7 @@ class FieldsDialog(QDialog):
                 STRINGS.FLD_DUP_COUNTER.format(name=cname),
             )
             return
+        logger.debug(f"counter created: {cname} in {self._template_name}")
         self._pj.counters[cname] = CounterDef()
         self._build_counters_table()
         self._fit_tables()
@@ -623,6 +659,7 @@ class FieldsDialog(QDialog):
         ))
 
     # -- counter previews -------------------------------------------------------
+    @_counter_action("change source")
     def _on_counter_source_changed(self, cname: str) -> None:
         self._update_counter_row_state(cname)
         for field, st in self._rows.items():
@@ -675,6 +712,7 @@ class FieldsDialog(QDialog):
             pick.setEnabled(True)
             pick.setToolTip(STRINGS.FLD_PICK_TIP)
 
+    @_counter_action("pick value")
     def _pick_counter_value(self, cname: str) -> None:
         table = self._counter_table_live(cname)
         if table is None:
@@ -688,11 +726,14 @@ class FieldsDialog(QDialog):
         if cst is not None:
             cst["pos"].setText(str(value))
 
+    @_counter_action("change position, format or resume")
     def _mark_counter_touched(self, cname: str) -> None:
+        logger.debug(f"counter changed: {cname} in {self._template_name}")
         self._crows[cname]["touched"] = True
         self._mark_dirty()
         for field, st in self._rows.items():
-            if st["cname"].currentData() != cname:
+            combo = st.get("cname")
+            if combo is None or combo.currentData() != cname:
                 continue
             kind = st["type"].currentData()
             if kind == "counter":
@@ -703,11 +744,13 @@ class FieldsDialog(QDialog):
     def _selected_counter(self, name: str) -> str | None:
         return self._rows[name]["cname"].currentData()
 
+    @_counter_action("change field counter")
     def _on_table_counter_changed(self, name: str) -> None:
         self._refill_columns(name, select=None)
         self._update_table_value(name)
         self._mark_row_touched(name)
 
+    @_counter_action("change field counter")
     def _on_counter_name_changed(self, name: str) -> None:
         self._update_counter_preview(name)
         self._mark_row_touched(name)
@@ -805,6 +848,18 @@ class FieldsDialog(QDialog):
     def _mark_dirty(self) -> None:
         self._dirty = True
         self.save_btn.setVisible(True)
+
+    def _counter_failed(self, action: str, target: str, error: Exception) -> None:
+        logger.critical(
+            f"counter {action} failed for {target!r} in "
+            f"{self._config_name}/{self._template_name}: {error}",
+            exc_info=True,
+        )
+        QMessageBox.critical(
+            self,
+            STRINGS.MAIN_ERROR_TITLE,
+            STRINGS.FLD_CNT_CHANGE_FAILED.format(error=error),
+        )
 
     def _show_field_warning(self, e: _FieldError) -> None:
         logger.warning(f"save fields blocked: {e.msg} {e.field}")

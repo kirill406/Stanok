@@ -136,6 +136,8 @@ def _document_count(
     names: list[str],
     rows_by_source: dict[str, list[dict]],
     modes: dict[str, str],
+    *,
+    ignore_limit: bool = False,
 ) -> int:
     seq_avail: list[int] = []
     circ_lens: list[int] = []
@@ -150,7 +152,7 @@ def _document_count(
         elif mode == "circular":
             circ_lens.append(len(rows))
     candidates: list[int] = []
-    if tdef.limit > 0:
+    if tdef.limit > 0 and not ignore_limit:
         candidates.append(tdef.limit)
     if seq_avail:
         candidates.append(min(seq_avail))
@@ -160,7 +162,30 @@ def _document_count(
         n = min(circ_lens)
     else:
         n = 1
-    return max(0, n)
+    n = max(0, n)
+    logger.debug(
+        f"document count: limit={tdef.limit} ignore_limit={ignore_limit} "
+        f"seq_avail={seq_avail} circ_lens={circ_lens} n={n}"
+    )
+    return n
+
+
+def available_documents(
+    pj: ProjectJSON,
+    template_name: str,
+    rows_by_source: dict[str, list[dict]],
+) -> int:
+    """Rows available for a template without applying its document limit."""
+    if template_name not in pj.templates:
+        raise ResolveError("templates", [f"template not found: {template_name}"])
+    tdef = pj.templates[template_name]
+    names = used_counters(pj, template_name)
+    for name in names:
+        if name not in pj.counters:
+            raise ResolveError("counters", [f"counter not defined: {name}"])
+    return _document_count(
+        pj, tdef, names, rows_by_source, _modes(pj), ignore_limit=True
+    )
 
 
 def _resolve_field(
@@ -232,7 +257,12 @@ def resolve_rows(
         if name not in pj.counters:
             raise ResolveError("counters", [f"counter not defined: {name}"])
 
+    logger.debug(
+        f"resolve template {template_name}: sources={list(rows_by_source)} "
+        f"counters={names} modes={modes}"
+    )
     n = _document_count(pj, tdef, names, rows_by_source, modes)
+    logger.debug(f"resolve {template_name}: {n} documents")
 
     results: list[FillingJSON] = []
     for k in range(n):
@@ -260,6 +290,7 @@ def resolve_rows(
                     version=pj.version, template=template_name, fields=fields, dist=dist
                 )
             )
+            logger.debug(f"filling {k + 1}/{n}: {dist}")
         except ResolveError:
             raise
         except Exception as e:

@@ -7,6 +7,7 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import json
+import logging
 import shutil
 
 import pytest
@@ -208,6 +209,24 @@ def test_headers_read_failure_warns(qapp, tmp_path, store, monkeypatch):
     dlg = FieldsDialog(str(folder), "Договор", store=store)
     assert dlg._read_headers("Данные/data.xlsx") == []
     assert warnings and "data.xlsx" in warnings[0]
+    dlg.close()
+
+
+def test_headers_skip_blank_columns_with_warning(qapp, tmp_path, store, monkeypatch):
+    folder = make_project(
+        tmp_path / "proj",
+        headers=("ФИО", None, "Сумма"),
+        rows=(("Иван", "лишнее", 100),),
+    )
+    warnings = []
+    monkeypatch.setattr(
+        QMessageBox, "warning", lambda *a: warnings.append(a[-1])
+    )
+    dlg = FieldsDialog(str(folder), "Договор", store=store)
+    assert warnings
+    assert "B" in warnings[0]
+    assert "пропущены столбцы" in warnings[0]
+    assert dlg._rows["ФИО"]["col"].count() == 2
     dlg.close()
 
 
@@ -835,9 +854,10 @@ def test_counters_table_column_order(qapp, tmp_path, store, monkeypatch):
     assert st["fmt"].toolTip() == STRINGS.FLD_CNT_FORMAT_TIP
     assert st["pos"].toolTip() == STRINGS.FLD_POS_TIP
     assert st["resume"].toolTip() == STRINGS.FLD_CNT_RESUME_TIP
-    assert STRINGS.FLD_CNT_HINT in [
-        w.text() for w in dlg.findChildren(QLabel)
-    ]
+    labels = [w.text() for w in dlg.findChildren(QLabel)]
+    assert STRINGS.FLD_CNT_DEFINITION in labels
+    assert "число в памяти компьютера" in STRINGS.FLD_CNT_DEFINITION
+    assert STRINGS.FLD_CNT_HINT in labels
     dlg.close()
 
 
@@ -875,6 +895,35 @@ def test_counter_pos_updates_field_preview(qapp, tmp_path, store):
     assert dlg._rows["Номер"]["cprev"].text() == "7"
     st["fmt"].setCurrentIndex(st["fmt"].findData("0001"))
     assert dlg._rows["Номер"]["cprev"].text() == "0007"
+    dlg.close()
+
+
+def test_counter_change_skips_constant_field(qapp, tmp_path, store):
+    folder = make_project(tmp_path / "proj")
+    _add_constant(folder)
+    dlg = FieldsDialog(str(folder), "Договор", store=store)
+    dlg._crows["num"]["pos"].setText("7")
+    assert dlg._rows["Номер"]["cprev"].text() == "7"
+    assert dlg._rows["Город"]["const"].text() == "Москва"
+    dlg.close()
+
+
+def test_counter_change_error_logged_and_shown(
+    qapp, tmp_path, store, monkeypatch, caplog
+):
+    folder = make_project(tmp_path / "proj")
+    dlg = FieldsDialog(str(folder), "Договор", store=store)
+    shown = []
+    monkeypatch.setattr(QMessageBox, "critical", lambda *a: shown.append(a[-1]))
+
+    def boom(_cname):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(dlg, "_update_counter_row_state", boom)
+    with caplog.at_level(logging.CRITICAL):
+        dlg._on_counter_source_changed("data")
+    assert "counter change source failed" in caplog.text
+    assert shown and "boom" in shown[0]
     dlg.close()
 
 
@@ -977,4 +1026,38 @@ def test_restore_source_copy_error_warns(qapp, tmp_path, store, monkeypatch):
         is None
     )
     assert warnings
+    dlg.close()
+
+
+def test_counter_create_button_click(qapp, tmp_path, store, monkeypatch):
+    import stanok.gui.fields_dialog as fields_module
+
+    folder = make_project(tmp_path / "proj")
+    dlg = FieldsDialog(str(folder), "Договор", store=store)
+    monkeypatch.setattr(
+        fields_module, "ask_text", lambda *a, **k: ("Клиент", True)
+    )
+    shown = []
+    monkeypatch.setattr(QMessageBox, "critical", lambda *a: shown.append(a[-1]))
+    dlg.counter_add_btn.click()
+    assert "Клиент" in dlg._pj.counters
+    assert not shown
+    dlg.close()
+
+
+def test_counter_pick_works_for_constant_source(
+    qapp, tmp_path, store, monkeypatch
+):
+    import stanok.gui.fields_dialog as fields_module
+
+    folder = make_project(tmp_path / "proj", mode="constant")
+    monkeypatch.setattr(fields_module, "picker_available", lambda: True)
+    monkeypatch.setattr(fields_module, "open_picker", lambda *a, **k: 1)
+    dlg = FieldsDialog(str(folder), "Договор", store=store)
+    st = dlg._crows["data"]
+    assert st["pos"].isReadOnly()
+    assert st["pick"].isEnabled()
+    st["pick"].click()
+    assert st["pos"].text() == "1"
+    assert dlg._rows["ФИО"]["clabel"].text() == "Петр"
     dlg.close()

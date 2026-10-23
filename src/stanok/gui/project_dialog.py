@@ -35,6 +35,7 @@ from .fields_dialog import FieldsDialog
 from .report_text import done_text
 from .strings import STRINGS
 from .theme import set_button_role
+from .widgets import fit_table_rows
 from .worker import GenerateWorker
 
 logger = logging.getLogger(__name__)
@@ -132,6 +133,7 @@ class ProjectDialog(QDialog):
         src_header.setSectionResizeMode(0, QHeaderView.Stretch)
         src_header.setSectionResizeMode(1, QHeaderView.Fixed)
         src_header.resizeSection(1, 200)
+        src_header.sectionResized.connect(self._fit_source_rows)
         self._reload_sources()
         layout.addWidget(self.sources_table)
         hint = QLabel(STRINGS.PROJ_SRC_TYPES_HINT, self)
@@ -170,6 +172,7 @@ class ProjectDialog(QDialog):
             (5, 90),
         ):
             header.resizeSection(col, width)
+        header.sectionResized.connect(self._fit_template_rows)
         self._reload_templates()
         layout.addWidget(self.table)
 
@@ -224,6 +227,10 @@ class ProjectDialog(QDialog):
                 lambda _i=0, file=ds.file: self._on_mode_changed(file)
             )
             self.sources_table.setCellWidget(row, 1, combo)
+        self._fit_source_rows()
+
+    def _fit_source_rows(self, *_args) -> None:
+        fit_table_rows(self.sources_table, minimum=40)
 
     def _reload_templates(self) -> None:
         """Re-resolve PJ and rebuild template rows (015/021).
@@ -291,6 +298,10 @@ class ProjectDialog(QDialog):
                 )
             )
             self.table.setCellWidget(row, 5, rm_btn)
+        self._fit_template_rows()
+
+    def _fit_template_rows(self, *_args) -> None:
+        fit_table_rows(self.table, minimum=42)
 
     # -- onboarding hints ---------------------------------------------------
     def _start_hints(self) -> None:

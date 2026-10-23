@@ -1,7 +1,7 @@
 # Спецификация: 023-gui-polish — Современный интерфейс
 
 **Статус:** done
-**Версия:** 0.1.0
+**Версия:** 0.2.0-alpha
 **Фаза:** 7 (GUI)
 **Зависит от:** 011-gui-integration, 018-observability, 020-field-sources
 **FR:** FR-12

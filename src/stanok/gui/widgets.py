@@ -5,7 +5,16 @@
 from __future__ import annotations
 
 from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import QLabel, QSizePolicy
+from PyQt5.QtWidgets import QLabel, QSizePolicy, QTableWidget
+
+
+def fit_table_rows(table: QTableWidget, minimum: int = 24) -> None:
+    """Wrap cell text and size each row to its content, with a minimum height."""
+    table.setWordWrap(True)
+    table.resizeRowsToContents()
+    for row in range(table.rowCount()):
+        if table.rowHeight(row) < minimum:
+            table.setRowHeight(row, minimum)
 
 
 class ElidedLabel(QLabel):

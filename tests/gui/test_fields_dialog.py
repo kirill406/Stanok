@@ -168,6 +168,19 @@ def test_today_preview(qapp, tmp_path, store):
     dlg.close()
 
 
+def test_today_format_labels_show_current_date(qapp, tmp_path, store):
+    import datetime
+
+    folder = make_project(tmp_path / "proj")
+    _add_today(folder)
+    dlg = FieldsDialog(str(folder), "Договор", store=store)
+    dfmt = dlg._rows["Дата"]["dfmt"]
+    today = datetime.date.today()
+    assert dfmt.itemText(dfmt.findData("dmy")) == today.strftime("%d.%m.%Y")
+    assert dfmt.itemText(dfmt.findData("year")) == str(today.year)
+    dlg.close()
+
+
 def test_headers_nondir_ref(qapp, tmp_path, store):
     from stanok.services.generate import generate_documents, GenerateCommand
 

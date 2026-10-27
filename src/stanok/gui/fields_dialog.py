@@ -57,14 +57,6 @@ SOURCE_LABELS = {
     "today": STRINGS.FLD_SRC_TODAY,
 }
 SOURCE_ORDER = ("constant", "table", "counter", "today")
-DATE_PRESETS = (
-    ("dmy", STRINGS.FLD_DATE_DMY),
-    ("day", STRINGS.FLD_DATE_DAY),
-    ("month_ru", STRINGS.FLD_DATE_MONTH),
-    ("month_num", STRINGS.FLD_DATE_MONTHNUM),
-    ("year", STRINGS.FLD_DATE_YEAR),
-    ("ru_long", STRINGS.FLD_DATE_RU),
-)
 
 
 class _FieldError(Exception):
@@ -519,8 +511,9 @@ class FieldsDialog(QDialog):
             dfmt = QComboBox(box)
             if stored.source.value == "today" and stored.value is None:
                 dfmt.addItem(STRINGS.FLD_DATE_KEEP, None)
-            for key, label in DATE_PRESETS:
-                dfmt.addItem(label, key)
+            today = date.today()
+            for key in TODAY_PRESETS:
+                dfmt.addItem(str(format_today(key, today)), key)
             if stored.source.value == "today" and stored.value in TODAY_PRESETS:
                 dfmt.setCurrentIndex(dfmt.findData(stored.value))
             dfmt.currentIndexChanged.connect(

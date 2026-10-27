@@ -199,7 +199,10 @@ class MainWindow(QMainWindow):
         from .open_project_dialog import OpenProjectDialog
 
         dialog = OpenProjectDialog(self._store, self)
-        if not dialog.exec_():
+        accepted = dialog.exec_()
+        # Import inside the dialog adds recent entries even when it is cancelled.
+        self.refresh_recent()
+        if not accepted:
             return
         config = dialog.selected_config
         if not config:

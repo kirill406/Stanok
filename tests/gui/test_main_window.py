@@ -210,6 +210,26 @@ def test_browse_cancelled_noop(qapp, tmp_path, store, monkeypatch):
     win.close()
 
 
+def test_browse_import_then_cancel_refreshes_recent(
+    qapp, tmp_path, store, monkeypatch
+):
+    import stanok.gui.open_project_dialog as opd
+
+    class FakeOpen:
+        def __init__(self, *a, **k):
+            self.selected_config = ""
+
+        def exec_(self):
+            store.add_recent(str(tmp_path), "imported")
+            return False
+
+    monkeypatch.setattr(opd, "OpenProjectDialog", FakeOpen)
+    win = MainWindow(store=store)
+    win._on_browse()
+    assert win.recent_list.count() == 1
+    win.close()
+
+
 def test_browse_accepted_without_selection(qapp, tmp_path, store, monkeypatch):
     import stanok.gui.open_project_dialog as opd
 

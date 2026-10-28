@@ -1,6 +1,6 @@
 # Спецификация: 024-project-quick-create — Упрощённое создание проекта
 
-**Статус:** active
+**Статус:** done
 **Версия:** 0.2.0-alpha
 **Зависит от:** 014-project-create (init_project), 022-import-export (разбор папки), 021-counters (формат PJ)
 **FR:** FR-12, FR-13

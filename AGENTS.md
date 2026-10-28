@@ -32,7 +32,7 @@
 - `0.y.z` (current `0.3.0-alpha`): anything may change without MINOR/MAJOR bump discipline; `1.0.0` marks first stable API/GUI contract
 - Single source of truth: `pyproject.toml` version only; `src/stanok/__init__.py` reads it from installed metadata (`importlib.metadata`), no manual sync — bump the version in `pyproject.toml` alone
 - Pre-releases as `1.0.0-alpha`, `-beta`, `-rc.1` when testing exe with users before stable
-- Release flow: move `CHANGELOG.md [Unreleased]` entries under new version header with date, bump version in both places, tag `git tag vX.Y.Z`, push tag
+- Release flow: move `CHANGELOG.md [Unreleased]` entries under new version header with date, bump version in `pyproject.toml` and the CHANGELOG header, tag `git tag vX.Y.Z`, push tag
 - Never Bump version in feature branches — only in release commits on `main`
 
 ### Development stages (current: Alpha, `0.3.0-alpha`)

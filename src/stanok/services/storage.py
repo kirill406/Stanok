@@ -650,17 +650,22 @@ class ProjectStore:
             aj = validate_aj(data)
             key = (folder, config)
             aj.recent = [r for r in aj.recent if (r.folder, r.config) != key]
-            # Append at end (file order oldest-first; validator reverses on read)
-            aj.recent.append(
+            # In memory newest-first (validator order): new entry goes on top.
+            aj.recent.insert(
+                0,
                 RecentItem(
                     folder=folder, config=config, opened_at=datetime.now()
-                )
+                ),
             )
-            aj.recent = aj.recent[-10:]
-            self._atomic_write_json(
-                self.home_dir / "settings.json", aj.model_dump(mode="json")
-            )
+            aj.recent = aj.recent[:10]
+            self._write_settings(aj)
             logger.info(f"updated recent projects, count={len(aj.recent)}")
+
+    def _write_settings(self, aj: ApplicationJSON) -> None:
+        """Write settings.json; `recent` is stored oldest-first on disk."""
+        data = aj.model_dump(mode="json")
+        data["recent"].reverse()
+        self._atomic_write_json(self.home_dir / "settings.json", data)
 
 
     def init_project(
@@ -874,9 +879,7 @@ class ProjectStore:
                 for r in aj.recent
                 if (r.folder, r.config) != (folder, config)
             ]
-            self._atomic_write_json(
-                self.home_dir / "settings.json", aj.model_dump(mode="json")
-            )
+            self._write_settings(aj)
             logger.info(f"removed recent project {config}")
 
     def get_setting(self, key: str, default=None):
@@ -907,9 +910,7 @@ class ProjectStore:
             data = self._read_json(settings_file) if settings_file.exists() else {}
             aj = validate_aj(data)
             aj.settings[key] = value
-            self._atomic_write_json(
-                self.home_dir / "settings.json", aj.model_dump(mode="json")
-            )
+            self._write_settings(aj)
             logger.info(f"updated setting {key}")
 
     def add_template(

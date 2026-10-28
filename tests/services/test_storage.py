@@ -180,6 +180,25 @@ def test_recent_dedup(store):
     assert recent[0].config == "c1"
 
 
+def test_recent_order_survives_writes(store):
+    """Order is newest-first after add, touch, remove and settings writes."""
+    for name in ("a", "b", "c"):
+        store.add_recent(f"f{name}", name)
+    store.add_recent("fa", "a")
+    assert [r.config for r in store.get_recent()] == ["a", "c", "b"]
+    store.set_setting("k", 1)
+    assert [r.config for r in store.get_recent()] == ["a", "c", "b"]
+    store.remove_recent("fc", "c")
+    assert [r.config for r in store.get_recent()] == ["a", "b"]
+
+
+def test_recent_cap_keeps_newest_ten(store):
+    """The 11th add drops the oldest entry, never the newest one."""
+    for i in range(11):
+        store.add_recent(f"f{i}", f"p{i}")
+    assert [r.config for r in store.get_recent()] == [f"p{i}" for i in range(10, 0, -1)]
+
+
 def test_settings_persistence(store):
     """Test that settings persist across store instances."""
     store.add_recent("f1", "c1")

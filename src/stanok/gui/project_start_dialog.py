@@ -52,7 +52,7 @@ class _ProjectForm(QDialog):
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle(title)
-        self.resize(560, 220)
+        self.setMinimumWidth(560)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(22, 20, 22, 20)
         layout.setSpacing(9)
@@ -132,7 +132,7 @@ class ProjectStartDialog(QDialog):
 
     def _build_ui(self) -> None:
         self.setWindowTitle(STRINGS.START_TITLE)
-        self.resize(560, 300)
+        self.setMinimumWidth(560)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(22, 20, 22, 20)
         layout.setSpacing(9)

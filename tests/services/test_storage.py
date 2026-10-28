@@ -931,6 +931,24 @@ def test_delete_project_with_folder(store, tmp_path):
     assert not folder.exists()
 
 
+def test_delete_project_keeps_foreign_content(store, tmp_path):
+    folder = _init_simple(store, tmp_path)
+    (folder / "notes.txt").write_text("мои заметки", encoding="utf-8")
+    store.delete_project(folder, delete_folder=True)
+    assert not (store.home_dir / "proj.stanok").exists()
+    assert (folder / "notes.txt").exists()
+    for name in ("Данные", "Шаблоны", "Результат"):
+        assert not (folder / name).exists()
+
+
+def test_delete_project_keeps_foreign_folder(store, tmp_path):
+    folder = _init_simple(store, tmp_path)
+    (folder / "Архив").mkdir()
+    store.delete_project(folder, delete_folder=True)
+    assert (folder / "Архив").is_dir()
+    assert not (folder / "Данные").exists()
+
+
 def test_delete_project_missing_folder_ok(store, tmp_path):
     folder = _init_simple(store, tmp_path)
     import shutil

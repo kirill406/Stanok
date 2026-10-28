@@ -325,6 +325,27 @@ def test_settings_opens_dialog(qapp, tmp_path, store, monkeypatch):
     win.close()
 
 
+def test_create_dialog_hint_uses_latest_recent(qapp, tmp_path, store, monkeypatch):
+    import stanok.gui.create_dialog as cd
+
+    store.add_recent(str(tmp_path / "old" / "P1"), "old")
+    store.add_recent(str(tmp_path / "new" / "P2"), "new")
+    hints = []
+
+    class FakeCreate:
+        def __init__(self, _store, hint, *a, **k):
+            hints.append(hint)
+
+        def exec_(self):
+            return False
+
+    monkeypatch.setattr(cd, "CreateDialog", FakeCreate)
+    win = MainWindow(store=store)
+    win._on_create()
+    assert hints == [str(tmp_path / "new")]
+    win.close()
+
+
 def test_create_dialog_builds_project(qapp, tmp_path, store, monkeypatch):
     from tests.services.test_storage import _src_files
 

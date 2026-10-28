@@ -281,7 +281,8 @@ class MainWindow(QMainWindow):
         from .create_dialog import CreateDialog
 
         recent = self._store.get_recent()
-        hint = str(Path(recent[-1].folder).parent) if recent else str(Path.home())
+        # get_recent() is newest-first: the hint comes from the latest project.
+        hint = str(Path(recent[0].folder).parent) if recent else str(Path.home())
         dialog = CreateDialog(self._store, hint, self)
         if dialog.exec_():
             self.refresh_recent()

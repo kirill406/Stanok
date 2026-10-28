@@ -278,17 +278,16 @@ class MainWindow(QMainWindow):
     def _on_create(self) -> None:
         """Open window 4 (CreateDialog, 014); refresh recent on success."""
         # Local import: keeps module import light and patchable in tests.
-        from .create_dialog import CreateDialog
+        from .project_start_dialog import ProjectStartDialog
 
         recent = self._store.get_recent()
         # get_recent() is newest-first: the hint comes from the latest project.
         hint = str(Path(recent[0].folder).parent) if recent else str(Path.home())
-        dialog = CreateDialog(self._store, hint, self)
-        if dialog.exec_():
-            self.refresh_recent()
-            name = getattr(dialog, "project_name", "")
-            if name:
-                self._open_project_dialog(name, highlight_new=True)
+        dialog = ProjectStartDialog(self._store, hint, self)
+        dialog.exec_()
+        self.refresh_recent()
+        if dialog.project_name:
+            self._open_project_dialog(dialog.project_name, highlight_new=True)
 
     # -- generation queue ---------------------------------------------------
     def _on_generate_one(self, ref: str) -> None:

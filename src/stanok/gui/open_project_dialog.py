@@ -20,7 +20,7 @@ from PyQt5.QtWidgets import (
 
 from ..services.import_export import ProjectLayout, detect_project_layout
 from ..services.storage import ProjectStore
-from .create_dialog import CreateDialog
+from .project_check_dialog import ProjectCheckDialog
 from .strings import STRINGS
 from .theme import set_button_role
 
@@ -129,13 +129,9 @@ class OpenProjectDialog(QDialog):
 
     def _create_from_layout(self, layout: ProjectLayout) -> None:
         """Open the create dialog prefilled from an existing project folder."""
-        dialog = CreateDialog(self._store, str(layout.folder.parent), self)
-        dialog.name_edit.setText(layout.folder.name)
-        for path in layout.xlsx:
-            dialog.xlsx_list.addItem(str(path))
-        for path in layout.docx:
-            dialog.docx_list.addItem(str(path))
-        dialog._update_create_enabled()
+        dialog = ProjectCheckDialog(
+            self._store, layout.folder, layout.folder.name, True, self
+        )
         if not dialog.exec_():
             return
         self.created_config = dialog.project_name

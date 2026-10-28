@@ -3,13 +3,22 @@
 """PJ/AJ/Filling schemas: validate, normalize, migrate. Pure engine, no Qt."""
 
 import logging
+import os
+import re
 from datetime import datetime
 from enum import Enum
 from importlib.metadata import version as pkg_version, PackageNotFoundError
 from pathlib import PurePosixPath
 from typing import Any, Callable
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 from ..gui.strings import STRINGS
 
@@ -87,7 +96,7 @@ class _WarnExtra(BaseModel):
         allowed = set(type(self).model_fields)
         unknown = [k for k in self.__pydantic_extra__ or {} if k not in allowed]
         if unknown:
-            logger.warning("unknown keys ignored: %s", unknown)
+            logger.warning(f"unknown keys ignored: {unknown}")
         return self
 
 
@@ -101,16 +110,52 @@ class FieldSource(str, Enum):
 class FieldDef(_WarnExtra):
     source: FieldSource
     value: Any = None
+    counter_name: str | None = None  # TABLE: counter ref, required (021)
 
 
 class CounterDef(_WarnExtra):
-    last: int = 0
-    format: str = "plain"  # plain | month (ГГГГ-ММ-###)
+    pos: int = 0  # one position: source row (0-based) and printed number
+    format: str = "1"  # 020: width 1 | 01 | 001 | 0001 (zero-pad); legacy plain/month still render
+    table: str | None = None  # bound source file (021); None = numeric counter
+    resume: int = 1  # 1 — pos persists after run; 0 — keep it
+
+    @model_validator(mode="before")
+    @classmethod
+    def _merge_legacy_position(cls, data: Any) -> Any:
+        """Unify pre-unification `last` + `start_row` into one `pos`.
+
+        Legacy PJs kept the printed number and the row cursor separately.
+        For a counter with a source the row is primary, for a numeric counter
+        the printed number is primary.
+        """
+        if not isinstance(data, dict):
+            return data
+        data = dict(data)
+        last = data.pop("last", None)
+        start = data.pop("start_row", None)
+        if "pos" in data:
+            return data
+        if data.get("table") is None:
+            pos = last if last is not None else start
+        else:
+            pos = start if start is not None else last
+        if pos is not None:
+            data["pos"] = pos
+            logger.debug(f"counter: merged legacy last/start_row into pos={pos}")
+        return data
+
+    @field_validator("table")
+    @classmethod
+    def _relative_counter_table(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        return _check_relative_path(v, "counters.<name>.table")
 
 
 class TemplateDef(_WarnExtra):
     file: str
     fields: dict[str, FieldDef] = {}
+    limit: int = 0  # 021: per-template document limit; 0 = no limit
 
     @field_validator("file")
     @classmethod
@@ -121,7 +166,6 @@ class TemplateDef(_WarnExtra):
 class DataSourceDef(_WarnExtra):
     file: str
     mode: str = "sequential"  # sequential | circular | constant
-    start_row: int = 0  # > 0 означает «продолжать» (resume без отдельного флага)
 
     @field_validator("file")
     @classmethod
@@ -135,6 +179,69 @@ class ProjectJSON(_WarnExtra):
     data_sources: list[DataSourceDef] = []
     counters: dict[str, CounterDef] = {}
     filename_template: str = "{template} ({i})"
+    folder: str | None = None  # absolute path with Данные/Шаблоны (020)
+    default_template: str = ""  # 021: template for window 1; "" = first template
+
+    @field_validator("folder")
+    @classmethod
+    def _abs_folder(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        value = v.strip()
+        if not value:
+            return None
+        if not os.path.isabs(value):
+            logger.warning(f"project folder is not absolute: {value}")
+        return value
+
+    @model_validator(mode="after")
+    def _check_relations(self) -> "ProjectJSON":
+        names = list(self.templates)
+        if not self.default_template and names:
+            self.default_template = names[0]
+        if self.default_template and self.default_template not in self.templates:
+            raise ValueError(
+                f"default_template '{self.default_template}' not in templates"
+            )
+        files = [ds.file for ds in self.data_sources]
+        for tname, tdef in self.templates.items():
+            for fname, fdef in tdef.fields.items():
+                if fdef.source == FieldSource.COUNTER:
+                    # 021: a counter field's value must name a defined counter.
+                    value = fdef.value
+                    if not isinstance(value, str) or value not in self.counters:
+                        raise ValueError(
+                            f"counter field references unknown counter "
+                            f"'{value}': {tname}.{fname}"
+                        )
+                    continue
+                if fdef.source != FieldSource.TABLE:
+                    continue
+                cname = fdef.counter_name
+                if not cname:
+                    raise ValueError(
+                        f"table field needs counter_name: {tname}.{fname}"
+                    )
+                cdef = self.counters.get(cname)
+                if cdef is None:
+                    raise ValueError(
+                        f"counter '{cname}' not defined: {tname}.{fname}"
+                    )
+                if cdef.table is None:
+                    raise ValueError(
+                        f"counter '{cname}' is not bound to a source: "
+                        f"{tname}.{fname}"
+                    )
+        for cname, cdef in self.counters.items():
+            if cdef.table is not None and cdef.table not in files:
+                raise ValueError(
+                    f"counter '{cname}' table not in data_sources: {cdef.table}"
+                )
+        bound = {c.table for c in self.counters.values() if c.table}
+        for ds in self.data_sources:
+            if ds.file not in bound:
+                raise ValueError(f"source '{ds.file}' has no bound counter")
+        return self
 
 
 class RecentItem(_WarnExtra):
@@ -180,8 +287,11 @@ def _get_package_version() -> str:
 
 
 def _parse_version(v: str) -> tuple:
-    core = v.split("-", 1)[0]
-    return tuple(int(p) for p in core.split("."))
+    """Return the numeric core; accepts both ``0.2.0-alpha`` and ``0.2.0a0``."""
+    match = re.match(r"^(\d+)\.(\d+)\.(\d+)", v.strip())
+    if match is None:
+        return (0, 0, 0)
+    return tuple(int(part) for part in match.groups())
 
 
 def current_version() -> str:
@@ -226,36 +336,39 @@ def normalize(raw: dict) -> dict:
 def validate_pj(data: dict) -> ProjectJSON:
     try:
         return ProjectJSON(**normalize(data))
-    except Exception as e:
-        from pydantic import ValidationError
-
-        if isinstance(e, ValidationError):
-            raise PJValidationError("$", _format_errors(e)) from e
+    except ValidationError as e:
+        raise PJValidationError("$", _format_errors(e)) from e
+    except (TypeError, ValueError, KeyError) as e:
         logger.error(f"validate PJ: {e}", exc_info=True)
+        raise
+    except Exception as e:
+        logger.critical(f"unexpected validate PJ: {e}", exc_info=True)
         raise
 
 
 def validate_aj(data: dict) -> ApplicationJSON:
     try:
         return ApplicationJSON(**normalize(data))
-    except Exception as e:
-        from pydantic import ValidationError
-
-        if isinstance(e, ValidationError):
-            raise AJValidationError("$", _format_errors(e)) from e
+    except ValidationError as e:
+        raise AJValidationError("$", _format_errors(e)) from e
+    except (TypeError, ValueError, KeyError) as e:
         logger.error(f"validate AJ: {e}", exc_info=True)
+        raise
+    except Exception as e:
+        logger.critical(f"unexpected validate AJ: {e}", exc_info=True)
         raise
 
 
 def validate_fj(data: dict) -> FillingJSON:
     try:
         return FillingJSON(**normalize(data))
-    except Exception as e:
-        from pydantic import ValidationError
-
-        if isinstance(e, ValidationError):
-            raise FillingValidationError("$", _format_errors(e)) from e
+    except ValidationError as e:
+        raise FillingValidationError("$", _format_errors(e)) from e
+    except (TypeError, ValueError, KeyError) as e:
         logger.error(f"validate FJ: {e}", exc_info=True)
+        raise
+    except Exception as e:
+        logger.critical(f"unexpected validate FJ: {e}", exc_info=True)
         raise
 
 

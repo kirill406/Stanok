@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Tests for ProjectStore: atomic save/load, Home migration, recent projects."""
 
+import codecs
 import json
 import threading
 from pathlib import Path
@@ -39,9 +40,9 @@ def sample_pj():
             }
         },
         "data_sources": [
-            {"file": "data.xlsx", "mode": "sequential", "start_row": 0}
+            {"file": "data.xlsx", "mode": "sequential"}
         ],
-        "counters": {"counter1": {"last": 0, "format": "plain"}},
+        "counters": {"counter1": {"pos": 0, "format": "plain", "table": "data.xlsx"}},
         "filename_template": "output_{template}_{i}.docx",
     })
 
@@ -179,6 +180,25 @@ def test_recent_dedup(store):
     assert recent[0].config == "c1"
 
 
+def test_recent_order_survives_writes(store):
+    """Order is newest-first after add, touch, remove and settings writes."""
+    for name in ("a", "b", "c"):
+        store.add_recent(f"f{name}", name)
+    store.add_recent("fa", "a")
+    assert [r.config for r in store.get_recent()] == ["a", "c", "b"]
+    store.set_setting("k", 1)
+    assert [r.config for r in store.get_recent()] == ["a", "c", "b"]
+    store.remove_recent("fc", "c")
+    assert [r.config for r in store.get_recent()] == ["a", "b"]
+
+
+def test_recent_cap_keeps_newest_ten(store):
+    """The 11th add drops the oldest entry, never the newest one."""
+    for i in range(11):
+        store.add_recent(f"f{i}", f"p{i}")
+    assert [r.config for r in store.get_recent()] == [f"p{i}" for i in range(10, 0, -1)]
+
+
 def test_settings_persistence(store):
     """Test that settings persist across store instances."""
     store.add_recent("f1", "c1")
@@ -261,6 +281,178 @@ def test_atomic_write_creates_backup(store, sample_pj, tmp_path):
     assert bak_path.exists()
 
 
+def test_load_restores_corrupt_main_from_backup(store, sample_pj):
+    """Corrupt main config is rewritten from the previous save (.bak)."""
+    path = store.save(sample_pj)
+    raw = sample_pj.model_dump(mode="json")
+    raw["templates"]["template1"]["limit"] = 7
+    store.save(validate_pj(raw), name=path.stem)
+    assert store.load(path.stem).templates["template1"].limit == 7
+    path.write_text("{broken")
+    loaded = store.load(path.stem)
+    assert loaded.templates["template1"].limit == 0
+    assert json.loads(path.read_text())["templates"]["template1"]["limit"] == 0
+    assert store._backup_path(path).exists()
+
+
+def test_load_removes_utf8_bom_without_backup_restore(store, sample_pj):
+    """A valid BOM-edited main config is rewritten, not rolled back to .bak."""
+    path = store.save(sample_pj)
+    raw = sample_pj.model_dump(mode="json")
+    raw["templates"]["template1"]["limit"] = 7
+    store.save(validate_pj(raw), name=path.stem)
+
+    edited = sample_pj.model_dump(mode="json")
+    edited["templates"]["template1"]["limit"] = 5
+    payload = json.dumps(edited, ensure_ascii=False).encode("utf-8")
+    path.write_bytes(codecs.BOM_UTF8 + payload)
+
+    loaded = store.load(path.stem)
+    assert loaded.templates["template1"].limit == 5
+    assert not path.read_bytes().startswith(codecs.BOM_UTF8)
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert saved["templates"]["template1"]["limit"] == 5
+
+
+def test_load_restores_backup_when_bom_payload_invalid(store, sample_pj):
+    """Invalid JSON after BOM removal falls back to the previous config."""
+    path = store.save(sample_pj)
+    raw = sample_pj.model_dump(mode="json")
+    raw["templates"]["template1"]["limit"] = 7
+    store.save(validate_pj(raw), name=path.stem)
+
+    path.write_bytes(codecs.BOM_UTF8 + b"{broken")
+
+    loaded = store.load(path.stem)
+    assert loaded.templates["template1"].limit == 0
+    assert not path.read_bytes().startswith(codecs.BOM_UTF8)
+
+
+def test_load_restores_backup_when_bom_rewrite_fails(store, sample_pj, monkeypatch):
+    """If BOM repair cannot be written, fall back to the previous config."""
+    path = store.save(sample_pj)
+    raw = sample_pj.model_dump(mode="json")
+    raw["templates"]["template1"]["limit"] = 7
+    store.save(validate_pj(raw), name=path.stem)
+
+    edited = sample_pj.model_dump(mode="json")
+    edited["templates"]["template1"]["limit"] = 5
+    payload = json.dumps(edited, ensure_ascii=False).encode("utf-8")
+    path.write_bytes(codecs.BOM_UTF8 + payload)
+
+    monkeypatch.setattr(
+        store,
+        "_rewrite_without_bom",
+        lambda *a, **k: (_ for _ in ()).throw(OSError("locked")),
+    )
+    loaded = store.load(path.stem)
+    assert loaded.templates["template1"].limit == 0
+    assert not path.read_bytes().startswith(codecs.BOM_UTF8)
+
+
+def test_resolve_restores_missing_main_from_backup(store, sample_pj):
+    """Missing main config (crash between rename steps) is restored from .bak."""
+    path = store.save(sample_pj)
+    store.save(sample_pj)
+    path.unlink()
+    pj, resolved = store.resolve_project(path.stem)
+    assert resolved == path
+    assert pj.templates == sample_pj.templates
+    assert path.exists()
+
+
+def test_load_prefers_valid_tmp_over_backup(store, sample_pj):
+    """A complete `.tmp` from an interrupted save is newer than `.bak`."""
+    path = store.save(sample_pj)
+    raw = sample_pj.model_dump(mode="json")
+    raw["templates"]["template1"]["limit"] = 1
+    store.save(validate_pj(raw), name=path.stem)
+    raw["templates"]["template1"]["limit"] = 9
+    tmp = store._tmp_path(path)
+    tmp.write_text(json.dumps(raw))
+    path.write_text("{broken")
+    loaded = store.load(path.stem)
+    assert loaded.templates["template1"].limit == 9
+    assert json.loads(path.read_text())["templates"]["template1"]["limit"] == 9
+    assert not tmp.exists()
+    assert store._backup_path(path).exists()
+
+
+def test_load_falls_back_to_backup_when_tmp_invalid(store, sample_pj):
+    path = store.save(sample_pj)
+    raw = sample_pj.model_dump(mode="json")
+    raw["templates"]["template1"]["limit"] = 7
+    store.save(validate_pj(raw), name=path.stem)
+    store._tmp_path(path).write_text("{bad")
+    path.write_text("{broken")
+    loaded = store.load(path.stem)
+    assert loaded.templates["template1"].limit == 0
+
+
+def test_load_recovers_tmp_only_first_save(store, sample_pj):
+    path = store._get_config_path("fresh")
+    tmp = store._tmp_path(path)
+    tmp.write_text(json.dumps(sample_pj.model_dump(mode="json")))
+    pj, resolved = store.resolve_project("fresh")
+    assert resolved == path
+    assert pj.templates == sample_pj.templates
+    assert path.exists() and not tmp.exists()
+
+
+def test_recovery_tmp_promote_error_keeps_tmp(store, sample_pj, monkeypatch):
+    import stanok.services.storage as storage
+
+    path = store._get_config_path("fresh")
+    tmp = store._tmp_path(path)
+    tmp.write_text(json.dumps(sample_pj.model_dump(mode="json")))
+    monkeypatch.setattr(
+        storage.os, "replace", lambda *a: (_ for _ in ()).throw(OSError("locked"))
+    )
+    assert store.load("fresh").templates == sample_pj.templates
+    assert tmp.exists() and not path.exists()
+
+
+def test_recovery_backup_write_error_keeps_backup(store, sample_pj, monkeypatch):
+    import stanok.services.storage as storage
+
+    path = store.save(sample_pj)
+    store.save(sample_pj)
+    path.unlink()
+    bak = store._backup_path(path)
+    monkeypatch.setattr(
+        storage.os, "replace", lambda *a: (_ for _ in ()).throw(OSError("locked"))
+    )
+    assert store.load(path.stem).templates == sample_pj.templates
+    assert bak.exists() and not path.exists()
+    assert not store._tmp_path(path).exists()
+
+
+def test_config_exists_counts_backup(store, sample_pj):
+    path = store.save(sample_pj)
+    store.save(sample_pj)
+    path.unlink()
+    assert store.config_exists(path.stem)
+
+
+def test_load_bad_main_and_bad_backup_raises(store, sample_pj):
+    path = store.save(sample_pj)
+    store.save(sample_pj)
+    store._backup_path(path).write_text("{bad")
+    path.write_text("{bad")
+    with pytest.raises(StorageError, match="invalid config"):
+        store.load(path.stem)
+
+
+def test_load_restores_invalid_main_from_backup(store, sample_pj):
+    """Parseable but schema-invalid main config is restored from .bak."""
+    path = store.save(sample_pj)
+    store.save(sample_pj)
+    path.write_text(json.dumps({"version": "0.0.0"}))
+    loaded = store.load(path.stem)
+    assert loaded.templates == sample_pj.templates
+    assert "templates" in json.loads(path.read_text())
+
+
 def test_save_updates_existing(store, sample_pj):
     """Test that save updates existing config."""
     path1 = store.save(sample_pj)
@@ -286,19 +478,55 @@ def test_default_home_dir(monkeypatch, tmp_path):
     assert (store.home_dir / "settings.json").exists()
 
 
-def test_atomic_rename_fallback(monkeypatch, store, sample_pj):
-    """Test Windows copy fallback when rename fails."""
-    real_rename = Path.rename
+def test_atomic_replace_fallback(monkeypatch, store, sample_pj):
+    """Test Windows copy fallback when atomic replace fails."""
+    import stanok.services.storage as storage
 
-    def boom_once(self, target):
+    def boom(*_args):
+        raise OSError("locked")
+
+    monkeypatch.setattr(storage.os, "replace", boom)
+    path = store.save(sample_pj)
+    assert path.exists()
+    assert not path.with_suffix(path.suffix + ".tmp").exists()
+
+
+def test_atomic_write_keeps_main_when_replace_and_copy_fail(
+    monkeypatch, store, sample_pj
+):
+    """A failed save must leave the old main config in place."""
+    import stanok.services.storage as storage
+
+    path = store.save(sample_pj)
+    old = path.read_text(encoding="utf-8")
+    raw = sample_pj.model_dump(mode="json")
+    raw["templates"]["template1"]["limit"] = 7
+
+    real_rename = Path.rename
+    real_copy = storage.shutil.copy2
+
+    def locked_rename(self, target):
         if self.suffix == ".tmp":
             raise OSError("locked")
         return real_rename(self, target)
 
-    monkeypatch.setattr(Path, "rename", boom_once)
-    path = store.save(sample_pj)
-    assert path.exists()
-    assert not path.with_suffix(path.suffix + ".tmp").exists()
+    def locked_tmp_copy(src, dst, *args, **kwargs):
+        if Path(src).suffix == ".tmp":
+            raise OSError("locked")
+        return real_copy(src, dst, *args, **kwargs)
+
+    def locked_replace(*_args):
+        raise OSError("locked")
+
+    monkeypatch.setattr(Path, "rename", locked_rename)
+    monkeypatch.setattr(storage.os, "replace", locked_replace)
+    monkeypatch.setattr(storage.shutil, "copy2", locked_tmp_copy)
+
+    with pytest.raises(OSError, match="locked"):
+        store._atomic_write_json(path, raw)
+    assert path.read_text(encoding="utf-8") == old
+    assert store._backup_path(path).exists()
+    assert store._tmp_path(path).exists()
 
 
 def test_extract_name_variants(store, sample_pj):
@@ -307,6 +535,7 @@ def test_extract_name_variants(store, sample_pj):
     raw = sample_pj.model_dump(mode="json")
     raw["filename_template"] = ""
     raw["templates"] = {"t": {"file": "Шаблоны/Договор.docx", "fields": {}}}
+    raw["default_template"] = ""
     pj = validate_pj(raw)
     assert store._extract_project_name(pj) == "Договор"
     pj2 = sample_pj.model_copy(update={"filename_template": "", "templates": {}})
@@ -324,14 +553,17 @@ def test_load_reraise_storage(monkeypatch, store, sample_pj):
 
 
 def test_delete_removes_bak(store, sample_pj):
-    """Test delete removes config and backup."""
+    """Test delete removes config, backup and leftover temp."""
     path = store.save(sample_pj)
     store.save(sample_pj)
     bak = path.with_suffix(path.suffix + ".bak")
+    tmp = store._tmp_path(path)
+    tmp.write_text("{}")
     assert bak.exists()
     store.delete(path.stem)
     assert not path.exists()
     assert not bak.exists()
+    assert not tmp.exists()
 
 
 def test_list_skips_invalid(store, sample_pj):
@@ -394,8 +626,11 @@ def test_init_copies_and_builds_pj(store, tmp_path):
     assert (tmp_path / "proj" / "Шаблоны" / "tpl.docx").is_file()
     assert pj.templates["tpl"].file == "Шаблоны/tpl.docx"
     assert pj.templates["tpl"].fields["ФИО"].source == "table"
+    assert pj.templates["tpl"].fields["ФИО"].counter_name == "data"
     assert pj.data_sources[0].file == "Данные/data.xlsx"
-    assert pj.counters == {}
+    assert set(pj.counters) == {"data"}
+    assert pj.counters["data"].table == "Данные/data.xlsx"
+    assert pj.default_template == "tpl"
     assert (store.home_dir / "nov.stanok").is_file()
     assert any(r.config == "nov" for r in store.get_recent())
 
@@ -420,6 +655,26 @@ def test_init_no_copy_outside_rejected(store, tmp_path):
         store.init_project(
             tmp_path / "proj", "out", [xlsx], [tpl], copy_files=False
         )
+
+
+def test_init_copy_reuses_file_already_in_target_dir(store, tmp_path):
+    folder = tmp_path / "proj"
+    (folder / "Данные").mkdir(parents=True)
+    (folder / "Шаблоны").mkdir()
+    xlsx, tpl = _src_files(tmp_path)
+    in_xlsx = folder / "Данные" / "data.xlsx"
+    in_tpl = folder / "Шаблоны" / "tpl.docx"
+    xlsx.rename(in_xlsx)
+    tpl.rename(in_tpl)
+
+    pj = store.init_project(
+        folder, "reuse", [in_xlsx], [in_tpl], copy_files=True
+    )
+
+    assert [p.name for p in (folder / "Данные").iterdir()] == ["data.xlsx"]
+    assert [p.name for p in (folder / "Шаблоны").iterdir()] == ["tpl.docx"]
+    assert pj.data_sources[0].file == "Данные/data.xlsx"
+    assert pj.templates["tpl"].file == "Шаблоны/tpl.docx"
 
 
 def test_init_name_taken_rejected(store, tmp_path, sample_pj):
@@ -474,6 +729,16 @@ def test_init_second_copy_collision(store, tmp_path):
         "Данные/data (1).xlsx",
         "Данные/data (2).xlsx",
     ]
+
+
+def test_counter_name_collision_suffix():
+    """Auto-counter name: stem, then _2/_3 on collision; fallback 'counter'."""
+    from stanok.services.storage import _counter_name
+
+    assert _counter_name(set(), "Данные/data.xlsx") == "data"
+    assert _counter_name({"data"}, "Данные/sub/data.xlsx") == "data_2"
+    assert _counter_name({"data", "data_2"}, "x/data.xlsx") == "data_3"
+    assert _counter_name(set(), "") == "counter"
 
 
 def test_init_empty_lists_rejected(store, tmp_path):
@@ -573,18 +838,8 @@ def test_init_no_copy_wrong_subdir(store, tmp_path):
         )
 
 
-def _init_simple(store, tmp_path, name="proj"):
-    """init_project with one xlsx + one docx; return folder."""
+def test_add_source_copies(store, tmp_path):
     from tests.services.test_storage import _src_files
-
-    xlsx, tpl = _src_files(tmp_path, f"src_{name}")
-    folder = tmp_path / name
-    store.init_project(folder, name, [xlsx], [tpl])
-    return folder
-
-
-def test_add_template_copies(store, tmp_path):
-    from docx import Document as DocxDocument
 
     folder = _init_simple(store, tmp_path)
     extra = tmp_path / "extra.docx"
@@ -620,6 +875,7 @@ def test_remove_template(store, tmp_path):
     folder = _init_simple(store, tmp_path)
     xlsx, tpl = _src_files(tmp_path, "src2")
     store.add_template(folder, tpl)
+    store.set_default_template(folder, "tpl (1)")
     store.remove_template(folder, "tpl")
     pj = store.load("proj")
     assert set(pj.templates) == {"tpl (1)"}
@@ -627,6 +883,29 @@ def test_remove_template(store, tmp_path):
         store.remove_template(folder, "tpl (1)")
     with pytest.raises(StorageError, match="template not found"):
         store.remove_template(folder, "nope")
+
+
+def test_remove_default_template_locked(store, tmp_path):
+    from tests.services.test_storage import _src_files
+
+    folder = _init_simple(store, tmp_path)
+    _, tpl = _src_files(tmp_path, "src2")
+    store.add_template(folder, tpl)
+    with pytest.raises(StorageError, match="по умолчанию"):
+        store.remove_template(folder, "tpl")
+    assert "tpl" in store.load("proj").templates
+
+
+def test_set_default_template(store, tmp_path):
+    from tests.services.test_storage import _src_files
+
+    folder = _init_simple(store, tmp_path)
+    _, tpl = _src_files(tmp_path, "src2")
+    store.add_template(folder, tpl)
+    store.set_default_template(folder, "tpl (1)")
+    assert store.load("proj").default_template == "tpl (1)"
+    with pytest.raises(StorageError, match="template not found"):
+        store.set_default_template(folder, "nope")
 
 
 def test_remove_recent(store):
@@ -650,6 +929,24 @@ def test_delete_project_with_folder(store, tmp_path):
     store.delete_project(folder, delete_folder=True)
     assert not (store.home_dir / "proj.stanok").exists()
     assert not folder.exists()
+
+
+def test_delete_project_keeps_foreign_content(store, tmp_path):
+    folder = _init_simple(store, tmp_path)
+    (folder / "notes.txt").write_text("мои заметки", encoding="utf-8")
+    store.delete_project(folder, delete_folder=True)
+    assert not (store.home_dir / "proj.stanok").exists()
+    assert (folder / "notes.txt").exists()
+    for name in ("Данные", "Шаблоны", "Результат"):
+        assert not (folder / name).exists()
+
+
+def test_delete_project_keeps_foreign_folder(store, tmp_path):
+    folder = _init_simple(store, tmp_path)
+    (folder / "Архив").mkdir()
+    store.delete_project(folder, delete_folder=True)
+    assert (folder / "Архив").is_dir()
+    assert not (folder / "Данные").exists()
 
 
 def test_delete_project_missing_folder_ok(store, tmp_path):
@@ -697,8 +994,18 @@ def test_delete_project_rmtree_failure(store, tmp_path, monkeypatch):
         raise OSError("locked")
 
     monkeypatch.setattr(shutil, "rmtree", boom)
-    with pytest.raises(StorageError, match="partially removed"):
+    with pytest.raises(StorageError, match="project kept"):
         store.delete_project(folder, delete_folder=True)
+    assert (store.home_dir / "proj.stanok").exists()
+    assert store.load("proj").templates
+
+
+def test_init_project_refuses_backup_only_name(store, sample_pj, tmp_path):
+    path = store.save(sample_pj, name="proj")
+    store.save(sample_pj, name="proj")
+    path.unlink()
+    with pytest.raises(StorageError, match="already exists"):
+        store.init_project(tmp_path / "p", "proj", [], [])
 
 
 def test_migrate_name_collision_uniquified(store, tmp_path, sample_pj):
@@ -725,3 +1032,270 @@ def test_migrate_double_collision(store, tmp_path, sample_pj):
     )
     store.migrate_from_project(legacy)
     assert (store.home_dir / "proj (2).stanok").is_file()
+
+
+def _add_placeholder(folder, text="Новый {{Штрихкод}}"):
+    from docx import Document as DocxDocument
+
+    tpl = folder / "Шаблоны" / "tpl.docx"
+    doc = DocxDocument(str(tpl))
+    doc.add_paragraph(text)
+    doc.save(str(tpl))
+
+
+def _migrated(store, tmp_path, name="proj"):
+    """make_project folder migrated to Home; return folder."""
+    from tests.services.test_generate import make_project
+
+    folder = make_project(tmp_path / name)
+    store.migrate_from_project(folder)
+    return folder
+
+
+def test_sync_adds_new_placeholders(store, tmp_path):
+    folder = _migrated(store, tmp_path)
+    _add_placeholder(folder)
+    added = store.sync_template_fields(folder)
+    assert added == {"Договор": ["Штрихкод"]}
+    pj = store.load("proj")
+    assert pj.templates["Договор"].fields["Штрихкод"].source.value == "table"
+
+
+def test_sync_noop_without_changes(store, tmp_path):
+    folder = _migrated(store, tmp_path)
+    assert store.sync_template_fields(folder) == {}
+
+
+def test_sync_keeps_removed_placeholder(store, tmp_path):
+    import json as _json
+
+    folder = _migrated(store, tmp_path)
+    pj_path = store.home_dir / "proj.stanok"
+    data = _json.loads(pj_path.read_text())
+    data["templates"]["Договор"]["fields"]["Призрак"] = {
+        "source": "constant", "value": "x"
+    }
+    pj_path.write_text(_json.dumps(data, ensure_ascii=False))
+    assert store.sync_template_fields(folder) == {}
+    assert "Призрак" in store.load("proj").templates["Договор"].fields
+
+
+def test_sync_missing_template_file_skipped(store, tmp_path):
+    folder = _migrated(store, tmp_path)
+    (folder / "Шаблоны" / "tpl.docx").unlink()
+    assert store.sync_template_fields(folder) == {}
+
+
+def test_sync_no_folder_returns_empty(store, tmp_path, sample_pj):
+    store.save(sample_pj, name="ghost")
+    assert store.sync_template_fields("ghost") == {}
+
+
+def test_sync_unreadable_template_skipped(store, tmp_path):
+    folder = _migrated(store, tmp_path)
+    (folder / "Шаблоны" / "tpl.docx").write_text("not a zip")
+    assert store.sync_template_fields(folder) == {}
+
+
+def test_init_filename_defaults_to_name(store, tmp_path):
+    from tests.services.test_storage import _src_files
+
+    xlsx, tpl = _src_files(tmp_path)
+    pj = store.init_project(tmp_path / "proj", "Договоры", [xlsx], [tpl])
+    assert pj.filename_template == "Договоры"
+
+
+def test_scan_finds_nested_table_placeholders(store, tmp_path):
+    from docx import Document as DocxDocument
+
+    from stanok.services.storage import _scan_placeholders
+
+    doc = DocxDocument()
+    doc.add_paragraph("Hi {{Имя}}")
+    outer = doc.add_table(rows=1, cols=1)
+    inner = outer.cell(0, 0).add_table(rows=1, cols=1)
+    inner.cell(0, 0).text = "Deep {{Глубина}}"
+    tpl = tmp_path / "nest.docx"
+    doc.save(tpl)
+    assert _scan_placeholders(tpl) == ["Имя", "Глубина"]
+
+
+def test_scan_finds_header_placeholders(tmp_path):
+    from docx import Document as DocxDocument
+
+    from stanok.services.storage import _scan_placeholders
+
+    doc = DocxDocument()
+    doc.add_paragraph("Тело")
+    doc.sections[0].header.paragraphs[0].text = "Шапка {{Код}}"
+    tpl = tmp_path / "hdr.docx"
+    doc.save(tpl)
+    assert _scan_placeholders(tpl) == ["Код"]
+
+
+def _init_simple(store, tmp_path, name="proj"):
+    from tests.services.test_storage import _src_files
+
+    xlsx, tpl = _src_files(tmp_path, f"src_{name}")
+    folder = tmp_path / name
+    store.init_project(folder, name, [xlsx], [tpl])
+    return folder
+
+
+def test_add_source_copies(store, tmp_path):
+    from tests.services.test_storage import _src_files
+
+    folder = _init_simple(store, tmp_path)
+    xlsx, _ = _src_files(tmp_path, "extra")
+    rel = store.add_source(folder, xlsx)
+    assert rel == "Данные/data.xlsx" or rel.startswith("Данные/")
+    assert (folder / rel).is_file()
+    pj = store.load("proj")
+    assert pj.data_sources[-1].file == rel
+    assert pj.data_sources[-1].mode == "sequential"
+
+
+def test_add_source_duplicate_rejected(store, tmp_path):
+    from tests.services.test_storage import _src_files
+
+    folder = _init_simple(store, tmp_path)
+    xlsx, _ = _src_files(tmp_path, "extra2")
+    import shutil
+
+    shutil.copy(xlsx, folder / "Данные" / "extra.xlsx")
+    store.add_source(folder, folder / "Данные" / "extra.xlsx", copy_files=False)
+    with pytest.raises(StorageError, match="already attached"):
+        store.add_source(folder, folder / "Данные" / "extra.xlsx", copy_files=False)
+
+
+def test_add_source_mkdir_failure(store, tmp_path, monkeypatch):
+    import pathlib
+
+    from tests.services.test_storage import _src_files
+
+    folder = _init_simple(store, tmp_path)
+    xlsx, _ = _src_files(tmp_path, "mk")
+
+    def boom(self, *a, **k):
+        raise OSError("denied")
+
+    monkeypatch.setattr(pathlib.Path, "mkdir", boom)
+    try:
+        with pytest.raises(StorageError, match="cannot create folder"):
+            store.add_source(folder, xlsx)
+    finally:
+        monkeypatch.setattr(pathlib.Path, "mkdir", pathlib.Path.mkdir)
+
+
+def test_init_stores_folder(store, tmp_path):
+    xlsx, tpl = _src_files(tmp_path)
+    pj = store.init_project(tmp_path / "fpj", "fpj", [xlsx], [tpl])
+    assert pj.folder == str((tmp_path / "fpj").resolve())
+
+
+def test_init_rejects_data_dir(store, tmp_path):
+    xlsx, tpl = _src_files(tmp_path)
+    with pytest.raises(StorageError, match="inside"):
+        store.init_project(tmp_path / "Данные", "x1", [xlsx], [tpl])
+
+
+def test_resolve_by_dir_self_heals_folder(store, tmp_path, sample_pj):
+    folder = tmp_path / "projdir"
+    (folder / "Данные").mkdir(parents=True)
+    store.save(sample_pj, name="projdir")
+    assert store.load("projdir").folder is None
+    pj, _ = store.resolve_project(folder)
+    assert pj.folder == str(folder.resolve())
+    assert store.load("projdir").folder == str(folder.resolve())
+
+
+def test_project_folder_prefers_pj_over_recent(store, tmp_path, sample_pj):
+    from stanok.services.storage import project_folder
+
+    folder = tmp_path / "pfd"
+    folder.mkdir()
+    pj = sample_pj.model_copy(update={"folder": str(folder)})
+    store.save(pj, name="pf")
+    store.add_recent(str(tmp_path / "other"), "pf")
+    pj2, cp = store.resolve_project("pf")
+    assert project_folder("pf", pj2, cp, store) == folder.resolve()
+
+
+def test_project_folder_stale_then_relocate(store, tmp_path, sample_pj):
+    from stanok.services.storage import project_folder
+
+    pj = sample_pj.model_copy(update={"folder": str(tmp_path / "gone")})
+    store.save(pj, name="p1")
+    pj2, cp = store.resolve_project("p1")
+    with pytest.raises(StorageError, match="folder not found"):
+        project_folder("p1", pj2, cp, store)
+    new = tmp_path / "newhome"
+    new.mkdir()
+    store.set_project_folder("p1", new)
+    pj3, cp3 = store.resolve_project("p1")
+    assert project_folder("p1", pj3, cp3, store) == new.resolve()
+    assert any(r.config == "p1" for r in store.get_recent())
+
+
+def test_project_folder_legacy_recent_fallback(store, tmp_path, sample_pj):
+    from stanok.services.storage import project_folder
+
+    folder = tmp_path / "legacyf"
+    folder.mkdir()
+    store.save(sample_pj, name="lg")  # no folder field
+    store.add_recent(str(folder), "lg")
+    pj, cp = store.resolve_project("lg")
+    assert pj.folder is None
+    assert project_folder("lg", pj, cp, store) == folder.resolve()
+
+
+def test_list_named_sorted(store, sample_pj):
+    store.save(sample_pj, name="zebra")
+    store.save(sample_pj, name="alpha")
+    assert [n for n, _ in store.list_named()] == ["alpha", "zebra"]
+
+
+def test_list_named_skips_invalid(store, sample_pj):
+    store.save(sample_pj, name="ok")
+    (store.home_dir / "bad.stanok").write_text("{broken")
+    assert [n for n, _ in store.list_named()] == ["ok"]
+
+
+def test_touch_recent_resolves_folder(store, tmp_path, sample_pj):
+    folder = tmp_path / "tf"
+    folder.mkdir()
+    store.save(sample_pj.model_copy(update={"folder": str(folder)}), name="tf")
+    store.touch_recent("tf")
+    assert any(
+        r.config == "tf" and r.folder == str(folder.resolve())
+        for r in store.get_recent()
+    )
+
+
+def test_touch_recent_no_folder_noop(store, sample_pj):
+    store.save(sample_pj, name="nf")
+    store.touch_recent("nf")
+    assert store.get_recent() == []
+
+
+def test_resolve_name_via_recent_legacy(store, tmp_path):
+    folder = tmp_path / "legproj"
+    folder.mkdir()
+    (folder / "project.stanok").write_text(json.dumps({
+        "version": "0.0.0",
+        "templates": {"t1": {"file": "t.docx", "fields": {}}},
+        "data_sources": [],
+        "counters": {},
+        "filename_template": "out.docx",
+    }))
+    store.add_recent(str(folder), "legproj")
+    pj, cp = store.resolve_project("legproj")
+    assert pj.folder == str(folder.resolve())
+    assert cp.stem == "legproj"
+
+
+def test_resolve_dir_without_config_raises(store, tmp_path):
+    empty = tmp_path / "emptydir"
+    empty.mkdir()
+    with pytest.raises(StorageError, match="project not found"):
+        store.resolve_project(empty)

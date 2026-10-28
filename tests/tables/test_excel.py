@@ -94,13 +94,23 @@ def test_duplicate_headers_raises(tmp_path):
         ExcelReader().read(path)
 
 
-def test_empty_header_in_middle_raises(tmp_path):
+def test_empty_header_in_middle_skipped(tmp_path):
     path = _make_xlsx(tmp_path / "gap.xlsx", [["a", None, "b"], [1, 2, 3]])
-    with pytest.raises(
-        TableReadError,
-        match=re.escape(STRINGS.TBL_BLANK_HEADER.format(column="B")),
-    ):
-        ExcelReader().read(path)
+    reader = ExcelReader()
+    result = reader.read(path)
+    assert result == [{"a": 1, "b": 3}]
+    assert reader.skipped_columns[path] == ["B"]
+
+
+def test_multiple_empty_headers_skipped(tmp_path):
+    path = _make_xlsx(
+        tmp_path / "gaps.xlsx",
+        [["a", None, "b", None, "c"], [1, 2, 3, 4, 5]],
+    )
+    reader = ExcelReader()
+    result = reader.read(path)
+    assert result == [{"a": 1, "b": 3, "c": 5}]
+    assert reader.skipped_columns[path] == ["B", "D"]
 
 
 def test_trailing_empty_headers_trimmed(tmp_path):

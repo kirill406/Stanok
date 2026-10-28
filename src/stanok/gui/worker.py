@@ -8,8 +8,16 @@ import logging
 
 from PyQt5.QtCore import QThread, pyqtSignal
 
-from ..services.generate import GenerateCommand, GenerateReport, generate_documents
-from ..services.storage import ProjectStore
+from ..engine.render import RenderError
+from ..engine.resolve import ResolveError
+from ..engine.schema import SchemaError
+from ..services.generate import (
+    GenerateCommand,
+    GenerateReport,
+    TemplateError,
+    generate_documents,
+)
+from ..services.storage import ProjectStore, StorageError
 
 logger = logging.getLogger(__name__)
 
@@ -45,12 +53,32 @@ class GenerateWorker(QThread):
 
     def _execute(self) -> None:
         """Generate body (also callable directly in tests, same-thread)."""
+        logger.debug(
+            f"worker starting: ref={self._cmd.project_ref} "
+            f"template={self._cmd.template or 'default'}"
+        )
         try:
             report: GenerateReport = generate_documents(
                 self._cmd, store=self._store, progress=self._on_progress
             )
-        except Exception as e:
+        except (
+            TemplateError,
+            StorageError,
+            ResolveError,
+            RenderError,
+            SchemaError,
+        ) as e:
             logger.error(f"worker failed: {e}", exc_info=True)
             self.failed.emit(str(e))
             return
+        except Exception as e:
+            logger.critical(
+                f"worker unexpected failure: {e}", exc_info=True
+            )
+            self.failed.emit(str(e))
+            return
+        logger.debug(
+            f"worker finished: created={report.created} "
+            f"errors={len(report.errors)}"
+        )
         self.finished.emit(report)

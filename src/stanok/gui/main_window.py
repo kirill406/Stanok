@@ -19,15 +19,21 @@ from PyQt5.QtWidgets import (
     QProgressBar,
     QProgressDialog,
     QPushButton,
+    QSpinBox,
     QVBoxLayout,
     QWidget,
     QFileDialog,
 )
 
 from ..services.generate import GenerateCommand, GenerateReport
+from ..engine.schema import SchemaError
 from ..services.storage import ProjectStore, StorageError
+from .dialogs import ask_yes_no
 from .project_dialog import ProjectDialog
+from .report_text import done_text
 from .strings import STRINGS
+from .theme import set_button_role
+from .widgets import ElidedLabel
 from .worker import GenerateWorker
 
 logger = logging.getLogger(__name__)
@@ -55,19 +61,37 @@ class MainWindow(QMainWindow):
         self.resize(900, 650)
         root = QWidget(self)
         layout = QVBoxLayout(root)
+        layout.setContentsMargins(24, 20, 24, 20)
+        layout.setSpacing(12)
+
+        title = QLabel(STRINGS.MAIN_TITLE, root)
+        title.setObjectName("appTitle")
+        layout.addWidget(title)
+        subtitle = QLabel(STRINGS.MAIN_SUBTITLE, root)
+        subtitle.setObjectName("appSubtitle")
+        layout.addWidget(subtitle)
 
         group = QGroupBox(STRINGS.MAIN_PROJECT_GROUP, root)
         group_layout = QVBoxLayout(group)
+        group_layout.setContentsMargins(14, 18, 14, 14)
+        group_layout.setSpacing(10)
         self.recent_list = QListWidget(group)
+        self.recent_list.setSpacing(4)
         self.recent_list.itemClicked.connect(self._on_row_clicked)
         group_layout.addWidget(self.recent_list)
+        self.empty_label = QLabel(STRINGS.MAIN_EMPTY, group)
+        self.empty_label.setObjectName("muted")
+        self.empty_label.setWordWrap(True)
+        self.empty_label.setAlignment(Qt.AlignCenter)
+        group_layout.addWidget(self.empty_label)
 
         buttons = QHBoxLayout()
+        buttons.setSpacing(8)
         self.generate_all_btn = QPushButton(STRINGS.MAIN_GENERATE_ALL, group)
-        self.generate_all_btn.setStyleSheet("background-color: #2e7d32; color: white;")
+        set_button_role(self.generate_all_btn, "primary")
         self.generate_all_btn.clicked.connect(self._on_generate_all)
         buttons.addWidget(self.generate_all_btn)
-        self.browse_btn = QPushButton(STRINGS.MAIN_BROWSE, group)
+        self.browse_btn = QPushButton(STRINGS.MAIN_OPEN, group)
         self.browse_btn.clicked.connect(self._on_browse)
         buttons.addWidget(self.browse_btn)
         self.create_btn = QPushButton(STRINGS.MAIN_CREATE, group)
@@ -77,7 +101,7 @@ class MainWindow(QMainWindow):
         self.settings_btn.clicked.connect(self._on_settings)
         buttons.addWidget(self.settings_btn)
         group_layout.addLayout(buttons)
-        layout.addWidget(group)
+        layout.addWidget(group, 1)
 
         self.progress_bar = QProgressBar(root)
         self.progress_bar.setRange(0, 100)
@@ -92,60 +116,157 @@ class MainWindow(QMainWindow):
         """Reload recent-projects list, one row per project + button."""
         self.recent_list.clear()
         for item in self._store.get_recent():
-            label = f"{item.folder} [{item.config}]"
             entry = QListWidgetItem(self.recent_list)
-            entry.setData(Qt.UserRole, item.folder)
+            entry.setData(Qt.UserRole, item.config)
             row = QWidget()
             row_layout = QHBoxLayout(row)
-            row_layout.setContentsMargins(4, 2, 4, 2)
-            name = QLabel(label, row)
-            row_layout.addWidget(name, 1)
+            row_layout.setContentsMargins(8, 6, 8, 6)
+            row_layout.setSpacing(10)
+            identity = QVBoxLayout()
+            identity.setSpacing(1)
+            name = ElidedLabel(item.config, row, Qt.ElideRight)
+            name.setObjectName("rowTitle")
+            path = ElidedLabel(item.folder, row, Qt.ElideMiddle)
+            path.setObjectName("rowSubtitle")
+            path.setToolTip(item.folder)
+            identity.addWidget(name)
+            identity.addWidget(path)
+            row_layout.addLayout(identity, 1)
+            self._add_template_controls(row, row_layout, item.config)
             btn = QPushButton(STRINGS.MAIN_GENERATE, row)
             btn.clicked.connect(
-                lambda _checked=False, ref=item.folder: self._on_generate_one(ref)
+                lambda _checked=False, ref=item.config: self._on_generate_one(ref)
             )
             row_layout.addWidget(btn)
+            rm_btn = QPushButton(STRINGS.MAIN_REMOVE, row)
+            rm_btn.clicked.connect(
+                lambda _checked=False, folder=item.folder, config=item.config: self._on_remove_recent(
+                    folder, config
+                )
+            )
+            row_layout.addWidget(rm_btn)
             entry.setSizeHint(row.sizeHint())
             self.recent_list.addItem(entry)
             self.recent_list.setItemWidget(entry, row)
+        has_recent = self.recent_list.count() > 0
+        self.recent_list.setVisible(has_recent)
+        self.empty_label.setVisible(not has_recent)
 
-    def _on_browse(self) -> None:
-        folder = QFileDialog.getExistingDirectory(self, STRINGS.MAIN_BROWSE)
-        if not folder:
-            return
+    def _add_template_controls(self, row: QWidget, layout: QHBoxLayout, ref: str) -> None:
+        """Show the default template name + editable limit before «Сгенерировать»."""
         try:
-            self._store.resolve_project(folder)
-        except StorageError as e:
-            logger.warning(f"open project {folder}: {e}", exc_info=True)
-            if e.path == "resolve":
-                self._show_error(
-                    f"{STRINGS.MAIN_ERROR_TITLE}: "
-                    f"{STRINGS.MAIN_NO_PROJECT} ({folder})"
-                )
-            else:
-                self._show_error(f"{STRINGS.MAIN_ERROR_TITLE}: {e}")
+            pj, _ = self._store.resolve_project(ref)
+            template = pj.default_template
+            limit = pj.templates[template].limit
+        except (StorageError, SchemaError, OSError, ValueError) as e:
+            logger.warning(f"default template of {ref}: {e}", exc_info=True)
+            layout.addWidget(QLabel(STRINGS.MAIN_TPL_UNAVAILABLE, row))
             return
         except Exception as e:
-            logger.warning(f"open project {folder}: {e}", exc_info=True)
-            self._show_error(f"{STRINGS.MAIN_ERROR_TITLE}: {e}")
+            logger.critical(
+                f"unexpected default template of {ref}: {e}", exc_info=True
+            )
+            layout.addWidget(QLabel(STRINGS.MAIN_TPL_UNAVAILABLE, row))
             return
-        resolved = str(Path(folder).resolve())
-        self._store.add_recent(resolved, Path(folder).resolve().name)
+        layout.addWidget(QLabel(STRINGS.MAIN_TPL.format(name=template), row))
+        spin = QSpinBox(row)
+        spin.setRange(0, 1_000_000)
+        spin.setValue(limit)
+        spin.setToolTip(STRINGS.MAIN_TPL_LIMIT_TIP)
+        spin.valueChanged.connect(
+            lambda value, r=ref, t=template: self._on_row_limit_changed(r, t, value)
+        )
+        layout.addWidget(spin)
+
+    def _on_row_limit_changed(self, ref: str, template: str, value: int) -> None:
+        """Persist a row's default-template limit as soon as it changes."""
+        try:
+            self._store.set_template_limit(ref, template, value)
+        except (StorageError, SchemaError, OSError, ValueError) as e:
+            logger.warning(
+                f"set template limit {ref}/{template}: {e}", exc_info=True
+            )
+            self._show_error(f"{STRINGS.MAIN_ERROR_TITLE}: {e}")
+        except Exception as e:
+            logger.critical(
+                f"unexpected set template limit {ref}/{template}: {e}",
+                exc_info=True,
+            )
+            self._show_error(f"{STRINGS.MAIN_ERROR_TITLE}: {e}")
+
+    def _on_browse(self) -> None:
+        """Pick a project from the known list (open by config name)."""
+        from .open_project_dialog import OpenProjectDialog
+
+        dialog = OpenProjectDialog(self._store, self)
+        accepted = dialog.exec_()
+        # Import inside the dialog adds recent entries even when it is cancelled.
         self.refresh_recent()
+        if not accepted:
+            return
+        config = dialog.selected_config
+        if not config:
+            return
+        created = getattr(dialog, "created_config", "") == config
+        self._store.touch_recent(config)
+        self.refresh_recent()
+        self._open_project_dialog(config, highlight_new=created)
 
     def _on_row_clicked(self, item: QListWidgetItem) -> None:
         self._open_project_dialog(item.data(Qt.UserRole))
 
-    def _open_project_dialog(self, ref: str) -> None:
-        """Open window 2 (ProjectDialog, 009)."""
+    def _on_remove_recent(self, folder: str, config: str) -> None:
+        """Drop one entry from recent list (project itself untouched)."""
+        self._store.remove_recent(folder, config)
+        self.refresh_recent()
+
+    def _open_project_dialog(self, ref: str, *, highlight_new: bool = False) -> None:
+        """Open window 2 (ProjectDialog, 009) by config name."""
         try:
-            dialog = ProjectDialog(ref, self._store, self)
-        except Exception as e:
+            dialog = ProjectDialog(
+                ref, self._store, self, highlight_new=highlight_new
+            )
+        except StorageError as e:
             logger.warning(f"open project dialog {ref}: {e}", exc_info=True)
+            if "folder not found" in str(e):
+                self._offer_relocate(ref)
+            else:
+                self._show_error(f"{STRINGS.MAIN_ERROR_TITLE}: {e}")
+            return
+        except Exception as e:
+            logger.critical(
+                f"unexpected open project dialog {ref}: {e}", exc_info=True
+            )
             self._show_error(f"{STRINGS.MAIN_ERROR_TITLE}: {e}")
             return
         dialog.exec_()
         self.refresh_recent()
+
+    def _offer_relocate(self, ref: str) -> None:
+        """Missing project folder: let the user pick a new one (020 risk)."""
+        if not ask_yes_no(
+            self,
+            STRINGS.MAIN_ERROR_TITLE,
+            STRINGS.MAIN_FOLDER_MISSING.format(name=ref),
+        ):
+            return
+        folder = QFileDialog.getExistingDirectory(self, STRINGS.MAIN_FIND_FOLDER)
+        if not folder:
+            return
+        try:
+            self._store.set_project_folder(ref, folder)
+        except (StorageError, SchemaError, OSError, ValueError) as e:
+            logger.warning(f"relocate project {ref}: {e}", exc_info=True)
+            self._show_error(f"{STRINGS.MAIN_ERROR_TITLE}: {e}")
+            return
+        except Exception as e:
+            logger.critical(
+                f"unexpected relocate project {ref}: {e}", exc_info=True
+            )
+            self._show_error(f"{STRINGS.MAIN_ERROR_TITLE}: {e}")
+            return
+        self.refresh_recent()
+        self._open_project_dialog(ref)
 
     def _on_settings(self) -> None:
         """Open settings dialog (018); keeps import lazy like create (tests)."""
@@ -160,10 +281,14 @@ class MainWindow(QMainWindow):
         from .create_dialog import CreateDialog
 
         recent = self._store.get_recent()
-        hint = recent[-1].folder if recent else str(Path.home())
+        # get_recent() is newest-first: the hint comes from the latest project.
+        hint = str(Path(recent[0].folder).parent) if recent else str(Path.home())
         dialog = CreateDialog(self._store, hint, self)
         if dialog.exec_():
             self.refresh_recent()
+            name = getattr(dialog, "project_name", "")
+            if name:
+                self._open_project_dialog(name, highlight_new=True)
 
     # -- generation queue ---------------------------------------------------
     def _on_generate_one(self, ref: str) -> None:
@@ -239,12 +364,7 @@ class MainWindow(QMainWindow):
             if isinstance(result, str):
                 self._show_error(f"{STRINGS.MAIN_ERROR_TITLE}: {result}")
             else:
-                text = STRINGS.APP_DONE.format(
-                    created=result.created,
-                    skipped=result.skipped,
-                    errors=len(result.errors),
-                    elapsed=f"{result.elapsed:.1f}",
-                )
+                text = done_text(result)
                 if result.errors:
                     details = "\n".join(f"{i}: {msg}" for i, msg in result.errors)
                     QMessageBox.information(
@@ -258,15 +378,7 @@ class MainWindow(QMainWindow):
                 if isinstance(result, str):
                     lines.append(f"{ref}: {STRINGS.MAIN_ERROR_TITLE}: {result}")
                 else:
-                    lines.append(
-                        f"{ref}: "
-                        + STRINGS.APP_DONE.format(
-                            created=result.created,
-                            skipped=result.skipped,
-                            errors=len(result.errors),
-                            elapsed=f"{result.elapsed:.1f}",
-                        )
-                    )
+                    lines.append(f"{ref}: {done_text(result)}")
             QMessageBox.information(
                 self, STRINGS.MAIN_SUMMARY_TITLE, "\n".join(lines)
             )

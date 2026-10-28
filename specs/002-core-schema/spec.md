@@ -34,10 +34,12 @@ class FieldSource(str, Enum):
 class FieldDef(BaseModel):
     source: FieldSource
     value: Any = None        # для CONSTANT — само значение; для TABLE — имя колонки
+    table: str | None = None # 020: файл источника колонки; None — любой (legacy)
 
 class CounterDef(BaseModel):
     last: int = 0
-    format: str = "plain"    # plain | month (ГГГГ-ММ-###)
+    format: str = "1"        # 020: ширина 1|01|001|0001
+    table: str | None = None # 020: привязка к источнику; None — везде
 
 class TemplateDef(BaseModel):
     file: str                # относительный путь в Шаблоны/

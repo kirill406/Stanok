@@ -29,13 +29,13 @@
 
 ## Versioning (Semantic Versioning 2.0.0, https://semver.org/)
 - Format `MAJOR.MINOR.PATCH`: MAJOR — incompatible changes, MINOR — backwards-compatible features, PATCH — bug fixes
-- `0.y.z` (current `0.0.0`): anything may change without MINOR/MAJOR bump discipline; `1.0.0` marks first stable API/GUI contract
+- `0.y.z` (current `0.2.0-alpha`): anything may change without MINOR/MAJOR bump discipline; `1.0.0` marks first stable API/GUI contract
 - Single source of truth: `pyproject.toml` version only; `src/stanok/__init__.py` reads it from installed metadata (`importlib.metadata`), no manual sync — bump the version in `pyproject.toml` alone
 - Pre-releases as `1.0.0-alpha`, `-beta`, `-rc.1` when testing exe with users before stable
 - Release flow: move `CHANGELOG.md [Unreleased]` entries under new version header with date, bump version in both places, tag `git tag vX.Y.Z`, push tag
 - Never Bump version in feature branches — only in release commits on `main`
 
-### Development stages (current: Pre-alpha, `0.1.0`)
+### Development stages (current: Alpha, `0.2.0-alpha`)
 - Planning — name reserved, scope outlined; usually no version yet
 - Pre-alpha — working sketch; architecture may change anytime; `0.x.y`
 - Alpha — architecture settled; inner circle can use it; testing toward product
@@ -45,9 +45,16 @@
 ## Prohibitions (AI Must Never)
 - Never Commit `.env` or any file with real credentials
 - Never Use `print()` for logging — use Python `logging` module
-- Every `except Exception as e` must log with the original level + `exc_info=True` in an f-string 
-  with cause-identifying context: `logger.warning/debug/error(f'<what+context>: {e}', exc_info=True)`;
-  catch the specific expected error first, then the generic `Exception`, logging both
+- Never Allow a silent crash: every unhandled exception must reach the log. Global
+  `sys.excepthook`, `threading.excepthook` and `qInstallMessageHandler` stay installed by `app.py`;
+  GUI errors also get a dialog, and the window stays open when state is intact
+- Never Use an overly broad `except Exception` when a concrete error is expected: catch the
+  specific exception(s) first at their real level, then the generic `Exception`. The generic branch
+  must log `CRITICAL` with cause-identifying context and `e`:
+  `logger.critical(f'<what+context>: {e}', exc_info=True)`
+- Every log call uses an f-string; no `%`-formatting or bare string concatenation
+- Add DEBUG messages for startup/exit, config load/save, source reads, generation plan/results and
+  GUI action boundaries; never log secrets or full personal data
 - Never Put executable logic or heavy imports (Qt) in `__init__.py` — bootstrap lives in `app.py`
 - Never Skip tests before push once `tests/` exists
 - Never Add new env var without updating `.env.example` (empty value)
@@ -59,6 +66,8 @@
 - Thin entry: `run.py` contains no logic, only `sys.path` setup + `main()` call
 - Package import is side-effect free (`import stanok` must not start anything)
 - Layers: gui → services → engine (never vice versa, never sideways); one filling mechanism (Filling JSON → docx)
+- Logging is owned by `app.py`: session START/END with app/PJ versions, mode, PID and Home;
+  file `~/.stanok/stanok.log`; global exception hooks and Qt message routing stay installed
 - Prefer graphics over prose for structures: mermaid diagrams for layers, flows and data pipelines in docs/specs; 
   keep diagrams next to the text they explain
 - License is GPL-3.0-or-later:
@@ -80,7 +89,7 @@
 ## Workflow
 - Before working: `git pull`
 - Branch naming: `feat/<short-desc>`, `hotfix/<issue-desc>`, `release/<release-num>`
-- Branching model: simplified git-flow (https://nvie.com/posts/a-successful-git-branching-model/): `main` is always releasable, work happens in short-lived branches, merge via squash after review
+- Branching model: simplified git-flow (https://nvie.com/posts/a-successful-git-branching-model/): `main` is always releasable,   work happens in short-lived branches, merge into `develop`/`main` with `git merge --no-ff` after review (merge commit keeps branch topology visible; no squash)
   - `main` — releases only (tagged `vX.Y.Z`, version bumped); never commit directly
   - `develop` — integration branch; `feat/*` and `fix/*` branch off it and merge back via squash after review
   - `release/*` — stabilization before tagging to `main`; `hotfix/*` — urgent fixes to `main`, then merged back into `develop`
@@ -91,9 +100,9 @@
   trufflehog3 secrets scan (excludes `venv/`, `uv.lock`) + `pytest tests/ -q` when tests exist;
   never commit with `--no-verify` without asking
 - Build exe (when GUI lands; `Станок.spec` is gitignored, not in repo): 
-  `pyinstaller --onefile --windowed --name Станок --paths src run.py`
+  `pyinstaller --onefile --windowed --name Станок --paths src --icon src/stanok/gui/icon.ico --add-data "src/stanok/gui/icon.png;stanok/gui" run.py`
 - Open PR: one logical change per PR, link to spec item
-- Squash merge to main after review
+- Merge with `git merge --no-ff` after review (no squash, no fast-forward)
 - Separate refactoring from features into different commits/branches
 - **After feature implementation: check docs/ and README.md for consistency with changes; update if needed**
 

@@ -326,155 +326,26 @@ def test_settings_opens_dialog(qapp, tmp_path, store, monkeypatch):
 
 
 def test_create_dialog_hint_uses_latest_recent(qapp, tmp_path, store, monkeypatch):
-    import stanok.gui.create_dialog as cd
+    import stanok.gui.project_start_dialog as cd
 
     store.add_recent(str(tmp_path / "old" / "P1"), "old")
     store.add_recent(str(tmp_path / "new" / "P2"), "new")
     hints = []
 
     class FakeCreate:
+        project_name = ""
+
         def __init__(self, _store, hint, *a, **k):
             hints.append(hint)
 
         def exec_(self):
             return False
 
-    monkeypatch.setattr(cd, "CreateDialog", FakeCreate)
+    monkeypatch.setattr(cd, "ProjectStartDialog", FakeCreate)
     win = MainWindow(store=store)
     win._on_create()
     assert hints == [str(tmp_path / "new")]
     win.close()
-
-
-def test_create_dialog_builds_project(qapp, tmp_path, store, monkeypatch):
-    from tests.services.test_storage import _src_files
-
-    from stanok.gui.create_dialog import CreateDialog
-
-    xlsx, tpl = _src_files(tmp_path)
-    monkeypatch.setattr(QMessageBox, "warning", lambda *a: None)
-    monkeypatch.setattr("stanok.gui.create_dialog.ask_yes_no", lambda *a, **k: True)
-    dlg = CreateDialog(store, str(tmp_path), None)
-    assert not dlg.create_btn.isEnabled()
-    dlg.name_edit.setText("nov")
-    assert not dlg.create_btn.isEnabled()
-    dlg.folder_edit.setText(str(tmp_path / "proj"))
-    dlg.xlsx_list.addItem(str(xlsx))
-    dlg.docx_list.addItem(str(tpl))
-    dlg._update_create_enabled()
-    assert dlg.create_btn.isEnabled()
-    dlg._on_create()
-    assert dlg.result()
-    assert (tmp_path / "proj" / "nov" / "Данные" / "data.xlsx").is_file()
-    assert (tmp_path / "proj" / "nov" / "Результат").is_dir()
-    assert any(r.config == "nov" for r in store.get_recent())
-    dlg.close()
-
-
-def test_create_dialog_name_taken_disabled(qapp, tmp_path, store, monkeypatch):
-    from tests.services.test_storage import _src_files
-
-    from stanok.gui.create_dialog import CreateDialog
-
-    xlsx, tpl = _src_files(tmp_path)
-    store.init_project(tmp_path / "proj", "dup", [xlsx], [tpl])
-    dlg = CreateDialog(store, str(tmp_path), None)
-    dlg.folder_edit.setText(str(tmp_path / "other"))
-    dlg.xlsx_list.addItem(str(xlsx))
-    dlg.docx_list.addItem(str(tpl))
-    dlg.name_edit.setText("dup")
-    dlg._update_create_enabled()
-    assert not dlg.create_btn.isEnabled()
-    assert STRINGS.CRT_NAME_TAKEN.format(name="dup") == dlg.path_label.text()
-    dlg.close()
-
-
-def test_create_dialog_bad_dir_disabled(qapp, tmp_path, store):
-    from tests.services.test_storage import _src_files
-
-    from stanok.gui.create_dialog import CreateDialog
-
-    xlsx, tpl = _src_files(tmp_path)
-    dlg = CreateDialog(store, str(tmp_path), None)
-    dlg.xlsx_list.addItem(str(xlsx))
-    dlg.docx_list.addItem(str(tpl))
-    dlg.name_edit.setText("p")
-    dlg.folder_edit.setText(str(tmp_path / "Данные"))
-    dlg._update_create_enabled()
-    assert not dlg.create_btn.isEnabled()
-    assert "Данные" in dlg.path_label.text()
-    dlg.close()
-
-
-def test_create_dialog_preview_path(qapp, tmp_path, store):
-    from stanok.gui.create_dialog import CreateDialog
-
-    dlg = CreateDialog(store, str(tmp_path), None)
-    dlg.name_edit.setText("p")
-    dlg.folder_edit.setText(str(tmp_path / "box"))
-    dlg._update_create_enabled()
-    text = dlg.path_label.text()
-    base = tmp_path / "box" / "p"
-    assert str(base) in text
-    assert str(base / "Данные") in text
-    assert str(base / "Шаблоны") in text
-    assert str(base / "Результат") in text
-    dlg.close()
-
-
-def test_create_dialog_mkdir_accepted(qapp, tmp_path, store, monkeypatch):
-    from tests.services.test_storage import _src_files
-
-    from stanok.gui.create_dialog import CreateDialog
-
-    xlsx, tpl = _src_files(tmp_path)
-    monkeypatch.setattr(QMessageBox, "warning", lambda *a: None)
-    monkeypatch.setattr("stanok.gui.create_dialog.ask_yes_no", lambda *a, **k: True)
-    dlg = CreateDialog(store, str(tmp_path), None)
-    dlg.name_edit.setText("nov")
-    dlg.folder_edit.setText(str(tmp_path / "base"))
-    dlg.xlsx_list.addItem(str(xlsx))
-    dlg.docx_list.addItem(str(tpl))
-    dlg._on_create()
-    assert dlg.result()
-    assert (tmp_path / "base" / "nov" / "Данные" / "data.xlsx").is_file()
-    dlg.close()
-
-
-def test_create_dialog_mkdir_declined(qapp, tmp_path, store, monkeypatch):
-    from tests.services.test_storage import _src_files
-
-    from stanok.gui.create_dialog import CreateDialog
-
-    xlsx, tpl = _src_files(tmp_path)
-    monkeypatch.setattr("stanok.gui.create_dialog.ask_yes_no", lambda *a, **k: False)
-    dlg = CreateDialog(store, str(tmp_path), None)
-    dlg.name_edit.setText("nov")
-    dlg.folder_edit.setText(str(tmp_path / "missing"))
-    dlg.xlsx_list.addItem(str(xlsx))
-    dlg.docx_list.addItem(str(tpl))
-    dlg._on_create()
-    assert not dlg.result()
-    assert not (tmp_path / "missing").exists()
-    dlg.close()
-
-
-def test_create_dialog_shows_error(qapp, tmp_path, store, monkeypatch):
-    warnings = []
-    monkeypatch.setattr(
-        QMessageBox, "warning", lambda *a: warnings.append(a[-1])
-    )
-
-    from stanok.gui.create_dialog import CreateDialog
-
-    monkeypatch.setattr("stanok.gui.create_dialog.ask_yes_no", lambda *a, **k: True)
-    dlg = CreateDialog(store, str(tmp_path), None)
-    dlg.name_edit.setText("  ")
-    dlg.folder_edit.setText(str(tmp_path / "proj"))
-    dlg._on_create()
-    assert warnings
-    assert not dlg.result()
-    dlg.close()
 
 
 def test_create_dialog_settings_mode(qapp, tmp_path, store):
@@ -498,14 +369,6 @@ def test_create_dialog_settings_mode(qapp, tmp_path, store):
     assert dlg.result()
     pj = store.load("proj")
     assert pj.folder == str(new_folder.resolve())
-    dlg.close()
-
-
-def test_create_dialog_create_mode_has_no_orphan_widgets(qapp, tmp_path, store):
-    from stanok.gui.create_dialog import CreateDialog
-
-    dlg = CreateDialog(store, str(tmp_path), None)
-    assert dlg.findChildren(QComboBox) == []
     dlg.close()
 
 
@@ -624,43 +487,21 @@ def test_worker_cancel_after_first(qapp, tmp_path, store):
     assert box["report"].created == 1
 
 
-def test_create_dialog_file_slots(qapp, tmp_path, store, monkeypatch):
-    from PyQt5.QtWidgets import QFileDialog
-
-    from stanok.gui.create_dialog import CreateDialog
-
-    monkeypatch.setattr(
-        QFileDialog, "getOpenFileNames",
-        lambda *a, **k: (["/tmp/a.xlsx", "/tmp/a.xlsx", "/tmp/b.xlsx"], ""),
-    )
-    monkeypatch.setattr(
-        QFileDialog, "getExistingDirectory",
-        lambda *a, **k: "/tmp/proj",
-    )
-    dlg = CreateDialog(store, "", None)
-    dlg._on_add_files(dlg.xlsx_list, "Excel (*.xlsx)")
-    assert dlg.xlsx_list.count() == 2
-    dlg.xlsx_list.setCurrentRow(0)
-    dlg._on_remove_selected(dlg.xlsx_list)
-    assert dlg.xlsx_list.count() == 1
-    dlg._on_browse_folder()
-    assert dlg.folder_edit.text() == "/tmp/proj"
-    dlg.close()
-
-
 def test_main_create_opens_dialog(qapp, tmp_path, store, monkeypatch):
-    import stanok.gui.create_dialog as cd
+    import stanok.gui.project_start_dialog as cd
 
     opened = {}
 
     class FakeDialog:
+        project_name = ""
+
         def __init__(self, *a, **k):
             opened["args"] = a
 
         def exec_(self):
             return True
 
-    monkeypatch.setattr(cd, "CreateDialog", FakeDialog)
+    monkeypatch.setattr(cd, "ProjectStartDialog", FakeDialog)
     store.add_recent(str(tmp_path), "old")
     win = MainWindow(store=store)
     refreshed = []
@@ -671,7 +512,7 @@ def test_main_create_opens_dialog(qapp, tmp_path, store, monkeypatch):
 
 
 def test_main_create_opens_window2(qapp, tmp_path, store, monkeypatch):
-    import stanok.gui.create_dialog as cd
+    import stanok.gui.project_start_dialog as cd
     import stanok.gui.main_window as mw
 
     opened = {}
@@ -685,7 +526,7 @@ def test_main_create_opens_window2(qapp, tmp_path, store, monkeypatch):
         def exec_(self):
             return True
 
-    monkeypatch.setattr(cd, "CreateDialog", FakeDialog)
+    monkeypatch.setattr(cd, "ProjectStartDialog", FakeDialog)
     monkeypatch.setattr(
         mw,
         "ProjectDialog",

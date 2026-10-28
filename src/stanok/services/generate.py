@@ -128,8 +128,9 @@ def _check_table_columns(
 def _save_document(doc: Document, out_dir: Path, dist: str, row_index: int) -> Path:
     """Save rendered doc under out_dir/dist with unique name (FR-11)."""
     target = (out_dir / dist).resolve()
-    if not target.suffix:
-        target = target.with_suffix(".docx")
+    # Append, not replace: "Договор №1.2" must keep its dots.
+    if target.suffix.lower() != ".docx":
+        target = target.with_name(target.name + ".docx")
     try:
         target.relative_to(out_dir.resolve())
     except ValueError:

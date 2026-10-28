@@ -199,7 +199,10 @@ class MainWindow(QMainWindow):
         from .open_project_dialog import OpenProjectDialog
 
         dialog = OpenProjectDialog(self._store, self)
-        if not dialog.exec_():
+        accepted = dialog.exec_()
+        # Import inside the dialog adds recent entries even when it is cancelled.
+        self.refresh_recent()
+        if not accepted:
             return
         config = dialog.selected_config
         if not config:
@@ -278,7 +281,8 @@ class MainWindow(QMainWindow):
         from .create_dialog import CreateDialog
 
         recent = self._store.get_recent()
-        hint = str(Path(recent[-1].folder).parent) if recent else str(Path.home())
+        # get_recent() is newest-first: the hint comes from the latest project.
+        hint = str(Path(recent[0].folder).parent) if recent else str(Path.home())
         dialog = CreateDialog(self._store, hint, self)
         if dialog.exec_():
             self.refresh_recent()

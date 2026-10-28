@@ -418,6 +418,15 @@ def test_save_document_escape_rejected(tmp_path):
         _save_document(DocxDocument(), tmp_path, "../evil.docx", 0)
 
 
+def test_save_document_keeps_dots_in_name(tmp_path):
+    from stanok.services.generate import _save_document
+
+    path = _save_document(DocxDocument(), tmp_path, "Договор №1.2", 1)
+    assert path.name == "Договор №1.2.docx"
+    path = _save_document(DocxDocument(), tmp_path, "Акт.docx", 2)
+    assert path.name == "Акт.docx"
+
+
 def test_progress_callback_error_ignored(tmp_path, store):
     folder = make_project(tmp_path / "proj", rows=(("А", 1),))
 

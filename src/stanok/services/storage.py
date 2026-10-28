@@ -650,17 +650,22 @@ class ProjectStore:
             aj = validate_aj(data)
             key = (folder, config)
             aj.recent = [r for r in aj.recent if (r.folder, r.config) != key]
-            # Append at end (file order oldest-first; validator reverses on read)
-            aj.recent.append(
+            # In memory newest-first (validator order): new entry goes on top.
+            aj.recent.insert(
+                0,
                 RecentItem(
                     folder=folder, config=config, opened_at=datetime.now()
-                )
+                ),
             )
-            aj.recent = aj.recent[-10:]
-            self._atomic_write_json(
-                self.home_dir / "settings.json", aj.model_dump(mode="json")
-            )
+            aj.recent = aj.recent[:10]
+            self._write_settings(aj)
             logger.info(f"updated recent projects, count={len(aj.recent)}")
+
+    def _write_settings(self, aj: ApplicationJSON) -> None:
+        """Write settings.json; `recent` is stored oldest-first on disk."""
+        data = aj.model_dump(mode="json")
+        data["recent"].reverse()
+        self._atomic_write_json(self.home_dir / "settings.json", data)
 
 
     def init_project(
@@ -874,9 +879,7 @@ class ProjectStore:
                 for r in aj.recent
                 if (r.folder, r.config) != (folder, config)
             ]
-            self._atomic_write_json(
-                self.home_dir / "settings.json", aj.model_dump(mode="json")
-            )
+            self._write_settings(aj)
             logger.info(f"removed recent project {config}")
 
     def get_setting(self, key: str, default=None):
@@ -907,9 +910,7 @@ class ProjectStore:
             data = self._read_json(settings_file) if settings_file.exists() else {}
             aj = validate_aj(data)
             aj.settings[key] = value
-            self._atomic_write_json(
-                self.home_dir / "settings.json", aj.model_dump(mode="json")
-            )
+            self._write_settings(aj)
             logger.info(f"updated setting {key}")
 
     def add_template(
@@ -1043,6 +1044,26 @@ class ProjectStore:
             )
             return rel
 
+    @staticmethod
+    def _remove_project_folder(folder: Path) -> None:
+        """Remove the project's own dirs; the whole folder only if nothing else is in it.
+
+        Own dirs: Данные, Шаблоны, Результат. Any other file or folder means
+        the user keeps their data, so only the own dirs are removed.
+        """
+        own = (STRINGS.DATA_DIR, STRINGS.TPL_DIR, STRINGS.GEN_RESULT_DIR)
+        extra = [
+            p for p in folder.iterdir() if not (p.name in own and p.is_dir())
+        ]
+        if not extra:
+            shutil.rmtree(folder)
+            return
+        logger.info(f"project folder {folder} has other content: own dirs only")
+        for name in own:
+            target = folder / name
+            if target.is_dir():
+                shutil.rmtree(target)
+
     def delete_project(self, ref: str | Path, delete_folder: bool = False) -> None:
         """Delete project config + recent entry; folder only on flag (FR-13)."""
         with self._lock:
@@ -1059,7 +1080,7 @@ class ProjectStore:
             # with a deleted config and a half-deleted project.
             if delete_folder and folder is not None and folder.exists():
                 try:
-                    shutil.rmtree(folder)
+                    self._remove_project_folder(folder)
                 except OSError as e:
                     logger.warning(f"rmtree {folder} failed: {e}")
                     raise StorageError(

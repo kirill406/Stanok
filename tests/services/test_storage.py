@@ -180,6 +180,25 @@ def test_recent_dedup(store):
     assert recent[0].config == "c1"
 
 
+def test_recent_order_survives_writes(store):
+    """Order is newest-first after add, touch, remove and settings writes."""
+    for name in ("a", "b", "c"):
+        store.add_recent(f"f{name}", name)
+    store.add_recent("fa", "a")
+    assert [r.config for r in store.get_recent()] == ["a", "c", "b"]
+    store.set_setting("k", 1)
+    assert [r.config for r in store.get_recent()] == ["a", "c", "b"]
+    store.remove_recent("fc", "c")
+    assert [r.config for r in store.get_recent()] == ["a", "b"]
+
+
+def test_recent_cap_keeps_newest_ten(store):
+    """The 11th add drops the oldest entry, never the newest one."""
+    for i in range(11):
+        store.add_recent(f"f{i}", f"p{i}")
+    assert [r.config for r in store.get_recent()] == [f"p{i}" for i in range(10, 0, -1)]
+
+
 def test_settings_persistence(store):
     """Test that settings persist across store instances."""
     store.add_recent("f1", "c1")
@@ -910,6 +929,24 @@ def test_delete_project_with_folder(store, tmp_path):
     store.delete_project(folder, delete_folder=True)
     assert not (store.home_dir / "proj.stanok").exists()
     assert not folder.exists()
+
+
+def test_delete_project_keeps_foreign_content(store, tmp_path):
+    folder = _init_simple(store, tmp_path)
+    (folder / "notes.txt").write_text("мои заметки", encoding="utf-8")
+    store.delete_project(folder, delete_folder=True)
+    assert not (store.home_dir / "proj.stanok").exists()
+    assert (folder / "notes.txt").exists()
+    for name in ("Данные", "Шаблоны", "Результат"):
+        assert not (folder / name).exists()
+
+
+def test_delete_project_keeps_foreign_folder(store, tmp_path):
+    folder = _init_simple(store, tmp_path)
+    (folder / "Архив").mkdir()
+    store.delete_project(folder, delete_folder=True)
+    assert (folder / "Архив").is_dir()
+    assert not (folder / "Данные").exists()
 
 
 def test_delete_project_missing_folder_ok(store, tmp_path):

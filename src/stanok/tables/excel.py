@@ -23,6 +23,14 @@ class TableReadError(Exception):
         super().__init__(STRINGS.TBL_READ_FAILED.format(path=path, cause=cause))
 
 
+class HeaderError(TableReadError):
+    """Header row is missing (kind="no_headers") or has duplicates ("duplicate")."""
+
+    def __init__(self, path: Path, cause: Exception, kind: str):
+        super().__init__(path, cause)
+        self.kind = kind
+
+
 class ExcelReader:
     def __init__(self) -> None:
         self.skipped_columns: dict[Path, list[str]] = {}
@@ -74,7 +82,9 @@ class ExcelReader:
         # Хвостовые пустые колонки — обрезать (обычное дело в живых файлах).
         last = max((i for i, h in enumerate(raw) if h), default=-1)
         if last < 0:
-            raise TableReadError(path, ValueError(STRINGS.TBL_NO_HEADERS))
+            raise HeaderError(
+                path, ValueError(STRINGS.TBL_NO_HEADERS), "no_headers"
+            )
         headers: list[str] = []
         indices: list[int] = []
         skipped: list[str] = []
@@ -91,9 +101,12 @@ class ExcelReader:
                 dups.add(h)
             seen.add(h)
         if dups:
-            raise TableReadError(
+            raise HeaderError(
                 path,
-                ValueError(STRINGS.TBL_DUP_HEADERS.format(headers=", ".join(sorted(dups)))),
+                ValueError(
+                    STRINGS.TBL_DUP_HEADERS.format(headers=", ".join(sorted(dups)))
+                ),
+                "duplicate",
             )
         return headers, indices, skipped
 

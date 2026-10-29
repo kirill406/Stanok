@@ -16,7 +16,6 @@ from PyQt5.QtWidgets import (
     QListWidgetItem,
     QMainWindow,
     QMessageBox,
-    QProgressBar,
     QProgressDialog,
     QPushButton,
     QSpinBox,
@@ -102,11 +101,6 @@ class MainWindow(QMainWindow):
         buttons.addWidget(self.settings_btn)
         group_layout.addLayout(buttons)
         layout.addWidget(group, 1)
-
-        self.progress_bar = QProgressBar(root)
-        self.progress_bar.setRange(0, 100)
-        self.progress_bar.setValue(0)
-        layout.addWidget(self.progress_bar)
 
         self.setCentralWidget(root)
         self.statusBar().showMessage(STRINGS.MAIN_STATUS_READY)
@@ -278,17 +272,16 @@ class MainWindow(QMainWindow):
     def _on_create(self) -> None:
         """Open window 4 (CreateDialog, 014); refresh recent on success."""
         # Local import: keeps module import light and patchable in tests.
-        from .create_dialog import CreateDialog
+        from .project_start_dialog import ProjectStartDialog
 
         recent = self._store.get_recent()
         # get_recent() is newest-first: the hint comes from the latest project.
         hint = str(Path(recent[0].folder).parent) if recent else str(Path.home())
-        dialog = CreateDialog(self._store, hint, self)
-        if dialog.exec_():
-            self.refresh_recent()
-            name = getattr(dialog, "project_name", "")
-            if name:
-                self._open_project_dialog(name, highlight_new=True)
+        dialog = ProjectStartDialog(self._store, hint, self)
+        dialog.exec_()
+        self.refresh_recent()
+        if dialog.project_name:
+            self._open_project_dialog(dialog.project_name, highlight_new=True)
 
     # -- generation queue ---------------------------------------------------
     def _on_generate_one(self, ref: str) -> None:
@@ -336,9 +329,6 @@ class MainWindow(QMainWindow):
             self._worker.request_cancel()
 
     def _on_progressed(self, created: int, total: int) -> None:
-        if total > 0:
-            self.progress_bar.setRange(0, total)
-            self.progress_bar.setValue(created)
         self.statusBar().showMessage(
             STRINGS.MAIN_STATUS_RUNNING.format(created=created, total=total)
         )
@@ -356,7 +346,6 @@ class MainWindow(QMainWindow):
             self._progress_dialog.close()
             self._progress_dialog = None
         self._set_busy(False)
-        self.progress_bar.setValue(0)
         self.statusBar().showMessage(STRINGS.MAIN_STATUS_READY)
         self.refresh_recent()
         if self._queue_total == 1 and len(self._queue_results) == 1:

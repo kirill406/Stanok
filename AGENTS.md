@@ -29,13 +29,13 @@
 
 ## Versioning (Semantic Versioning 2.0.0, https://semver.org/)
 - Format `MAJOR.MINOR.PATCH`: MAJOR — incompatible changes, MINOR — backwards-compatible features, PATCH — bug fixes
-- `0.y.z` (current `0.2.0-alpha`): anything may change without MINOR/MAJOR bump discipline; `1.0.0` marks first stable API/GUI contract
+- `0.y.z` (current `0.3.0-alpha`): anything may change without MINOR/MAJOR bump discipline; `1.0.0` marks first stable API/GUI contract
 - Single source of truth: `pyproject.toml` version only; `src/stanok/__init__.py` reads it from installed metadata (`importlib.metadata`), no manual sync — bump the version in `pyproject.toml` alone
 - Pre-releases as `1.0.0-alpha`, `-beta`, `-rc.1` when testing exe with users before stable
-- Release flow: move `CHANGELOG.md [Unreleased]` entries under new version header with date, bump version in both places, tag `git tag vX.Y.Z`, push tag
+- Release flow: move `CHANGELOG.md [Unreleased]` entries under new version header with date, bump version in `pyproject.toml` and the CHANGELOG header, tag `git tag vX.Y.Z`, push tag
 - Never Bump version in feature branches — only in release commits on `main`
 
-### Development stages (current: Alpha, `0.2.0-alpha`)
+### Development stages (current: Alpha, `0.3.0-alpha`)
 - Planning — name reserved, scope outlined; usually no version yet
 - Pre-alpha — working sketch; architecture may change anytime; `0.x.y`
 - Alpha — architecture settled; inner circle can use it; testing toward product
@@ -99,8 +99,10 @@
 - Pre-commit hook runs automatically: 
   trufflehog3 secrets scan (excludes `venv/`, `uv.lock`) + `pytest tests/ -q` when tests exist;
   never commit with `--no-verify` without asking
-- Build exe (when GUI lands; `Станок.spec` is gitignored, not in repo): 
-  `pyinstaller --onefile --windowed --name Станок --paths src --icon src/stanok/gui/icon.ico --add-data "src/stanok/gui/icon.png;stanok/gui" run.py`
+- Build exe (`Станок.spec` is gitignored, not in repo; version comes from `pyproject.toml`):
+  1. `.venv/Scripts/python scripts/make-version-info.py` — writes `build/version_info.txt`
+  2. `pyinstaller --noconfirm --onefile --windowed --name Станок --paths src --icon src/stanok/gui/icon.ico --add-data "src/stanok/gui/icon.png;stanok/gui" --version-file build/version_info.txt run.py`
+  - check exe properties → FileVersion equals the `pyproject.toml` version
 - Open PR: one logical change per PR, link to spec item
 - Merge with `git merge --no-ff` after review (no squash, no fast-forward)
 - Separate refactoring from features into different commits/branches

@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from stanok.engine.schema import validate_pj
+from stanok.engine.schema import current_version, validate_pj
 from stanok.services.storage import ProjectStore, resolve_project, StorageError
 
 
@@ -51,7 +51,7 @@ def test_save_and_load(store, sample_pj):
     """Test save and load round-trip."""
     path = store.save(sample_pj)
     loaded = store.load(path.stem)
-    assert loaded.version == sample_pj.version
+    assert loaded.version == current_version()
     assert loaded.templates == sample_pj.templates
 
 
@@ -105,7 +105,7 @@ def test_migrate_from_project(store, tmp_path):
     }, indent=2))
 
     pj = store.migrate_from_project(project_path)
-    assert pj.version == "0.0.0"
+    assert pj.version == current_version()
     # Saved under folder name, legacy removed
     assert (store.home_dir / "legacy_proj.stanok").exists()
     assert not legacy.exists()
@@ -127,7 +127,7 @@ def test_resolve_by_path(store, sample_pj, tmp_path):
     }))
     
     pj, path = resolve_project(project_dir, ProjectStore(tmp_path / ".stanok"))
-    assert pj.version == "0.0.0"
+    assert pj.version == current_version()
 
 
 def test_resolve_by_name(store, sample_pj):
@@ -135,7 +135,7 @@ def test_resolve_by_name(store, sample_pj):
     store.save(sample_pj)
     pj, path = resolve_project(sample_pj.filename_template.split("{")[0].strip() or "project", 
                                 store)
-    assert pj.version == "0.0.0"
+    assert pj.version == current_version()
 
 
 def test_resolve_not_found(store):
@@ -255,7 +255,7 @@ def test_resolve_by_folder_name(store, sample_pj, tmp_path):
     """Test resolving by folder name in Home."""
     path = store.save(sample_pj)
     pj, resolved = resolve_project(path.stem, store)
-    assert pj.version == "0.0.0"
+    assert pj.version == current_version()
     assert resolved == path
 
 
@@ -263,7 +263,7 @@ def test_resolve_by_config_name(store, sample_pj):
     """Test resolving by config name."""
     path = store.save(sample_pj)
     pj, resolved = resolve_project(path.stem, store)
-    assert pj.version == "0.0.0"
+    assert pj.version == current_version()
 
 
 def test_empty_project_name_fallback(store):
@@ -453,6 +453,42 @@ def test_load_restores_invalid_main_from_backup(store, sample_pj):
     assert "templates" in json.loads(path.read_text())
 
 
+def test_load_relabels_old_version_and_keeps_backup(store, sample_pj):
+    """An old but valid config is rewritten with the current version; .bak stays."""
+    path = store.save(sample_pj)
+    store.save(sample_pj)
+    bak_before = store._backup_path(path).read_bytes()
+    loaded = store.load(path.stem)
+    assert loaded.version == current_version()
+    assert json.loads(path.read_text())["version"] == current_version()
+    assert store._backup_path(path).read_bytes() == bak_before
+
+
+def test_load_too_new_version_fails_without_restore(store, sample_pj):
+    """A config newer than the program is refused and never replaced from .bak."""
+    path = store.save(sample_pj)
+    store.save(sample_pj)
+    newer = sample_pj.model_dump(mode="json")
+    newer["version"] = "99.0.0"
+    path.write_text(json.dumps(newer, ensure_ascii=False))
+    with pytest.raises(StorageError, match="новее программы"):
+        store.load(path.stem)
+    assert json.loads(path.read_text())["version"] == "99.0.0"
+
+
+def test_load_relabel_write_failure_still_loads(store, sample_pj, monkeypatch):
+    """A read-only config opens with the migrated version in memory."""
+    path = store.save(sample_pj)
+
+    def refuse(self, *args, **kwargs):
+        raise OSError("read-only")
+
+    monkeypatch.setattr(ProjectStore, "_atomic_write_json", refuse)
+    loaded = store.load(path.stem)
+    assert loaded.version == current_version()
+    assert json.loads(path.read_text())["version"] != current_version()
+
+
 def test_save_updates_existing(store, sample_pj):
     """Test that save updates existing config."""
     path1 = store.save(sample_pj)
@@ -617,6 +653,22 @@ def _src_files(tmp_path, name="src"):
     tpl = src / "tpl.docx"
     doc.save(tpl)
     return xlsx, tpl
+
+
+def test_init_project_writes_app_version(store, tmp_path):
+    from stanok.engine.schema import current_version
+
+    xlsx, tpl = _src_files(tmp_path)
+    pj = store.init_project(tmp_path / "proj", "ver", [xlsx], [tpl])
+    assert pj.version == current_version()
+    assert pj.version != "0.0.0"
+
+
+def test_init_project_counter_starts_at_zero(store, tmp_path):
+    """A new counter starts at 0 and generates nothing until set by the user."""
+    xlsx, tpl = _src_files(tmp_path)
+    pj = store.init_project(tmp_path / "proj", "zero", [xlsx], [tpl])
+    assert pj.counters["data"].pos == 0
 
 
 def test_init_copies_and_builds_pj(store, tmp_path):

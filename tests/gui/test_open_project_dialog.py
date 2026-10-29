@@ -13,7 +13,7 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QApplication, QFileDialog, QMessageBox
 
 from stanok.engine.schema import validate_pj
-from stanok.gui.create_dialog import CreateDialog
+from stanok.gui.project_check_dialog import ProjectCheckDialog
 from stanok.gui.open_project_dialog import OpenProjectDialog
 from stanok.gui.strings import STRINGS
 from stanok.services.storage import ProjectStore
@@ -149,45 +149,33 @@ def test_pick_folder_unknown_warns(qapp, tmp_path, store, monkeypatch):
     dlg.close()
 
 
-def test_pick_folder_prefills_create_and_accepts(qapp, tmp_path, store, monkeypatch):
+def test_pick_folder_opens_check_and_accepts(qapp, tmp_path, store, monkeypatch):
     root = tmp_path / "Мой проект"
     (root / "Данные").mkdir(parents=True)
     (root / "Шаблоны").mkdir()
     (root / "Результат").mkdir()
-    xlsx = root / "Данные" / "data.xlsx"
-    docx = root / "Шаблоны" / "tpl.docx"
-    xlsx.write_bytes(b"x")
-    docx.write_bytes(b"x")
+    (root / "Данные" / "data.xlsx").write_bytes(b"x")
+    (root / "Шаблоны" / "tpl.docx").write_bytes(b"x")
     monkeypatch.setattr(
         QFileDialog, "getExistingDirectory", lambda *a, **k: str(root)
     )
     seen = {}
 
     def fake_exec(self):
+        seen["folder"] = self._folder
         seen["name"] = self.name_edit.text()
-        seen["folder"] = self.folder_edit.text()
-        seen["xlsx"] = [
-            self.xlsx_list.item(i).text()
-            for i in range(self.xlsx_list.count())
-        ]
-        seen["docx"] = [
-            self.docx_list.item(i).text()
-            for i in range(self.docx_list.count())
-        ]
-        seen["copy"] = self.copy_check.isChecked()
+        seen["editable"] = not self.name_edit.isReadOnly()
         self.project_name = self.name_edit.text()
         return 1
 
-    monkeypatch.setattr(CreateDialog, "exec_", fake_exec)
+    monkeypatch.setattr(ProjectCheckDialog, "exec_", fake_exec)
     dlg = OpenProjectDialog(store)
 
     dlg._on_pick_folder()
 
-    assert seen["name"] == root.name
-    assert Path(seen["folder"]) == root.parent
-    assert seen["xlsx"] == [str(xlsx)]
-    assert seen["docx"] == [str(docx)]
-    assert seen["copy"] is True
+    assert seen == {"folder": root.resolve(), "name": root.name, "editable": True}
     assert dlg.created_config == root.name
     assert dlg.selected_config == root.name
     dlg.close()
+
+

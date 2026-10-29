@@ -27,6 +27,7 @@ from PyQt5.QtWidgets import (
 from ..services.generate import GenerateCommand, GenerateReport
 from ..engine.schema import SchemaError
 from ..services.storage import ProjectStore, StorageError
+from .create_dialog import CreateDialog
 from .dialogs import ask_yes_no
 from .project_dialog import ProjectDialog
 from .report_text import done_text
@@ -51,6 +52,7 @@ class MainWindow(QMainWindow):
         self._queue_results: list[tuple[str, GenerateReport | str]] = []
         self._cancel_requested = False
         self._last_started = ""
+        self._busy = False
         self._build_ui()
         self.refresh_recent()
 
@@ -132,6 +134,11 @@ class MainWindow(QMainWindow):
                 lambda _checked=False, ref=item.config: self._on_generate_one(ref)
             )
             row_layout.addWidget(btn)
+            edit_btn = QPushButton(STRINGS.MAIN_EDIT, row)
+            edit_btn.clicked.connect(
+                lambda _checked=False, ref=item.config: self._on_edit_project(ref)
+            )
+            row_layout.addWidget(edit_btn)
             rm_btn = QPushButton(STRINGS.MAIN_REMOVE, row)
             rm_btn.clicked.connect(
                 lambda _checked=False, folder=item.folder, config=item.config: self._on_remove_recent(
@@ -139,6 +146,8 @@ class MainWindow(QMainWindow):
                 )
             )
             row_layout.addWidget(rm_btn)
+            for row_btn in (btn, edit_btn, rm_btn):
+                row_btn.setEnabled(not self._busy)
             entry.setSizeHint(row.sizeHint())
             self.recent_list.addItem(entry)
             self.recent_list.setItemWidget(entry, row)
@@ -208,6 +217,19 @@ class MainWindow(QMainWindow):
 
     def _on_row_clicked(self, item: QListWidgetItem) -> None:
         self._open_project_dialog(item.data(Qt.UserRole))
+
+    def _on_edit_project(self, ref: str) -> None:
+        """Open the project settings (create dialog in edit mode) for one row."""
+        if self._busy:
+            return
+        try:
+            dialog = CreateDialog(self._store, "", self, edit_ref=ref)
+        except StorageError as e:
+            logger.warning(f"edit project {ref}: {e}", exc_info=True)
+            self._show_error(str(e))
+            return
+        if dialog.exec_():
+            self.refresh_recent()
 
     def _on_remove_recent(self, folder: str, config: str) -> None:
         """Drop one entry from recent list (project itself untouched)."""
@@ -373,9 +395,18 @@ class MainWindow(QMainWindow):
             )
 
     def _set_busy(self, busy: bool) -> None:
+        """Block starting another run: row buttons, Убрать and Настройки included."""
+        self._busy = busy
         self.generate_all_btn.setEnabled(not busy)
         self.browse_btn.setEnabled(not busy)
         self.create_btn.setEnabled(not busy)
+        self.settings_btn.setEnabled(not busy)
+        for index in range(self.recent_list.count()):
+            row = self.recent_list.itemWidget(self.recent_list.item(index))
+            if row is None:
+                continue
+            for row_btn in row.findChildren(QPushButton):
+                row_btn.setEnabled(not busy)
 
     def _show_error(self, message: str) -> None:
         QMessageBox.critical(self, STRINGS.MAIN_ERROR_TITLE, message)

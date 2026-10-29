@@ -31,6 +31,7 @@ class STRINGS:
 
     # Schema/validation (engine/schema.py)
     SCH_FORMAT_TOO_NEW = "Формат версии {version} новее программы — обновите программу"
+    SCH_RESULT_DIR_RELATIVE = "Папка копий результата должна быть абсолютной: {value}"
     SCH_NO_MIGRATION = "Нет пути миграции формата {source} → {target}"
     SCH_MIGRATION_STALLED = "Миграция {source} не обновила версию (шаг → {target})"
     SCH_DIST_TRAVERSAL = "{field}: путь должен быть относительным без '..': {value}"
@@ -38,10 +39,16 @@ class STRINGS:
     # Generation (services/generate.py)
     GEN_RESULT_DIR = "Результат"
     GEN_SKIPPED_COLUMNS = "Пропущены столбцы без заголовков:\n{items}"
+    GEN_COPY_FAILED = "Не удалось скопировать результат в {dest}: {cause}"
 
     # Storage (services/storage.py)
     STORAGE_DEFAULT_TPL = (
         "Нельзя убрать шаблон по умолчанию: сначала смените шаблон по умолчанию."
+    )
+
+    STORAGE_SOURCE_LAST = "Нельзя убрать последний источник проекта"
+    STORAGE_SOURCE_IN_USE = (
+        "Источник «{file}» нужен полям: {fields}. Сначала измените эти поля"
     )
 
     # Tables (tables/excel.py)
@@ -61,6 +68,7 @@ class STRINGS:
     )
     MAIN_OPEN = "Открыть проект"
     MAIN_GENERATE = "Сгенерировать"
+    MAIN_EDIT = "Редактировать"
     MAIN_GENERATE_ALL = "Сгенерировать все"
     MAIN_TPL = "Шаблон: «{name}»"
     MAIN_TPL_UNAVAILABLE = "Шаблон: —"
@@ -122,7 +130,15 @@ class STRINGS:
     CRT_SAVE = "Сохранить"
     CRT_CANCEL = "Отмена"
     CRT_SAVE_ERR_TITLE = "Не удалось сохранить настройки"
-    CRT_PATH = "Файлы проекта:\n{path}"
+    CRT_SECTION_DATA = "Данные"
+    CRT_SECTION_TPL = "Шаблоны"
+    CRT_SECTION_RESULTS = "Результаты"
+    CRT_RESULT_COPY_TIP = "Дублировать результат в другую папку"
+    CRT_RESULT_COPY_PICK = "Папка для копий результата"
+    CRT_RESULT_COPY_OWN = "Это папка результатов самого проекта"
+    CRT_RESULT_COPY_DUP = "Эта папка уже в списке"
+    CRT_RESULT_REMOVE_TIP = "Убрать папку из списка"
+    CRT_COPIES_NONE = "Копии результата не настроены"
     CRT_MKDIR_ASK = "Папки «{path}» нет. Создать её?"
     # 024: окно старта создания проекта
     START_TITLE = "Создание проекта"
@@ -209,6 +225,10 @@ class STRINGS:
         "«Одна строка» — всегда одна и та же строка, счётчик не меняется."
     )
     PROJ_SRC_ADD = "Добавить источник..."
+    PROJ_SRC_REMOVE = "Убрать"
+    PROJ_SRC_REMOVE_ASK = (
+        "Убрать источник «{name}»? Файл останется в папке «Данные»."
+    )
     PROJ_TPL_COL = "Шаблон"
     PROJ_COUNT_COL = "Лимит"
     PROJ_COUNT_TIP = "Сколько документов создать (0 — без лимита, все строки)"

@@ -95,6 +95,57 @@ def test_recent_row_shows_default_template_and_limit(qapp, tmp_path, store):
     win.close()
 
 
+def test_row_buttons_order_generate_edit_remove(qapp, tmp_path, store):
+    folder = make_project(tmp_path / "proj")
+    store.add_recent(str(folder), "proj")
+    win = MainWindow(store=store)
+    row = win.recent_list.itemWidget(win.recent_list.item(0))
+    texts = [b.text() for b in row.findChildren(QPushButton)]
+    assert texts == [STRINGS.MAIN_GENERATE, STRINGS.MAIN_EDIT, STRINGS.MAIN_REMOVE]
+    win.close()
+
+
+def test_busy_disables_row_buttons_and_settings(qapp, tmp_path, store):
+    folder = make_project(tmp_path / "proj")
+    store.add_recent(str(folder), "proj")
+    win = MainWindow(store=store)
+    win._set_busy(True)
+    row = win.recent_list.itemWidget(win.recent_list.item(0))
+    assert all(not b.isEnabled() for b in row.findChildren(QPushButton))
+    assert not win.settings_btn.isEnabled()
+    win.refresh_recent()  # rows rebuilt during a run stay disabled too
+    row = win.recent_list.itemWidget(win.recent_list.item(0))
+    assert all(not b.isEnabled() for b in row.findChildren(QPushButton))
+    win._set_busy(False)
+    row = win.recent_list.itemWidget(win.recent_list.item(0))
+    assert all(b.isEnabled() for b in row.findChildren(QPushButton))
+    assert win.settings_btn.isEnabled()
+    win.close()
+
+
+def test_edit_button_opens_settings_and_refreshes(qapp, tmp_path, store, monkeypatch):
+    import stanok.gui.main_window as mw
+
+    folder = make_project(tmp_path / "proj")
+    store.add_recent(str(folder), "proj")
+    opened = []
+
+    class FakeSettings:
+        def __init__(self, store_, hint, parent, edit_ref=None):
+            opened.append(edit_ref)
+
+        def exec_(self):
+            return 1
+
+    monkeypatch.setattr(mw, "CreateDialog", FakeSettings)
+    win = MainWindow(store=store)
+    row = win.recent_list.itemWidget(win.recent_list.item(0))
+    edit = next(b for b in row.findChildren(QPushButton) if b.text() == STRINGS.MAIN_EDIT)
+    edit.click()
+    assert opened == ["proj"]
+    win.close()
+
+
 def test_recent_row_limit_edit_saves_pj(qapp, tmp_path, store):
     folder = make_project(tmp_path / "proj")
     store.add_recent(str(folder), "proj")
@@ -357,11 +408,9 @@ def test_create_dialog_settings_mode(qapp, tmp_path, store):
     assert dlg.name_edit.isReadOnly()
     assert dlg.name_edit.text() == "proj"
     assert dlg.default_combo.currentData() == "Договор"
-    text = dlg.path_label.text()
-    assert str(folder) in text
-    assert str(folder / "Данные") in text
-    assert str(folder / "Шаблоны") in text
-    assert str(folder / "Результат") in text
+    assert dlg._section_paths["Данные"].text() == str(folder / "Данные")
+    assert dlg._section_paths["Шаблоны"].text() == str(folder / "Шаблоны")
+    assert dlg._section_paths["Результат"].text() == str(folder / "Результат")
     new_folder = tmp_path / "moved"
     new_folder.mkdir()
     dlg.folder_edit.setText(str(new_folder))

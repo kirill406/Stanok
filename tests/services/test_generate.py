@@ -334,6 +334,58 @@ def test_config_name_without_folder_fails(tmp_path, store):
         generate_documents(GenerateCommand(project_ref="nofolder"), store=store)
 
 
+def _set_result_dirs(folder: Path, dirs: list[str], filename: str | None = None) -> None:
+    data = json.loads((folder / "project.stanok").read_text())
+    data["result_dirs"] = dirs
+    if filename is not None:
+        data["filename_template"] = filename
+    _write_pj(folder, data)
+
+
+def test_result_copies_go_to_every_folder(tmp_path, store):
+    folder = make_project(tmp_path / "proj", rows=(("Иван", 100),))
+    first, second = tmp_path / "copy1", tmp_path / "copy2"
+    _set_result_dirs(folder, [str(first), str(second)])
+    report = generate_documents(GenerateCommand(project_ref=folder), store=store)
+    assert report.created == 1
+    assert report.errors == []
+    name = report.output_paths[0].name
+    assert (first / name).read_bytes() == report.output_paths[0].read_bytes()
+    assert (second / name).is_file()
+
+
+def test_result_copies_keep_subfolders_of_dist(tmp_path, store):
+    folder = make_project(tmp_path / "proj", rows=(("Иван", 100),))
+    copy = tmp_path / "copy"
+    _set_result_dirs(folder, [str(copy)], filename="Акты/Договор_{ФИО}_{i}.docx")
+    report = generate_documents(GenerateCommand(project_ref=folder), store=store)
+    assert report.created == 1
+    assert (copy / "Акты" / "Договор_Иван_1.docx").is_file()
+
+
+def test_result_copy_failure_is_reported_and_keeps_document(tmp_path, store):
+    folder = make_project(tmp_path / "proj", rows=(("Иван", 100),))
+    blocked = tmp_path / "blocked"
+    blocked.write_text("a file, not a folder")
+    _set_result_dirs(folder, [str(blocked)])
+    report = generate_documents(GenerateCommand(project_ref=folder), store=store)
+    assert report.created == 1
+    assert report.output_paths[0].is_file()
+    assert len(report.errors) == 1
+    assert report.errors[0][0] == 1
+    assert "blocked" in report.errors[0][1]
+
+
+def test_result_copy_skips_own_result_folder(tmp_path, store):
+    folder = make_project(tmp_path / "proj", rows=(("Иван", 100),))
+    _set_result_dirs(folder, [str(folder / "Результат")])
+    report = generate_documents(GenerateCommand(project_ref=folder), store=store)
+    assert report.errors == []
+    assert [p.name for p in (folder / "Результат").iterdir()] == [
+        report.output_paths[0].name
+    ]
+
+
 def test_unique_path_helper(tmp_path):
     base = tmp_path / "a.docx"
     assert _unique_path(base) == base

@@ -193,6 +193,7 @@ class ProjectJSON(_WarnExtra):
     filename_template: str = "{template} ({i})"
     folder: str | None = None  # absolute path with Данные/Шаблоны (020)
     default_template: str = ""  # 021: template for window 1; "" = first template
+    result_dirs: list[str] = []  # 025: extra folders every result is copied into
 
     @field_validator("folder")
     @classmethod
@@ -205,6 +206,21 @@ class ProjectJSON(_WarnExtra):
         if not os.path.isabs(value):
             logger.warning(f"project folder is not absolute: {value}")
         return value
+
+    @field_validator("result_dirs")
+    @classmethod
+    def _result_dirs_absolute(cls, v: list[str]) -> list[str]:
+        """Copies go to exact folders, so relative paths (cwd-dependent) are refused."""
+        out: list[str] = []
+        for raw in v:
+            value = raw.strip()
+            if not value:
+                continue
+            if not os.path.isabs(value):
+                raise ValueError(STRINGS.SCH_RESULT_DIR_RELATIVE.format(value=value))
+            if value not in out:
+                out.append(value)
+        return out
 
     @model_validator(mode="after")
     def _check_relations(self) -> "ProjectJSON":

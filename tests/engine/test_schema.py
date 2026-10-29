@@ -161,6 +161,26 @@ def test_migrate_same_version_passthrough():
     assert migrate(dict(data))["version"] == schema.current_version()
 
 
+def test_result_dirs_default_empty():
+    data = _load("pj_minimal.stanok")
+    data.pop("result_dirs", None)
+    assert validate_pj(data).result_dirs == []
+
+
+def test_result_dirs_absolute_deduped_and_blank_dropped(tmp_path):
+    data = _load("pj_minimal.stanok")
+    copy = str(tmp_path / "copy")
+    data["result_dirs"] = [copy, "  ", copy]
+    assert validate_pj(data).result_dirs == [copy]
+
+
+def test_result_dirs_relative_rejected():
+    data = _load("pj_minimal.stanok")
+    data["result_dirs"] = ["relative/copy"]
+    with pytest.raises(PJValidationError, match="абсолютной"):
+        validate_pj(data)
+
+
 def test_parse_version_accepts_pep440_prerelease():
     assert schema._parse_version("0.2.0a0") == (0, 2, 0)
     assert schema._parse_version("0.2.0-alpha") == (0, 2, 0)

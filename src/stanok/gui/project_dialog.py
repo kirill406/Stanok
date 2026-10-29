@@ -28,7 +28,7 @@ from PyQt5.QtWidgets import (
 )
 
 from ..services.generate import GenerateCommand, GenerateReport
-from ..services.storage import ProjectStore, project_folder
+from ..services.storage import ProjectStore, StorageError, project_folder
 from .blink import GreenBlink
 from .dialogs import ask_yes_no
 from .fields_dialog import FieldsDialog
@@ -121,9 +121,9 @@ class ProjectDialog(QDialog):
         sources_title.setObjectName("sectionTitle")
         layout.addWidget(sources_title)
         self.sources_table = QTableWidget(self)
-        self.sources_table.setColumnCount(2)
+        self.sources_table.setColumnCount(3)
         self.sources_table.setHorizontalHeaderLabels(
-            [STRINGS.PROJ_SRC_COL_FILE, STRINGS.PROJ_SRC_COL_TYPE]
+            [STRINGS.PROJ_SRC_COL_FILE, STRINGS.PROJ_SRC_COL_TYPE, ""]
         )
         self.sources_table.verticalHeader().setVisible(False)
         self.sources_table.verticalHeader().setDefaultSectionSize(40)
@@ -133,6 +133,8 @@ class ProjectDialog(QDialog):
         src_header.setSectionResizeMode(0, QHeaderView.Stretch)
         src_header.setSectionResizeMode(1, QHeaderView.Fixed)
         src_header.resizeSection(1, 200)
+        src_header.setSectionResizeMode(2, QHeaderView.Fixed)
+        src_header.resizeSection(2, 110)
         src_header.sectionResized.connect(self._fit_source_rows)
         self._reload_sources()
         layout.addWidget(self.sources_table)
@@ -227,6 +229,11 @@ class ProjectDialog(QDialog):
                 lambda _i=0, file=ds.file: self._on_mode_changed(file)
             )
             self.sources_table.setCellWidget(row, 1, combo)
+            remove_btn = QPushButton(STRINGS.PROJ_SRC_REMOVE, self.sources_table)
+            remove_btn.clicked.connect(
+                lambda _checked=False, file=ds.file: self._on_remove_source(file)
+            )
+            self.sources_table.setCellWidget(row, 2, remove_btn)
         self._fit_source_rows()
 
     def _fit_source_rows(self, *_args) -> None:
@@ -426,6 +433,21 @@ class ProjectDialog(QDialog):
             self._store.add_source(self._project_ref, path)
         except Exception as e:
             logger.warning(f"add source failed: {e}", exc_info=True)
+            QMessageBox.warning(self, STRINGS.MAIN_ERROR_TITLE, str(e))
+            return
+        self._reload_sources()
+
+    def _on_remove_source(self, file: str) -> None:
+        if self._running:
+            return
+        if not ask_yes_no(
+            self, STRINGS.PROJ_SRC_REMOVE, STRINGS.PROJ_SRC_REMOVE_ASK.format(name=file)
+        ):
+            return
+        try:
+            self._store.remove_source(self._project_ref, file)
+        except (StorageError, OSError) as e:
+            logger.warning(f"remove source failed: {e}", exc_info=True)
             QMessageBox.warning(self, STRINGS.MAIN_ERROR_TITLE, str(e))
             return
         self._reload_sources()

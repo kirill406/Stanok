@@ -25,6 +25,7 @@ from ..engine.schema import (
     SchemaError,
     StorageError,
     TemplateDef,
+    current_version,
     validate_aj,
     validate_pj,
 )
@@ -153,7 +154,9 @@ class ProjectStore:
         self.home_dir.mkdir(parents=True, exist_ok=True)
         settings_file = self.home_dir / "settings.json"
         if not settings_file.exists():
-            default_aj = ApplicationJSON(version="0.0.0", recent=[], settings={})
+            default_aj = ApplicationJSON(
+                version=current_version(), recent=[], settings={}
+            )
             self._atomic_write_json(
                 settings_file, default_aj.model_dump(mode="json")
             )
@@ -748,7 +751,7 @@ class ProjectStore:
 
             pj = validate_pj(
                 {
-                    "version": "0.0.0",
+                    "version": current_version(),
                     "templates": templates,
                     "default_template": next(iter(templates)),
                     "data_sources": [

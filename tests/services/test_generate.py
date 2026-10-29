@@ -20,6 +20,7 @@ from stanok.services.storage import ProjectStore
 
 DATA = "Данные/data.xlsx"
 TPL = "Шаблоны/tpl.docx"
+PLACEHOLDER = "Пропуск"
 
 
 def make_project(
@@ -28,12 +29,21 @@ def make_project(
     headers=("ФИО", "Сумма"),
     rows=(("Иван", 100), ("Петр", 200)),
     mode="sequential",
-    pos=0,
+    pos=None,
     with_counter=True,
     limit=0,
     resume=1,
 ) -> Path:
-    """Build minimal project folder: Данные/data.xlsx + Шаблоны/tpl.docx + legacy PJ."""
+    """Build minimal project folder: Данные/data.xlsx + Шаблоны/tpl.docx + legacy PJ.
+
+    A counter at position 0 generates nothing. A sequential counter therefore
+    starts at pos 1, so the sheet gets a placeholder row 0 in front of `rows`.
+    A circular counter starts at pos len(rows), which wraps to row 0.
+    """
+    if pos is None:
+        pos = {"sequential": 1, "circular": len(rows), "constant": 0}[mode]
+    if mode == "sequential":
+        rows = ((PLACEHOLDER,) + (None,) * (len(headers) - 1),) + tuple(rows)
     data_dir = root / "Данные"
     tpl_dir = root / "Шаблоны"
     data_dir.mkdir(parents=True)
@@ -112,8 +122,7 @@ def test_full_sequential_run(tmp_path, store):
     saved = _load_saved(store, "proj")
     assert saved.counters["num"].pos == 2
     # Two table fields share one counter → one bump per document, not two.
-    assert saved.counters["data"].pos == 2
-    assert saved.counters["data"].pos == 2
+    assert saved.counters["data"].pos == 3
 
 
 def test_generate_reports_skipped_columns(tmp_path, store):
@@ -139,7 +148,7 @@ def test_limit_truncates(tmp_path, store):
     assert report.output_dir == folder / "Результат"
     saved = _load_saved(store, "proj")
     assert saved.counters["num"].pos == 2
-    assert saved.counters["data"].pos == 2
+    assert saved.counters["data"].pos == 3
 
 
 def test_limit_reports_data_shortfall(tmp_path, store):
@@ -155,7 +164,7 @@ def test_limit_reports_data_shortfall(tmp_path, store):
 
 
 def test_pos_skips(tmp_path, store):
-    folder = make_project(tmp_path / "proj", pos=1)
+    folder = make_project(tmp_path / "proj", pos=2)
     report = generate_documents(GenerateCommand(project_ref=folder), store=store)
     assert report.created == 1
     assert "Петр" in report.output_paths[0].name
@@ -167,8 +176,18 @@ def test_resume_0_keeps_cursor(tmp_path, store):
     report = generate_documents(GenerateCommand(project_ref=folder), store=store)
     assert report.created == 2
     saved = _load_saved(store, "proj")
-    assert saved.counters["data"].pos == 0
+    assert saved.counters["data"].pos == 1
     assert saved.counters["num"].pos == 2
+
+
+def test_counter_at_zero_generates_nothing(tmp_path, store):
+    folder = make_project(tmp_path / "proj", pos=0)
+    report = generate_documents(GenerateCommand(project_ref=folder), store=store)
+    assert report.created == 0
+    assert report.output_paths == []
+    saved = _load_saved(store, "proj")
+    assert saved.counters["data"].pos == 0
+    assert saved.counters["num"].pos == 0
 
 
 def test_empty_source_returns_empty_report(tmp_path, store):
@@ -210,7 +229,7 @@ def test_error_continues_and_advances(monkeypatch, tmp_path, store):
     assert "boom" in report.errors[0][1]
     saved = _load_saved(store, "proj")
     assert saved.counters["num"].pos == 2
-    assert saved.counters["data"].pos == 2
+    assert saved.counters["data"].pos == 3
 
 
 def test_all_failed_still_persists_counters(monkeypatch, tmp_path, store):
@@ -227,7 +246,7 @@ def test_all_failed_still_persists_counters(monkeypatch, tmp_path, store):
     assert len(report.errors) == 2
     saved = _load_saved(store, "proj")
     assert saved.counters["num"].pos == 2
-    assert saved.counters["data"].pos == 2
+    assert saved.counters["data"].pos == 3
 
 
 def test_missing_template_file(tmp_path, store):
@@ -283,7 +302,8 @@ def test_circular_cycles_and_wraps(tmp_path, store):
     assert report.created == 5
     saved = _load_saved(store, "proj")
     assert saved.counters["num"].pos == 5
-    assert saved.counters["data"].pos == 5  # absolute count; row wraps at read
+    # Absolute count from the start pos 2 (row 0 of a 2-row circle); row wraps at read.
+    assert saved.counters["data"].pos == 7
 
 
 def test_config_name_ref_via_recent(tmp_path, store):
@@ -383,6 +403,7 @@ def test_two_sources_composition(tmp_path, store):
     wb = Workbook()
     ws = wb.active
     ws.append(["Город"])
+    ws.append([PLACEHOLDER])
     for c in ("Москва", "Тверь", "Казань"):
         ws.append([c])
     wb.save(cdir / "cities.xlsx")
@@ -398,7 +419,7 @@ def test_two_sources_composition(tmp_path, store):
     }
     data["data_sources"].append({"file": "Данные/cities.xlsx", "mode": "sequential"})
     data["counters"]["cities"] = {
-        "pos": 0, "format": "1", "table": "Данные/cities.xlsx", "resume": 1
+        "pos": 1, "format": "1", "table": "Данные/cities.xlsx", "resume": 1
     }
     _write_pj(folder, data)
 
@@ -407,8 +428,8 @@ def test_two_sources_composition(tmp_path, store):
     texts = sorted(_doc_text(p) for p in report.output_paths)
     assert texts == ["Иван — Москва", "Петр — Тверь"]
     saved = _load_saved(store, "proj")
-    assert saved.counters["data"].pos == 2
-    assert saved.counters["cities"].pos == 2
+    assert saved.counters["data"].pos == 3
+    assert saved.counters["cities"].pos == 3
 
 
 def test_save_document_escape_rejected(tmp_path):
@@ -479,7 +500,7 @@ def test_progress_callback_cancel(tmp_path, store):
     assert report.created == 1
     assert seen[0] == (1, 3)
     saved = _load_saved(store, "proj")
-    assert saved.counters["data"].pos == 1
+    assert saved.counters["data"].pos == 2
     assert saved.counters["num"].pos == 1
 
 

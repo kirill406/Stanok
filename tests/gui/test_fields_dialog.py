@@ -945,7 +945,7 @@ def test_counter_pos_updates_table_field_preview(qapp, tmp_path, store):
     dlg = FieldsDialog(str(folder), "Договор", store=store)
     st = dlg._crows["data"]
     assert dlg._rows["ФИО"]["clabel"].text() == "Иван"
-    st["pos"].setText("1")
+    st["pos"].setText("2")
     assert dlg._rows["ФИО"]["clabel"].text() == "Петр"
     dlg.close()
 

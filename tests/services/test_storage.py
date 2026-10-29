@@ -619,6 +619,22 @@ def _src_files(tmp_path, name="src"):
     return xlsx, tpl
 
 
+def test_init_project_writes_app_version(store, tmp_path):
+    from stanok.engine.schema import current_version
+
+    xlsx, tpl = _src_files(tmp_path)
+    pj = store.init_project(tmp_path / "proj", "ver", [xlsx], [tpl])
+    assert pj.version == current_version()
+    assert pj.version != "0.0.0"
+
+
+def test_init_project_counter_starts_at_zero(store, tmp_path):
+    """A new counter starts at 0 and generates nothing until set by the user."""
+    xlsx, tpl = _src_files(tmp_path)
+    pj = store.init_project(tmp_path / "proj", "zero", [xlsx], [tpl])
+    assert pj.counters["data"].pos == 0
+
+
 def test_init_copies_and_builds_pj(store, tmp_path):
     xlsx, tpl = _src_files(tmp_path)
     pj = store.init_project(tmp_path / "proj", "nov", [xlsx], [tpl])

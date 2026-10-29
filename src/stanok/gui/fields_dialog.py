@@ -110,6 +110,7 @@ class FieldsDialog(QDialog):
         self._recovery_dir: Path | None = None
         pj, config_path = self._store.resolve_project(project_ref)
         self._pj = pj
+        self._shared = self._store.global_counters()  # 026
         self._config_name = config_path.stem
         self._folder = project_folder(project_ref, pj, config_path, self._store)
         try:
@@ -487,6 +488,13 @@ class FieldsDialog(QDialog):
             name_combo = QComboBox(box)
             for cname in self._pj.counters:
                 name_combo.addItem(cname, cname)
+            for cname in self._shared:
+                if cname in self._pj.counters:
+                    # Same name as a project counter: a field could not tell them apart.
+                    name_combo.addItem(f"{cname} ({STRINGS.GCNT_CLASH_TAG})", cname)
+                    name_combo.model().item(name_combo.count() - 1).setEnabled(False)
+                else:
+                    name_combo.addItem(f"{cname} ({STRINGS.GCNT_SHARED_TAG})", cname)
             wanted = (
                 str(stored.value)
                 if stored.source.value == "counter" and stored.value
@@ -537,7 +545,7 @@ class FieldsDialog(QDialog):
         cname = text.strip()
         if not ok or not cname:
             return
-        if cname in self._pj.counters:
+        if cname in self._pj.counters or cname in self._shared:
             QMessageBox.warning(
                 self,
                 STRINGS.MAIN_ERROR_TITLE,
@@ -757,7 +765,7 @@ class FieldsDialog(QDialog):
                 return int(cst["pos"].text())
             except (ValueError, TypeError):
                 return None
-        cdef = self._pj.counters.get(cname)
+        cdef = self._pj.counters.get(cname) or self._shared.get(cname)
         return cdef.pos if cdef is not None else 0
 
     def _counter_format(self, cname: str | None) -> str:
@@ -766,7 +774,7 @@ class FieldsDialog(QDialog):
         cst = self._crows.get(cname)
         if cst is not None:
             return cst["fmt"].currentData() or "1"
-        cdef = self._pj.counters.get(cname)
+        cdef = self._pj.counters.get(cname) or self._shared.get(cname)
         return cdef.format if cdef is not None else "1"
 
     def _update_counter_preview(self, name: str) -> None:
@@ -894,7 +902,8 @@ class FieldsDialog(QDialog):
                 cname = self._selected_counter(name)
                 if cname is None:
                     raise _FieldError(name, "FLD_NO_COUNTER")
-                if cname not in self._pj.counters:
+                # A shared counter lives in settings: never copy its name into the project.
+                if cname not in self._pj.counters and cname not in self._shared:
                     self._pj.counters[cname] = CounterDef()
                 f.source = FieldSource.COUNTER
                 f.value = cname

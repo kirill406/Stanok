@@ -123,26 +123,27 @@ def test_busy_disables_row_buttons_and_settings(qapp, tmp_path, store):
     win.close()
 
 
-def test_edit_button_opens_settings_and_refreshes(qapp, tmp_path, store, monkeypatch):
+def test_edit_button_opens_project_window_like_name_click(qapp, tmp_path, store, monkeypatch):
     import stanok.gui.main_window as mw
 
     folder = make_project(tmp_path / "proj")
     store.add_recent(str(folder), "proj")
     opened = []
 
-    class FakeSettings:
-        def __init__(self, store_, hint, parent, edit_ref=None):
-            opened.append(edit_ref)
+    class FakeProjectDialog:
+        def __init__(self, ref, store_, parent, highlight_new=False):
+            opened.append(ref)
 
         def exec_(self):
-            return 1
+            return 0
 
-    monkeypatch.setattr(mw, "CreateDialog", FakeSettings)
+    monkeypatch.setattr(mw, "ProjectDialog", FakeProjectDialog)
     win = MainWindow(store=store)
     row = win.recent_list.itemWidget(win.recent_list.item(0))
     edit = next(b for b in row.findChildren(QPushButton) if b.text() == STRINGS.MAIN_EDIT)
     edit.click()
-    assert opened == ["proj"]
+    win._on_row_clicked(win.recent_list.item(0))
+    assert opened == ["proj", "proj"]
     win.close()
 
 

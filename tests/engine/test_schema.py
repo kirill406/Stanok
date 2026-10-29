@@ -259,14 +259,15 @@ def test_field_needs_counter_name():
         validate_pj(_pj({"source": "table", "value": "col"}, {}))
 
 
-def test_field_counter_must_exist():
-    with pytest.raises(PJValidationError, match="not defined"):
-        validate_pj(
-            _pj(
-                {"source": "table", "value": "col", "counter_name": "ghost"},
-                {},
-            )
+def test_field_counter_unknown_checked_at_generation():
+    # 026: the name may be a shared counter from settings, so validation accepts it.
+    counters = {"c": {"pos": 0, "format": "1", "table": "Данные/d.xlsx"}}
+    validate_pj(
+        _pj(
+            {"source": "table", "value": "col", "counter_name": "ghost"},
+            counters,
         )
+    )
 
 
 def test_field_counter_must_be_bound():
@@ -289,11 +290,16 @@ def test_field_counter_ok():
     assert pj.templates["T"].fields["F"].counter_name == "emp"
 
 
-def test_counter_field_must_exist():
-    with pytest.raises(PJValidationError, match="counter field"):
+def test_counter_field_name_required():
+    with pytest.raises(PJValidationError, match="counter name"):
         validate_pj(
-            _pj({"source": "counter", "value": "ghost"}, {}, sources=[])
+            _pj({"source": "counter", "value": ""}, {}, sources=[])
         )
+
+
+def test_counter_field_accepts_shared_name():
+    pj = validate_pj(_pj({"source": "counter", "value": "shared"}, {}, sources=[]))
+    assert pj.templates["T"].fields["F"].value == "shared"
 
 
 def test_counter_field_ok():
@@ -386,3 +392,15 @@ def test_project_folder_field():
         "folder": "relative/dir",
     })
     assert pj2.folder == "relative/dir"
+
+
+@pytest.mark.parametrize("old", ["0.0.0", "0.3.0-alpha"])
+def test_migrate_older_valid_file_relabels_to_current(monkeypatch, old):
+    # Files from 0.0.0 and 0.3.0 have the same fields as 0.4.0, so no migration step
+    # is needed: a valid file only gets the current version label.
+    monkeypatch.setattr(schema, "_get_package_version", lambda: "0.4.0")
+    data = _load("pj_minimal.stanok")
+    data["version"] = old
+    out = migrate(dict(data))
+    assert out["version"] == "0.4.0"
+    assert out["templates"] == data["templates"]

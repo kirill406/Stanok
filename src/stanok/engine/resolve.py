@@ -6,8 +6,8 @@
 a counter (`counter_name`); the counter is bound to a source (`table`) and holds
 one position (`pos`) that is both the source row and the printed number.
 Number of documents N = min(limit, available rows of sequential counters);
-with no sequential counters — one circle of circular ones. A row-driven
-counter (sequential or circular) at position 0 gives N = 0: nothing is generated.
+with no sequential counters — one circle of circular ones. Position 0 is the
+first row, not a stop signal.
 """
 
 import logging
@@ -148,9 +148,6 @@ def _document_count(
             continue
         rows = rows_by_source.get(cdef.table, [])
         mode = modes.get(cdef.table, "sequential")
-        if mode in ("sequential", "circular") and cdef.pos == 0:
-            logger.debug(f"counter {name} at 0: no documents for this template")
-            return 0
         if mode == "sequential":
             seq_avail.append(max(0, len(rows) - cdef.pos))
         elif mode == "circular":

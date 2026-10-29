@@ -37,3 +37,4 @@ def test_report_text_lists_skipped_columns():
     text = done_text(report)
     assert "data.xlsx" in text
     assert "B, D" in text
+

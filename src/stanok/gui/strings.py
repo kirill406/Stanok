@@ -203,6 +203,40 @@ class STRINGS:
     PCHK_FOLDER_BUSY = "Папка «{path}» уже не пустая"
     PCHK_CREATE_FAILED = "Не удалось создать проект: {cause}"
 
+    # 026: shared (сквозные) counters (services/storage.py, gui/global_counters_dialog.py)
+    GCNT_BUTTON = "Счётчики..."
+    GCNT_TITLE = "Сквозные счётчики"
+    GCNT_HINT = (
+        "Общие для всех проектов. В шаблоне поле «Счётчик» может ссылаться на них. "
+        "Двойной клик по имени — переименовать."
+    )
+    GCNT_NAME = "Имя:"
+    GCNT_FORMAT = "Формат:"
+    GCNT_START = "Начальное значение:"
+    GCNT_ADD = "Добавить"
+    GCNT_COL_NAME = "Имя"
+    GCNT_COL_FORMAT = "Формат"
+    GCNT_COL_VALUE = "Текущее значение"
+    GCNT_COL_USERS = "Используют"
+    GCNT_NO_USERS = "—"
+    GCNT_REMOVE = "Убрать"
+    GCNT_REMOVE_ASK = "Убрать сквозной счётчик «{name}»?"
+    GCNT_IN_USE = "Счётчик «{name}» используют проекты: {projects}. Сначала уберите его из полей."
+    GCNT_NAME_EMPTY = "Введите имя счётчика"
+    GCNT_NAME_BAD = "Имя не должно содержать «/» или «\»"
+    GCNT_NAME_TAKEN = "Счётчик «{name}» уже есть: сквозной или в проекте"
+    GCNT_FORMAT_BAD = "Неизвестный формат: {fmt}"
+    GCNT_UNKNOWN = "Сквозной счётчик не найден: {name}"
+    GCNT_SHARED_TAG = "сквозной"
+    GCNT_CLASH_TAG = "имя занято счётчиком проекта"
+    GCNT_RENAME = "Переименовать сквозной счётчик"
+    GEN_SHARED_COLLISION = (
+        "Счётчик «{name}» есть и в проекте, и среди сквозных. "
+        "Переименуйте сквозной счётчик в окне «Счётчики»"
+    )
+    GEN_SHARED_UNKNOWN = "Счётчик «{name}» не найден ни в проекте, ни среди сквозных"
+    MAIN_COUNTERS = "Счётчики..."
+
     # Project folder layout (shared, NFR-3: no Cyrillic literals in code)
     DATA_DIR = "Данные"
     TPL_DIR = "Шаблоны"

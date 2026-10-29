@@ -10,6 +10,7 @@ per `resume`. No launch-point/selection dependency.
 from __future__ import annotations
 
 import logging
+import shutil
 import time
 from dataclasses import dataclass, field
 from datetime import date
@@ -123,6 +124,29 @@ def _check_table_columns(
                 f"field '{field_name}': column '{column}' "
                 f"not found in {cdef.table}"
             )
+
+
+def _duplicate_result(path: Path, out_dir: Path, dest_dirs: list[str]) -> list[str]:
+    """Copy one saved result into each extra folder (025); return error messages.
+
+    The copy keeps the path below out_dir, so a dist with subfolders stays intact.
+    A failing folder does not stop the others and does not undo the document.
+    """
+    rel = path.relative_to(out_dir.resolve())
+    errors: list[str] = []
+    for dest in dest_dirs:
+        if Path(dest).resolve() == out_dir.resolve():
+            continue  # the project's own result folder is never a copy target
+        try:
+            target = _unique_path(Path(dest) / rel)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(path, target)
+        except OSError as e:
+            logger.warning(f"copy {path} to {dest} failed: {e}", exc_info=True)
+            errors.append(STRINGS.GEN_COPY_FAILED.format(dest=dest, cause=e))
+        else:
+            logger.debug(f"result copied: {target}")
+    return errors
 
 
 def _save_document(doc: Document, out_dir: Path, dist: str, row_index: int) -> Path:
@@ -247,6 +271,8 @@ def generate_documents(
             path = _save_document(doc, out_dir, fj.dist, k)
             report.output_paths.append(path)
             report.created += 1
+            for message in _duplicate_result(path, out_dir, pj.result_dirs):
+                report.errors.append((k, message))
             logger.debug(f"document {k}/{total} created: {path}")
         except (RenderError, TemplateError, OSError, ValueError) as e:
             logger.warning(f"row {k}/{total} failed: {e}", exc_info=True)

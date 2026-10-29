@@ -1,6 +1,6 @@
 # Copyright (C) 2026 Kirill Borovoy
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Project settings dialog: folder and default template (021, 024).
+"""Project settings dialog: folder, default template, result copy folders (021, 024, 025).
 
 Creating projects moved to ProjectStartDialog / ProjectCheckDialog (024).
 """
@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
     QComboBox,
     QDialog,
@@ -21,6 +22,7 @@ from PyQt5.QtWidgets import (
     QMessageBox,
     QPushButton,
     QVBoxLayout,
+    QWidget,
 )
 
 from ..services.storage import ProjectStore
@@ -45,6 +47,8 @@ class CreateDialog(QDialog):
         self._store = store or ProjectStore()
         self._edit_ref = edit_ref
         self._templates: list[str] = []
+        self._result_dirs: list[str] = []
+        self._section_paths: dict[str, QLabel] = {}
         self.project_folder: str = ""
         self.project_name: str = ""
         self._build_ui(folder_hint)
@@ -53,7 +57,8 @@ class CreateDialog(QDialog):
     def _build_ui(self, folder_hint: str) -> None:
         folder_hint = str(folder_hint or "")
         self.setWindowTitle(STRINGS.CRT_EDIT_TITLE)
-        self.resize(620, 280)
+        # Minimum width only: the height follows the content (sections, copies).
+        self.setMinimumWidth(620)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(22, 20, 22, 20)
         layout.setSpacing(9)
@@ -77,9 +82,7 @@ class CreateDialog(QDialog):
         folder_row.addWidget(browse_btn)
         layout.addLayout(folder_row)
 
-        self.path_label = QLabel(self)
-        self.path_label.setWordWrap(True)
-        layout.addWidget(self.path_label)
+        self._build_sections(layout)
 
         self._fill_settings()
 
@@ -94,13 +97,59 @@ class CreateDialog(QDialog):
         layout.addWidget(buttons)
         self._update_create_enabled()
 
+    def _build_sections(self, layout: QVBoxLayout) -> None:
+        """Данные, Шаблоны, Результаты — each with the path to its folder (025)."""
+        for title, sub in (
+            (STRINGS.CRT_SECTION_DATA, STRINGS.DATA_DIR),
+            (STRINGS.CRT_SECTION_TPL, STRINGS.TPL_DIR),
+        ):
+            layout.addWidget(self._section_title(title))
+            layout.addWidget(self._section_path(sub))
+
+        header = QHBoxLayout()
+        header.addWidget(self._section_title(STRINGS.CRT_SECTION_RESULTS))
+        header.addStretch(1)
+        add_btn = self._glyph_button("+", STRINGS.CRT_RESULT_COPY_TIP, self)
+        add_btn.clicked.connect(self._on_add_result_dir)
+        header.addWidget(add_btn)
+        layout.addLayout(header)
+        layout.addWidget(self._section_path(STRINGS.GEN_RESULT_DIR))
+
+        self._copies_panel = QWidget(self)
+        self._copies_layout = QVBoxLayout(self._copies_panel)
+        self._copies_layout.setContentsMargins(0, 0, 0, 0)
+        self._copies_layout.setSpacing(4)
+        layout.addWidget(self._copies_panel)
+
+    def _glyph_button(self, text: str, tip: str, parent: QWidget) -> QPushButton:
+        """Small square button with a one-character label, shown larger than text."""
+        btn = QPushButton(text, parent)
+        # The app QSS sets the font size on QWidget, so the size is set in a stylesheet.
+        btn.setStyleSheet("font-size: 14pt; font-weight: 700; padding: 0px;")
+        btn.setToolTip(tip)
+        btn.setFixedSize(34, 30)
+        return btn
+
+    def _section_title(self, text: str) -> QLabel:
+        label = QLabel(text, self)
+        label.setObjectName("sectionTitle")
+        return label
+
+    def _section_path(self, sub: str) -> QLabel:
+        label = QLabel(self)
+        label.setWordWrap(True)
+        label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self._section_paths[sub] = label
+        return label
+
     def _fill_settings(self) -> None:
-        """Prefill settings: name (read-only), folder, default template."""
+        """Prefill settings: name (read-only), folder, default template, copy folders."""
         pj, config_path = self._store.resolve_project(self._edit_ref)
         self.project_name = config_path.stem
         self.name_edit.setText(config_path.stem)
         self.folder_edit.setText(pj.folder or "")
         self._templates = list(pj.templates)
+        self._result_dirs = list(pj.result_dirs)
         self.default_combo = QComboBox(self)
         self.layout().addWidget(QLabel(STRINGS.CRT_DEFAULT_TPL))
         for name in self._templates:
@@ -108,6 +157,7 @@ class CreateDialog(QDialog):
         idx = self.default_combo.findData(pj.default_template)
         self.default_combo.setCurrentIndex(idx if idx >= 0 else 0)
         self.layout().addWidget(self.default_combo)
+        self._refresh_copies()
 
     # -- slots -----------------------------------------------------------
     def _on_browse_folder(self) -> None:
@@ -120,21 +170,70 @@ class CreateDialog(QDialog):
             return  # signals fire while _fill_settings runs before buttons exist
         folder = self.folder_edit.text().strip() or str(Path.home())
         self.create_btn.setEnabled(bool(folder))
-        self.path_label.setText(self._project_paths_text(Path(folder)))
+        self._refresh_paths(Path(folder))
 
-    def _project_paths_text(self, base: Path) -> str:
-        """Project folder and its Данные/Шаблоны/Результат as absolute lines."""
+    def _refresh_paths(self, base: Path) -> None:
+        """Show the absolute path of each section's folder under the project folder."""
         base = base.resolve()
-        lines = [STRINGS.CRT_PATH.format(path=base)]
-        lines += [
-            str(base / sub)
-            for sub in (
-                STRINGS.DATA_DIR,
-                STRINGS.TPL_DIR,
-                STRINGS.GEN_RESULT_DIR,
+        for sub, label in self._section_paths.items():
+            label.setText(str(base / sub))
+
+    def _refresh_copies(self) -> None:
+        """Rebuild the list of result copy folders, one row with a remove button each."""
+        while self._copies_layout.count():
+            item = self._copies_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.hide()
+                widget.setParent(None)
+                widget.deleteLater()
+        if not self._result_dirs:
+            self._copies_layout.addWidget(self._muted(STRINGS.CRT_COPIES_NONE))
+            return
+        for path in self._result_dirs:
+            row = QWidget(self._copies_panel)
+            row_layout = QHBoxLayout(row)
+            row_layout.setContentsMargins(0, 0, 0, 0)
+            row_layout.addWidget(self._path_text(path, row))
+            remove_btn = self._glyph_button("×", STRINGS.CRT_RESULT_REMOVE_TIP, row)
+            remove_btn.clicked.connect(
+                lambda _checked=False, p=path: self._on_remove_result_dir(p)
             )
-        ]
-        return "\n".join(lines)
+            row_layout.addWidget(remove_btn)
+            self._copies_layout.addWidget(row)
+
+    def _muted(self, text: str) -> QLabel:
+        label = QLabel(text, self._copies_panel)
+        label.setObjectName("muted")
+        return label
+
+    def _path_text(self, path: str, parent: QWidget) -> QLabel:
+        label = QLabel(path, parent)
+        label.setWordWrap(True)
+        label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        return label
+
+    def _on_add_result_dir(self) -> None:
+        base = Path(self.folder_edit.text().strip() or str(Path.home()))
+        picked = QFileDialog.getExistingDirectory(
+            self, STRINGS.CRT_RESULT_COPY_PICK, str(base)
+        )
+        if not picked:
+            return
+        path = str(Path(picked).resolve())
+        if path == str((base / STRINGS.GEN_RESULT_DIR).resolve()):
+            QMessageBox.information(self, self.windowTitle(), STRINGS.CRT_RESULT_COPY_OWN)
+            return
+        if path in self._result_dirs:
+            QMessageBox.information(self, self.windowTitle(), STRINGS.CRT_RESULT_COPY_DUP)
+            return
+        self._result_dirs.append(path)
+        self._refresh_copies()
+
+    def _on_remove_result_dir(self, path: str) -> None:
+        if path in self._result_dirs:
+            self._result_dirs.remove(path)
+        self._refresh_copies()
 
     def _confirm_mkdir(self, path: str) -> bool:
         """Ask the user to create a missing folder; True if confirmed."""
@@ -155,6 +254,7 @@ class CreateDialog(QDialog):
             default = self.default_combo.currentData()
             if default:
                 self._store.set_default_template(self._edit_ref, default)
+            self._store.set_result_dirs(self._edit_ref, self._result_dirs)
             self._store.set_project_folder(self._edit_ref, folder)
         except Exception as e:
             logger.warning(f"save settings failed: {e}", exc_info=True)

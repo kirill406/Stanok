@@ -1022,6 +1022,15 @@ class ProjectStore:
             self.save(pj, name=config_path.stem)
             logger.info(f"default template of {config_path.stem} -> {name}")
 
+    def set_result_dirs(self, ref: str | Path, dirs: list[str]) -> None:
+        """Replace the extra result folders (025); each must be an absolute path."""
+        with self._lock:
+            pj, config_path = self.resolve_project(ref)
+            pj.result_dirs = list(dirs)
+            pj = validate_pj(pj.model_dump(mode="json"))
+            self.save(pj, name=config_path.stem)
+            logger.info(f"result copy folders of {config_path.stem}: {len(pj.result_dirs)}")
+
     def set_template_limit(self, ref: str | Path, name: str, limit: int) -> None:
         """Persist a per-template document limit (021); 0 = no limit."""
         with self._lock:
@@ -1078,6 +1087,37 @@ class ProjectStore:
                 f"{config_path.stem}"
             )
             return rel
+
+    def remove_source(self, ref: str | Path, file: str) -> None:
+        """Detach a data source and its counters (025). The xlsx file stays on disk.
+
+        Refused for the last source, and while a template field still reads one
+        of its counters: the user changes those fields first.
+        """
+        with self._lock:
+            pj, config_path = self.resolve_project(ref)
+            if not any(ds.file == file for ds in pj.data_sources):
+                raise StorageError("data", [f"data source not found: {file}"])
+            if len(pj.data_sources) == 1:
+                raise StorageError("data", [STRINGS.STORAGE_SOURCE_LAST])
+            counters = {name for name, c in pj.counters.items() if c.table == file}
+            users = [
+                f"{tname}: {fname}"
+                for tname, tdef in pj.templates.items()
+                for fname, fdef in tdef.fields.items()
+                if (fdef.source == FieldSource.TABLE and fdef.counter_name in counters)
+                or (fdef.source == FieldSource.COUNTER and fdef.value in counters)
+            ]
+            if users:
+                raise StorageError(
+                    "data",
+                    [STRINGS.STORAGE_SOURCE_IN_USE.format(file=file, fields=", ".join(users))],
+                )
+            pj.data_sources = [ds for ds in pj.data_sources if ds.file != file]
+            for name in counters:
+                del pj.counters[name]
+            self.save(pj, name=config_path.stem)
+            logger.info(f"removed data source {file} from {config_path.stem}")
 
     @staticmethod
     def _remove_project_folder(folder: Path) -> None:

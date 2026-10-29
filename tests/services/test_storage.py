@@ -489,6 +489,60 @@ def test_load_relabel_write_failure_still_loads(store, sample_pj, monkeypatch):
     assert json.loads(path.read_text())["version"] != current_version()
 
 
+def test_set_result_dirs_persists_and_rejects_relative(store, sample_pj, tmp_path):
+    from stanok.engine.schema import PJValidationError
+
+    store.save(sample_pj, name="proj")
+    copy = tmp_path / "copy"
+    store.set_result_dirs("proj", [str(copy)])
+    assert store.load("proj").result_dirs == [str(copy)]
+    with pytest.raises(PJValidationError):
+        store.set_result_dirs("proj", ["relative/copy"])
+    assert store.load("proj").result_dirs == [str(copy)]
+
+
+def _add_extra_source(store, tmp_path):
+    from openpyxl import Workbook
+
+    xlsx = tmp_path / "extra.xlsx"
+    wb = Workbook()
+    wb.active.append(["Город"])
+    wb.active.append(["Москва"])
+    wb.save(xlsx)
+    return store.add_source("proj", xlsx)
+
+
+def test_remove_source_drops_source_and_its_counters(store, tmp_path):
+    _migrated(store, tmp_path)
+    rel = _add_extra_source(store, tmp_path)
+    store.remove_source("proj", rel)
+    pj = store.load("proj")
+    assert [ds.file for ds in pj.data_sources] == ["Данные/data.xlsx"]
+    assert all(c.table != rel for c in pj.counters.values())
+
+
+def test_remove_last_source_refused(store, tmp_path):
+    _migrated(store, tmp_path)
+    with pytest.raises(StorageError, match="последний"):
+        store.remove_source("proj", "Данные/data.xlsx")
+
+
+def test_remove_source_refused_while_field_uses_its_counter(store, tmp_path):
+    from stanok.engine.schema import FieldDef, FieldSource
+
+    _migrated(store, tmp_path)
+    rel = _add_extra_source(store, tmp_path)
+    pj = store.load("proj")
+    counter = next(n for n, c in pj.counters.items() if c.table == rel)
+    pj.templates["Договор"].fields["Город"] = FieldDef(
+        source=FieldSource.TABLE, value="Город", counter_name=counter
+    )
+    store.save(pj, name="proj")
+    with pytest.raises(StorageError, match="нужен полям"):
+        store.remove_source("proj", rel)
+    assert rel in [ds.file for ds in store.load("proj").data_sources]
+
+
 def test_save_updates_existing(store, sample_pj):
     """Test that save updates existing config."""
     path1 = store.save(sample_pj)

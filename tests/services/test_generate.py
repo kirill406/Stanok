@@ -36,9 +36,9 @@ def make_project(
 ) -> Path:
     """Build minimal project folder: Данные/data.xlsx + Шаблоны/tpl.docx + legacy PJ.
 
-    A counter at position 0 generates nothing. A sequential counter therefore
-    starts at pos 1, so the sheet gets a placeholder row 0 in front of `rows`.
-    A circular counter starts at pos len(rows), which wraps to row 0.
+    A sequential counter defaults to pos 1, so the sheet gets a placeholder
+    row 0 in front of `rows` that is skipped. Pass pos=0 to start at it.
+    A circular counter defaults to pos len(rows), which wraps to row 0.
     """
     if pos is None:
         pos = {"sequential": 1, "circular": len(rows), "constant": 0}[mode]
@@ -180,14 +180,13 @@ def test_resume_0_keeps_cursor(tmp_path, store):
     assert saved.counters["num"].pos == 2
 
 
-def test_counter_at_zero_generates_nothing(tmp_path, store):
+def test_counter_at_zero_starts_at_first_row(tmp_path, store):
+    # Position 0 is row 0: the sheet's placeholder row is the first one generated.
     folder = make_project(tmp_path / "proj", pos=0)
     report = generate_documents(GenerateCommand(project_ref=folder), store=store)
-    assert report.created == 0
-    assert report.output_paths == []
+    assert report.created == 3
     saved = _load_saved(store, "proj")
-    assert saved.counters["data"].pos == 0
-    assert saved.counters["num"].pos == 0
+    assert saved.counters["data"].pos == 3
 
 
 def test_empty_source_returns_empty_report(tmp_path, store):
@@ -386,6 +385,50 @@ def test_result_copy_skips_own_result_folder(tmp_path, store):
     ]
 
 
+def _use_shared_counter(folder: Path, name: str) -> None:
+    data = json.loads((folder / "project.stanok").read_text())
+    data["templates"]["Договор"]["fields"]["Номер"] = {"source": "counter", "value": name}
+    data["counters"].pop("num", None)
+    _write_pj(folder, data)
+
+
+def test_shared_counter_numbers_documents_and_persists(tmp_path, store):
+    folder = make_project(tmp_path / "proj", rows=(("Иван", 100), ("Петр", 200)))
+    store.add_global_counter("shared_num", "1", 5)
+    _use_shared_counter(folder, "shared_num")
+    report = generate_documents(GenerateCommand(project_ref=folder), store=store)
+    assert report.created == 2
+    assert [_doc_text(p) for p in report.output_paths] == [
+        "Договор Иван на сумму 100 №5",
+        "Договор Петр на сумму 200 №6",
+    ]
+    assert store.global_counters()["shared_num"].pos == 7
+    saved = json.loads((store.home_dir / "proj.stanok").read_text())
+    assert "shared_num" not in saved["counters"]
+
+
+def test_shared_counter_clash_with_project_counter_refused(tmp_path, store):
+    folder = make_project(tmp_path / "proj")
+    data = json.loads((folder / "project.stanok").read_text())
+    data["templates"]["Договор"]["fields"]["Номер"]["value"] = "num"
+    _write_pj(folder, data)
+    # Created directly in settings: the clash check in storage would refuse it.
+    from stanok.engine.schema import CounterDef, validate_aj
+
+    aj = validate_aj({"version": "0.0.0"})
+    aj.counters["num"] = CounterDef(pos=0, format="1")
+    store._write_settings(aj)
+    with pytest.raises(TemplateError, match="и в проекте, и среди сквозных"):
+        generate_documents(GenerateCommand(project_ref=folder), store=store)
+
+
+def test_unknown_counter_reference_fails_resolve(tmp_path, store):
+    folder = make_project(tmp_path / "proj")
+    _use_shared_counter(folder, "ghost")
+    with pytest.raises(ResolveError, match="counter not defined"):
+        generate_documents(GenerateCommand(project_ref=folder), store=store)
+
+
 def test_unique_path_helper(tmp_path):
     base = tmp_path / "a.docx"
     assert _unique_path(base) == base
@@ -577,3 +620,16 @@ def test_dist_without_extension_gets_docx(tmp_path, store):
     assert report.created == 1
     assert report.output_paths[0].suffix == ".docx"
     assert report.output_paths[0].name == "Договор_Иван_1.docx"
+
+
+def test_shared_counter_continues_across_projects(tmp_path, store):
+    first = make_project(tmp_path / "first", rows=(("Иван", 100),))
+    second = make_project(tmp_path / "second", rows=(("Петр", 200),))
+    store.add_global_counter("shared_num", "1", 5)
+    _use_shared_counter(first, "shared_num")
+    _use_shared_counter(second, "shared_num")
+    r1 = generate_documents(GenerateCommand(project_ref=first), store=store)
+    r2 = generate_documents(GenerateCommand(project_ref=second), store=store)
+    assert _doc_text(r1.output_paths[0]).endswith("№5")
+    assert _doc_text(r2.output_paths[0]).endswith("№6")
+    assert store.global_counters()["shared_num"].pos == 7

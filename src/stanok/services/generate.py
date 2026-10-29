@@ -24,7 +24,7 @@ from ..engine.resolve import (
     participating_sources,
     resolve_rows,
 )
-from ..engine.schema import ProjectJSON, TemplateDef
+from ..engine.schema import FieldSource, ProjectJSON, TemplateDef
 from ..gui.strings import STRINGS
 from ..tables.excel import ExcelReader, TableReadError
 from .storage import ProjectStore, project_folder
@@ -165,6 +165,33 @@ def _save_document(doc: Document, out_dir: Path, dist: str, row_index: int) -> P
     return final
 
 
+def _attach_shared_counters(pj: ProjectJSON, store: ProjectStore) -> list[str]:
+    """Copy the shared counters that counter fields read into pj (026).
+
+    Shared counters live in settings.json. The caller writes their positions
+    back there and removes them from pj before the project is saved. A name
+    that is both a project counter and a shared one is refused.
+    """
+    wanted = {
+        fdef.value
+        for tdef in pj.templates.values()
+        for fdef in tdef.fields.values()
+        if fdef.source == FieldSource.COUNTER and isinstance(fdef.value, str)
+    }
+    if not wanted:
+        return []
+    shared = store.global_counters()
+    attached: list[str] = []
+    for name in sorted(wanted):
+        if name not in shared:
+            continue  # unknown names fail in resolve as "counter not defined"
+        if name in pj.counters:
+            raise TemplateError(STRINGS.GEN_SHARED_COLLISION.format(name=name))
+        pj.counters[name] = shared[name].model_copy()
+        attached.append(name)
+    return attached
+
+
 def generate_documents(
     cmd: GenerateCommand,
     *,
@@ -191,6 +218,7 @@ def generate_documents(
 
     pj, config_path = store.resolve_project(cmd.project_ref)
     project_dir = project_folder(cmd.project_ref, pj, config_path, store)
+    shared = _attach_shared_counters(pj, store)
 
     template_name, template_def = _pick_template(pj, cmd.template)
     template_path = project_dir / template_def.file
@@ -318,6 +346,10 @@ def generate_documents(
     # Persist positions whenever documents were attempted (created + errors).
     # An all-errored run must still advance, matching `processed`.
     if processed:
+        for name in shared:
+            store.set_global_counter_pos(name, pj.counters[name].pos)
+        for name in shared:
+            del pj.counters[name]  # shared positions live in settings, not the project
         store.save(pj, name=config_path.stem)
         logger.info(f"saved PJ counter positions to {config_path}")
 

@@ -235,12 +235,12 @@ class ProjectJSON(_WarnExtra):
         for tname, tdef in self.templates.items():
             for fname, fdef in tdef.fields.items():
                 if fdef.source == FieldSource.COUNTER:
-                    # 021: a counter field's value must name a defined counter.
+                    # 026: the name may be a shared counter (settings), so it is
+                    # resolved at generation time, not here.
                     value = fdef.value
-                    if not isinstance(value, str) or value not in self.counters:
+                    if not isinstance(value, str) or not value:
                         raise ValueError(
-                            f"counter field references unknown counter "
-                            f"'{value}': {tname}.{fname}"
+                            f"counter field needs a counter name: {tname}.{fname}"
                         )
                     continue
                 if fdef.source != FieldSource.TABLE:
@@ -252,9 +252,8 @@ class ProjectJSON(_WarnExtra):
                     )
                 cdef = self.counters.get(cname)
                 if cdef is None:
-                    raise ValueError(
-                        f"counter '{cname}' not defined: {tname}.{fname}"
-                    )
+                    # Not a project counter: generation reports it as not defined.
+                    continue
                 if cdef.table is None:
                     raise ValueError(
                         f"counter '{cname}' is not bound to a source: "
@@ -282,6 +281,16 @@ class ApplicationJSON(_WarnExtra):
     version: str
     recent: list[RecentItem] = []
     settings: dict[str, Any] = {}
+    # 026: shared counters, used by any project's counter fields. Numeric only.
+    counters: dict[str, CounterDef] = {}
+
+    @field_validator("counters")
+    @classmethod
+    def _shared_numeric(cls, v: dict[str, CounterDef]) -> dict[str, CounterDef]:
+        for name, cdef in v.items():
+            if cdef.table is not None:
+                raise ValueError(f"shared counter '{name}' must not be bound to a source")
+        return v
 
     @field_validator("recent")
     @classmethod

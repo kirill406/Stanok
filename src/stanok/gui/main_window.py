@@ -27,7 +27,7 @@ from PyQt5.QtWidgets import (
 from ..services.generate import GenerateCommand, GenerateReport
 from ..engine.schema import SchemaError
 from ..services.storage import ProjectStore, StorageError
-from .create_dialog import CreateDialog
+from .global_counters_dialog import GlobalCountersDialog
 from .dialogs import ask_yes_no
 from .project_dialog import ProjectDialog
 from .report_text import done_text
@@ -98,6 +98,9 @@ class MainWindow(QMainWindow):
         self.create_btn = QPushButton(STRINGS.MAIN_CREATE, group)
         self.create_btn.clicked.connect(self._on_create)
         buttons.addWidget(self.create_btn)
+        self.counters_btn = QPushButton(STRINGS.GCNT_BUTTON, group)
+        self.counters_btn.clicked.connect(self._on_counters)
+        buttons.addWidget(self.counters_btn)
         self.settings_btn = QPushButton(STRINGS.MAIN_SETTINGS, group)
         self.settings_btn.clicked.connect(self._on_settings)
         buttons.addWidget(self.settings_btn)
@@ -219,17 +222,10 @@ class MainWindow(QMainWindow):
         self._open_project_dialog(item.data(Qt.UserRole))
 
     def _on_edit_project(self, ref: str) -> None:
-        """Open the project settings (create dialog in edit mode) for one row."""
+        """Same as a click on the project name: open window 2 for editing."""
         if self._busy:
             return
-        try:
-            dialog = CreateDialog(self._store, "", self, edit_ref=ref)
-        except StorageError as e:
-            logger.warning(f"edit project {ref}: {e}", exc_info=True)
-            self._show_error(str(e))
-            return
-        if dialog.exec_():
-            self.refresh_recent()
+        self._open_project_dialog(ref)
 
     def _on_remove_recent(self, folder: str, config: str) -> None:
         """Drop one entry from recent list (project itself untouched)."""
@@ -283,6 +279,13 @@ class MainWindow(QMainWindow):
             return
         self.refresh_recent()
         self._open_project_dialog(ref)
+
+    def _on_counters(self) -> None:
+        """Shared (сквозные) counters: create, set, remove (026)."""
+        if self._busy:
+            return
+        GlobalCountersDialog(self._store, self).exec_()
+        self.refresh_recent()
 
     def _on_settings(self) -> None:
         """Open settings dialog (018); keeps import lazy like create (tests)."""
@@ -401,6 +404,7 @@ class MainWindow(QMainWindow):
         self.browse_btn.setEnabled(not busy)
         self.create_btn.setEnabled(not busy)
         self.settings_btn.setEnabled(not busy)
+        self.counters_btn.setEnabled(not busy)
         for index in range(self.recent_list.count()):
             row = self.recent_list.itemWidget(self.recent_list.item(index))
             if row is None:

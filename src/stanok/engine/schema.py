@@ -49,6 +49,18 @@ class FormatTooNewError(SchemaError):
         super().__init__(STRINGS.SCH_FORMAT_TOO_NEW.format(version=version))
 
 
+class MigrationError(SchemaError):
+    """An old file cannot be brought to the current format."""
+
+    def __init__(self, source: str, target: str, stalled: bool = False):
+        self.source = source
+        self.target = target
+        template = (
+            STRINGS.SCH_MIGRATION_STALLED if stalled else STRINGS.SCH_NO_MIGRATION
+        )
+        super().__init__(template.format(source=source, target=target))
+
+
 class ResolveError(SchemaError):
     def __init__(self, path: str, errors: list[str]):
         self.path = path
@@ -302,20 +314,44 @@ def current_version() -> str:
 MIGRATIONS: dict[tuple[str, str], Callable[[dict], dict]] = {}
 
 
+def _step_from(version: str) -> Callable[[dict], dict] | None:
+    """Registered migration step that starts at `version` (compared by core)."""
+    core = _parse_version(version)
+    return next(
+        (fn for (src, _dst), fn in MIGRATIONS.items() if _parse_version(src) == core),
+        None,
+    )
+
+
+def _relabel(data: dict, version: str, target: str) -> dict:
+    """No step from `version`: the data must already validate as the current format."""
+    try:
+        validate_pj(data)
+    except SchemaError as e:
+        raise MigrationError(version, target) from e
+    return {**data, "version": target}
+
+
 def migrate(data: dict) -> dict:
-    """Цепочка миграций к current_version()."""
-    version = data.get("version", "0.0.0")
+    """Bring a raw PJ dict to the current format and return it.
+
+    Newer than the program: FormatTooNewError. Same core version: unchanged.
+    Older: a registered step from that version runs and the chain continues.
+    With no step, the dict must validate as it is; then only the version changes.
+    Otherwise MigrationError.
+    """
+    version = str(data.get("version", "0.0.0"))
     target = _get_package_version()
     if _parse_version(version) > _parse_version(target):
         raise FormatTooNewError(version)
-    while version != target:
-        step = next((MIGRATIONS[k] for k in MIGRATIONS if k[0] == version), None)
+    while _parse_version(version) < _parse_version(target):
+        step = _step_from(version)
         if step is None:
-            raise FormatTooNewError(version)
+            return _relabel(data, version, target)
         data = step(dict(data))
-        new_version = data.get("version", target)
-        if new_version == version:
-            raise SchemaError(f"Migration {version}→{new_version} didn't update version")
+        new_version = str(data.get("version", target))
+        if _parse_version(new_version) <= _parse_version(version):
+            raise MigrationError(version, new_version, stalled=True)
         version = new_version
     return data
 
@@ -378,6 +414,7 @@ __all__ = [
     "AJValidationError",
     "FillingValidationError",
     "FormatTooNewError",
+    "MigrationError",
     "RenderError",
     "ResolveError",
     "StorageError",

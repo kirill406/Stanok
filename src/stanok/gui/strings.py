@@ -31,6 +31,8 @@ class STRINGS:
 
     # Schema/validation (engine/schema.py)
     SCH_FORMAT_TOO_NEW = "Формат версии {version} новее программы — обновите программу"
+    SCH_NO_MIGRATION = "Нет пути миграции формата {source} → {target}"
+    SCH_MIGRATION_STALLED = "Миграция {source} не обновила версию (шаг → {target})"
     SCH_DIST_TRAVERSAL = "{field}: путь должен быть относительным без '..': {value}"
 
     # Generation (services/generate.py)

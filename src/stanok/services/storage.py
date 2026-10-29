@@ -20,12 +20,15 @@ from ..engine.schema import (
     DataSourceDef,
     FieldDef,
     FieldSource,
+    FormatTooNewError,
+    MigrationError,
     ProjectJSON,
     RecentItem,
     SchemaError,
     StorageError,
     TemplateDef,
     current_version,
+    migrate,
     validate_aj,
     validate_pj,
 )
@@ -191,8 +194,12 @@ class ProjectStore:
             for candidate in (path, self._tmp_path(path), self._backup_path(path))
         )
 
-    def _atomic_write_json(self, path: Path, data: dict) -> None:
-        """Write JSON atomically: tmp + fsync -> backup copy + replace."""
+    def _atomic_write_json(self, path: Path, data: dict, backup: bool = True) -> None:
+        """Write JSON atomically: tmp + fsync -> backup copy + replace.
+
+        `backup=False` skips the copy, so the previous `.bak` survives writes
+        that are not user saves (for example, a version relabel on open).
+        """
         path = self._validate_path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -215,7 +222,7 @@ class ProjectStore:
             _remove_tmp(tmp_path)
             raise
 
-        if path.exists():
+        if backup and path.exists():
             # Copy, not rename: the main config must exist at every moment.
             try:
                 shutil.copy2(path, bak_path)
@@ -249,6 +256,27 @@ class ProjectStore:
                 )
                 raise
         logger.debug(f"wrote config atomically: {path}")
+
+    def _read_pj(self, path: Path, persist: bool = True) -> ProjectJSON:
+        """Read a PJ file: migrate an older format, then validate.
+
+        With `persist`, a migrated file is rewritten with the current version.
+        A failed rewrite (for example, a read-only file) only logs a warning.
+        """
+        raw = self._read_json(path)
+        migrated = migrate(raw)
+        pj = validate_pj(migrated)
+        if persist and migrated != raw:
+            try:
+                self._atomic_write_json(path, migrated, backup=False)
+            except OSError as e:
+                logger.warning(f"cannot save migrated config {path}: {e}", exc_info=True)
+            else:
+                logger.info(
+                    f"migrated config {path.name}: "
+                    f"{raw.get('version')} -> {migrated.get('version')}"
+                )
+        return pj
 
     def _read_json(self, path: Path) -> dict:
         path = self._validate_path(path)
@@ -329,9 +357,13 @@ class ProjectStore:
                     return recovered
                 raise StorageError("load", [f"project not found: {name}"])
             try:
-                pj = validate_pj(self._read_json(path))
+                pj = self._read_pj(path)
             except StorageError:
                 raise
+            except FormatTooNewError as e:
+                # Not recovered from .tmp/.bak: the file is valid, just not for this program.
+                logger.error(f"load config {path}: {e}")
+                raise StorageError("load", [f"config {name}: {e}"]) from e
             except (OSError, ValueError, SchemaError) as e:
                 logger.error(f"load config {path}: {e}", exc_info=True)
                 recovered = self._recover_config(path, name)
@@ -355,7 +387,7 @@ class ProjectStore:
             if not source.exists():
                 continue
             try:
-                pj = validate_pj(self._read_json(source))
+                pj = self._read_pj(source, persist=False)
             except (OSError, ValueError, SchemaError) as e:
                 logger.warning(f"recovery source {source}: {e}", exc_info=True)
                 continue
@@ -426,7 +458,7 @@ class ProjectStore:
             configs = []
             for path in self.home_dir.glob("*.stanok"):
                 try:
-                    pj = validate_pj(self._read_json(path))
+                    pj = self._read_pj(path)
                     configs.append((path.stat().st_mtime, pj))
                 except (OSError, ValueError, SchemaError) as e:
                     logger.warning(f"skipping invalid config {path}: {e}")
@@ -444,7 +476,7 @@ class ProjectStore:
             out: list[tuple[str, ProjectJSON]] = []
             for path in self.home_dir.glob("*.stanok"):
                 try:
-                    out.append((path.stem, validate_pj(self._read_json(path))))
+                    out.append((path.stem, self._read_pj(path)))
                 except (OSError, ValueError, SchemaError) as e:
                     logger.warning(f"skipping invalid config {path}: {e}")
                 except Exception as e:
@@ -477,7 +509,7 @@ class ProjectStore:
                 report.found += 1
                 try:
                     with open(src, encoding="utf-8") as f:
-                        pj = validate_pj(json.load(f))
+                        pj = validate_pj(migrate(json.load(f)))
                 except (OSError, ValueError, SchemaError) as e:
                     logger.warning(f"import config {src}: {e}", exc_info=True)
                     report.failed.append(src.name)
@@ -577,7 +609,7 @@ class ProjectStore:
                 "migrate", [f"legacy config not found: {legacy_config}"]
             )
         with open(legacy_config, "r", encoding="utf-8") as f:
-            pj = validate_pj(json.load(f))
+            pj = validate_pj(migrate(json.load(f)))
         pj.folder = str(project_dir.resolve())
         name = self._unique_config_name(project_dir.resolve().name)
         self.save(pj, name=name)

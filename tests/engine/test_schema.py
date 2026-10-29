@@ -13,6 +13,7 @@ from stanok.engine.schema import (
     FillingJSON,
     FillingValidationError,
     FormatTooNewError,
+    MigrationError,
     PJValidationError,
     migrate,
     normalize,
@@ -100,8 +101,30 @@ def test_migrate_chain(monkeypatch):
 
 def test_migrate_missing_step(monkeypatch):
     monkeypatch.setattr(schema, "_get_package_version", lambda: "0.2.0")
-    with pytest.raises(FormatTooNewError):
+    with pytest.raises(MigrationError, match="0.0.1"):
         migrate({"version": "0.0.1"})
+
+
+def test_migrate_old_valid_without_step_only_relabels(monkeypatch):
+    monkeypatch.setattr(schema, "_get_package_version", lambda: "0.2.0")
+    data = _load("pj_minimal.stanok")
+    data["version"] = "0.0.0"
+    out = migrate(dict(data))
+    assert out["version"] == "0.2.0"
+    assert out["templates"] == data["templates"]
+
+
+def test_migrate_old_invalid_without_step_raises(monkeypatch):
+    monkeypatch.setattr(schema, "_get_package_version", lambda: "0.2.0")
+    with pytest.raises(MigrationError, match="0.0.0"):
+        migrate({"version": "0.0.0"})
+
+
+def test_migrate_same_core_keeps_label(monkeypatch):
+    monkeypatch.setattr(schema, "_get_package_version", lambda: "0.2.0a0")
+    data = _load("pj_minimal.stanok")
+    data["version"] = "0.2.0-alpha"
+    assert migrate(dict(data))["version"] == "0.2.0-alpha"
 
 
 @pytest.mark.parametrize("validator,model", [
@@ -195,7 +218,7 @@ def test_migrate_no_version_update(monkeypatch):
         ("0.0.0", "0.1.0"),
         lambda d: {**d, "version": "0.0.0"},  # doesn't update version
     )
-    with pytest.raises(schema.SchemaError, match="didn't update version"):
+    with pytest.raises(MigrationError, match="не обновила версию"):
         migrate({"version": "0.0.0"})
 
 

@@ -16,7 +16,6 @@ from PyQt5.QtWidgets import (
     QListWidgetItem,
     QMainWindow,
     QMessageBox,
-    QProgressBar,
     QProgressDialog,
     QPushButton,
     QSpinBox,
@@ -102,11 +101,6 @@ class MainWindow(QMainWindow):
         buttons.addWidget(self.settings_btn)
         group_layout.addLayout(buttons)
         layout.addWidget(group, 1)
-
-        self.progress_bar = QProgressBar(root)
-        self.progress_bar.setRange(0, 100)
-        self.progress_bar.setValue(0)
-        layout.addWidget(self.progress_bar)
 
         self.setCentralWidget(root)
         self.statusBar().showMessage(STRINGS.MAIN_STATUS_READY)
@@ -335,9 +329,6 @@ class MainWindow(QMainWindow):
             self._worker.request_cancel()
 
     def _on_progressed(self, created: int, total: int) -> None:
-        if total > 0:
-            self.progress_bar.setRange(0, total)
-            self.progress_bar.setValue(created)
         self.statusBar().showMessage(
             STRINGS.MAIN_STATUS_RUNNING.format(created=created, total=total)
         )
@@ -355,7 +346,6 @@ class MainWindow(QMainWindow):
             self._progress_dialog.close()
             self._progress_dialog = None
         self._set_busy(False)
-        self.progress_bar.setValue(0)
         self.statusBar().showMessage(STRINGS.MAIN_STATUS_READY)
         self.refresh_recent()
         if self._queue_total == 1 and len(self._queue_results) == 1:

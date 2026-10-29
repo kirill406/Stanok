@@ -100,9 +100,10 @@
   trufflehog3 secrets scan (excludes `venv/`, `uv.lock`) + `pytest tests/ -q` when tests exist;
   never commit with `--no-verify` without asking
 - Build exe (`Станок.spec` is gitignored, not in repo; version comes from `pyproject.toml`):
+  0. `uv sync` — refreshes package metadata; without it the exe runtime keeps the old version
   1. `.venv/Scripts/python scripts/make-version-info.py` — writes `build/version_info.txt`
-  2. `pyinstaller --noconfirm --onefile --windowed --name Станок --paths src --icon src/stanok/gui/icon.ico --add-data "src/stanok/gui/icon.png;stanok/gui" --version-file build/version_info.txt run.py`
-  - check exe properties → FileVersion equals the `pyproject.toml` version
+  2. `pyinstaller --clean --noconfirm --onefile --windowed --name Станок --paths src --icon src/stanok/gui/icon.ico --add-data "src/stanok/gui/icon.png;stanok/gui" --version-file build/version_info.txt run.py`
+  - check exe properties → FileVersion equals the `pyproject.toml` version; the START line in the log shows the same version
 - Open PR: one logical change per PR, link to spec item
 - Merge with `git merge --no-ff` after review (no squash, no fast-forward)
 - Separate refactoring from features into different commits/branches

@@ -193,6 +193,7 @@ class ProjectJSON(_WarnExtra):
     filename_template: str = "{template} ({i})"
     folder: str | None = None  # absolute path with Данные/Шаблоны (020)
     default_template: str = ""  # 021: template for window 1; "" = first template
+    result_dirs: list[str] = []  # 025: extra folders every result is copied into
 
     @field_validator("folder")
     @classmethod
@@ -205,6 +206,21 @@ class ProjectJSON(_WarnExtra):
         if not os.path.isabs(value):
             logger.warning(f"project folder is not absolute: {value}")
         return value
+
+    @field_validator("result_dirs")
+    @classmethod
+    def _result_dirs_absolute(cls, v: list[str]) -> list[str]:
+        """Copies go to exact folders, so relative paths (cwd-dependent) are refused."""
+        out: list[str] = []
+        for raw in v:
+            value = raw.strip()
+            if not value:
+                continue
+            if not os.path.isabs(value):
+                raise ValueError(STRINGS.SCH_RESULT_DIR_RELATIVE.format(value=value))
+            if value not in out:
+                out.append(value)
+        return out
 
     @model_validator(mode="after")
     def _check_relations(self) -> "ProjectJSON":
@@ -219,12 +235,12 @@ class ProjectJSON(_WarnExtra):
         for tname, tdef in self.templates.items():
             for fname, fdef in tdef.fields.items():
                 if fdef.source == FieldSource.COUNTER:
-                    # 021: a counter field's value must name a defined counter.
+                    # 026: the name may be a shared counter (settings), so it is
+                    # resolved at generation time, not here.
                     value = fdef.value
-                    if not isinstance(value, str) or value not in self.counters:
+                    if not isinstance(value, str) or not value:
                         raise ValueError(
-                            f"counter field references unknown counter "
-                            f"'{value}': {tname}.{fname}"
+                            f"counter field needs a counter name: {tname}.{fname}"
                         )
                     continue
                 if fdef.source != FieldSource.TABLE:
@@ -236,9 +252,8 @@ class ProjectJSON(_WarnExtra):
                     )
                 cdef = self.counters.get(cname)
                 if cdef is None:
-                    raise ValueError(
-                        f"counter '{cname}' not defined: {tname}.{fname}"
-                    )
+                    # Not a project counter: generation reports it as not defined.
+                    continue
                 if cdef.table is None:
                     raise ValueError(
                         f"counter '{cname}' is not bound to a source: "
@@ -266,6 +281,16 @@ class ApplicationJSON(_WarnExtra):
     version: str
     recent: list[RecentItem] = []
     settings: dict[str, Any] = {}
+    # 026: shared counters, used by any project's counter fields. Numeric only.
+    counters: dict[str, CounterDef] = {}
+
+    @field_validator("counters")
+    @classmethod
+    def _shared_numeric(cls, v: dict[str, CounterDef]) -> dict[str, CounterDef]:
+        for name, cdef in v.items():
+            if cdef.table is not None:
+                raise ValueError(f"shared counter '{name}' must not be bound to a source")
+        return v
 
     @field_validator("recent")
     @classmethod

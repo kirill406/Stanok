@@ -161,6 +161,26 @@ def test_migrate_same_version_passthrough():
     assert migrate(dict(data))["version"] == schema.current_version()
 
 
+def test_result_dirs_default_empty():
+    data = _load("pj_minimal.stanok")
+    data.pop("result_dirs", None)
+    assert validate_pj(data).result_dirs == []
+
+
+def test_result_dirs_absolute_deduped_and_blank_dropped(tmp_path):
+    data = _load("pj_minimal.stanok")
+    copy = str(tmp_path / "copy")
+    data["result_dirs"] = [copy, "  ", copy]
+    assert validate_pj(data).result_dirs == [copy]
+
+
+def test_result_dirs_relative_rejected():
+    data = _load("pj_minimal.stanok")
+    data["result_dirs"] = ["relative/copy"]
+    with pytest.raises(PJValidationError, match="абсолютной"):
+        validate_pj(data)
+
+
 def test_parse_version_accepts_pep440_prerelease():
     assert schema._parse_version("0.2.0a0") == (0, 2, 0)
     assert schema._parse_version("0.2.0-alpha") == (0, 2, 0)
@@ -239,14 +259,15 @@ def test_field_needs_counter_name():
         validate_pj(_pj({"source": "table", "value": "col"}, {}))
 
 
-def test_field_counter_must_exist():
-    with pytest.raises(PJValidationError, match="not defined"):
-        validate_pj(
-            _pj(
-                {"source": "table", "value": "col", "counter_name": "ghost"},
-                {},
-            )
+def test_field_counter_unknown_checked_at_generation():
+    # 026: the name may be a shared counter from settings, so validation accepts it.
+    counters = {"c": {"pos": 0, "format": "1", "table": "Данные/d.xlsx"}}
+    validate_pj(
+        _pj(
+            {"source": "table", "value": "col", "counter_name": "ghost"},
+            counters,
         )
+    )
 
 
 def test_field_counter_must_be_bound():
@@ -269,11 +290,16 @@ def test_field_counter_ok():
     assert pj.templates["T"].fields["F"].counter_name == "emp"
 
 
-def test_counter_field_must_exist():
-    with pytest.raises(PJValidationError, match="counter field"):
+def test_counter_field_name_required():
+    with pytest.raises(PJValidationError, match="counter name"):
         validate_pj(
-            _pj({"source": "counter", "value": "ghost"}, {}, sources=[])
+            _pj({"source": "counter", "value": ""}, {}, sources=[])
         )
+
+
+def test_counter_field_accepts_shared_name():
+    pj = validate_pj(_pj({"source": "counter", "value": "shared"}, {}, sources=[]))
+    assert pj.templates["T"].fields["F"].value == "shared"
 
 
 def test_counter_field_ok():
@@ -366,3 +392,15 @@ def test_project_folder_field():
         "folder": "relative/dir",
     })
     assert pj2.folder == "relative/dir"
+
+
+@pytest.mark.parametrize("old", ["0.0.0", "0.3.0-alpha"])
+def test_migrate_older_valid_file_relabels_to_current(monkeypatch, old):
+    # Files from 0.0.0 and 0.3.0 have the same fields as 0.4.0, so no migration step
+    # is needed: a valid file only gets the current version label.
+    monkeypatch.setattr(schema, "_get_package_version", lambda: "0.4.0")
+    data = _load("pj_minimal.stanok")
+    data["version"] = old
+    out = migrate(dict(data))
+    assert out["version"] == "0.4.0"
+    assert out["templates"] == data["templates"]

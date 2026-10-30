@@ -48,7 +48,7 @@ def test_open_lists_templates(qapp, tmp_path, store):
     dlg = ProjectDialog(str(folder), store=store)
     assert dlg.table.rowCount() == 1
     assert dlg.table.item(0, 0).text() == "Договор"
-    assert dlg.table.cellWidget(0, 2).value() == 0
+    assert dlg.table.cellWidget(0, 2).value() == 100  # make_project's large test limit
     assert "proj" in dlg.windowTitle()
     dlg.close()
 
@@ -695,4 +695,25 @@ def test_add_source_guards(qapp, tmp_path, store, monkeypatch):
     )
     dlg._on_add_source()
     assert warnings and "wrong file type" in warnings[0]
+    dlg.close()
+
+
+def test_remove_source_button_detaches_after_confirm(qapp, tmp_path, store, monkeypatch):
+    from openpyxl import Workbook
+
+    folder = make_project(tmp_path / "proj")
+    store.migrate_from_project(folder)
+    extra = tmp_path / "extra.xlsx"
+    wb = Workbook()
+    wb.active.append(["Город"])
+    wb.save(extra)
+    store.add_source("proj", extra)
+    dlg = ProjectDialog(str(folder), store=store)
+    assert dlg.sources_table.columnCount() == 3
+    rows = {dlg.sources_table.item(r, 0).text(): r for r in range(dlg.sources_table.rowCount())}
+    remove_btn = dlg.sources_table.cellWidget(rows["Данные/extra.xlsx"], 2)
+    monkeypatch.setattr("stanok.gui.project_dialog.ask_yes_no", lambda *a, **k: True)
+    remove_btn.click()
+    assert [ds.file for ds in store.load("proj").data_sources] == ["Данные/data.xlsx"]
+    assert dlg.sources_table.rowCount() == 1
     dlg.close()

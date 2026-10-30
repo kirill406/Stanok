@@ -256,6 +256,11 @@ QToolTip {
     color: #ffffff;
     padding: 5px 7px;
 }
+QPushButton#glyphButton {
+    font-size: 14pt;
+    font-weight: 700;
+    padding: 0px;
+}
 QMenu {
     background-color: #ffffff;
     border: 1px solid #dfe6ec;

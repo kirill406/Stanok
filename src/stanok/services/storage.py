@@ -32,6 +32,7 @@ from ..engine.schema import (
     validate_aj,
     validate_pj,
 )
+from ..engine.resolve import COUNTER_WIDTHS
 from ..engine.xmlops import PLACEHOLDER_RE, iter_paragraphs
 from ..gui.strings import STRINGS
 
@@ -759,7 +760,7 @@ class ProjectStore:
             ]
             counters: dict[str, dict] = {}
             for r in rel_xlsx:
-                cname = _counter_name(set(counters), r)
+                cname = _counter_name(set(counters) | self._shared_names(), r)
                 counters[cname] = {"pos": 0, "format": "1", "table": r}
             default_counter = next(iter(counters), None)
             templates: dict[str, dict] = {}
@@ -948,6 +949,114 @@ class ProjectStore:
             self._write_settings(aj)
             logger.info(f"updated setting {key}")
 
+    # -- shared (сквозные) counters, 026 ------------------------------------
+    def global_counters(self) -> dict[str, CounterDef]:
+        """Shared numeric counters from settings.json (026)."""
+        with self._lock:
+            settings_file = self.home_dir / "settings.json"
+            if not settings_file.exists():
+                return {}
+            return dict(validate_aj(self._read_json(settings_file)).counters)
+
+    def _project_counter_names(self) -> set[str]:
+        names: set[str] = set()
+        for _cfg, pj in self.list_named():
+            names.update(pj.counters)
+        return names
+
+    def global_counter_users(self, name: str) -> list[str]:
+        """Config names of projects whose counter fields read the shared counter."""
+        with self._lock:
+            return [
+                cfg
+                for cfg, pj in self.list_named()
+                if any(
+                    fdef.source == FieldSource.COUNTER and fdef.value == name
+                    for tdef in pj.templates.values()
+                    for fdef in tdef.fields.values()
+                )
+            ]
+
+    def _shared_names(self) -> set[str]:
+        """Names of shared counters: project counters must not reuse them (026)."""
+        return set(self.global_counters())
+
+    def _settings_aj(self) -> ApplicationJSON:
+        settings_file = self.home_dir / "settings.json"
+        data = self._read_json(settings_file) if settings_file.exists() else {}
+        return validate_aj(data)
+
+    def add_global_counter(self, name: str, fmt: str = "1", pos: int = 0) -> None:
+        """Create a shared counter (026); its name must be free in settings and projects."""
+        with self._lock:
+            name = (name or "").strip()
+            if not name:
+                raise StorageError("counters", [STRINGS.GCNT_NAME_EMPTY])
+            if "/" in name or "\\" in name:
+                raise StorageError("counters", [STRINGS.GCNT_NAME_BAD])
+            if fmt not in COUNTER_WIDTHS:
+                raise StorageError("counters", [STRINGS.GCNT_FORMAT_BAD.format(fmt=fmt)])
+            aj = self._settings_aj()
+            if name in aj.counters or name in self._project_counter_names():
+                raise StorageError("counters", [STRINGS.GCNT_NAME_TAKEN.format(name=name)])
+            aj.counters[name] = CounterDef(pos=max(0, int(pos)), format=fmt)
+            self._write_settings(aj)
+            logger.info(f"added shared counter {name} (format {fmt})")
+
+    def set_global_counter_pos(self, name: str, pos: int) -> None:
+        """Set the current value of a shared counter (also used by generation)."""
+        with self._lock:
+            aj = self._settings_aj()
+            if name not in aj.counters:
+                raise StorageError("counters", [STRINGS.GCNT_UNKNOWN.format(name=name)])
+            aj.counters[name].pos = max(0, int(pos))
+            self._write_settings(aj)
+            logger.info(f"shared counter {name} -> {pos}")
+
+    def rename_global_counter(self, old: str, new: str) -> None:
+        """Rename a shared counter and point every project field that reads it (026)."""
+        with self._lock:
+            aj = self._settings_aj()
+            if old not in aj.counters:
+                raise StorageError("counters", [STRINGS.GCNT_UNKNOWN.format(name=old)])
+            new = (new or "").strip()
+            if not new:
+                raise StorageError("counters", [STRINGS.GCNT_NAME_EMPTY])
+            if "/" in new or "\\" in new:
+                raise StorageError("counters", [STRINGS.GCNT_NAME_BAD])
+            if new == old:
+                return
+            if new in aj.counters or new in self._project_counter_names():
+                raise StorageError("counters", [STRINGS.GCNT_NAME_TAKEN.format(name=new)])
+            for cfg, pj in self.list_named():
+                changed = False
+                for tdef in pj.templates.values():
+                    for fdef in tdef.fields.values():
+                        if fdef.source == FieldSource.COUNTER and fdef.value == old:
+                            fdef.value = new
+                            changed = True
+                if changed:
+                    self.save(pj, name=cfg)
+            aj.counters[new] = aj.counters.pop(old)
+            self._write_settings(aj)
+            logger.info(f"renamed shared counter {old} -> {new}")
+
+    def remove_global_counter(self, name: str) -> None:
+        """Delete a shared counter; refused while any project's field reads it."""
+        with self._lock:
+            users = self.global_counter_users(name)
+            if users:
+                raise StorageError(
+                    "counters",
+                    [STRINGS.GCNT_IN_USE.format(name=name, projects=", ".join(users))],
+                )
+            aj = self._settings_aj()
+            if name not in aj.counters:
+                raise StorageError("counters", [STRINGS.GCNT_UNKNOWN.format(name=name)])
+            del aj.counters[name]
+            self._write_settings(aj)
+            logger.info(f"removed shared counter {name}")
+
     def add_template(
         self, ref: str | Path, docx: str | Path, copy_files: bool = True
     ) -> str:
@@ -1022,6 +1131,15 @@ class ProjectStore:
             self.save(pj, name=config_path.stem)
             logger.info(f"default template of {config_path.stem} -> {name}")
 
+    def set_result_dirs(self, ref: str | Path, dirs: list[str]) -> None:
+        """Replace the extra result folders (025); each must be an absolute path."""
+        with self._lock:
+            pj, config_path = self.resolve_project(ref)
+            pj.result_dirs = list(dirs)
+            pj = validate_pj(pj.model_dump(mode="json"))
+            self.save(pj, name=config_path.stem)
+            logger.info(f"result copy folders of {config_path.stem}: {len(pj.result_dirs)}")
+
     def set_template_limit(self, ref: str | Path, name: str, limit: int) -> None:
         """Persist a per-template document limit (021); 0 = no limit."""
         with self._lock:
@@ -1070,7 +1188,7 @@ class ProjectStore:
                     "data", [f"data source already attached: {rel}"]
                 )
             pj.data_sources.append(DataSourceDef(file=rel))
-            cname = _counter_name(set(pj.counters), rel)
+            cname = _counter_name(set(pj.counters) | self._shared_names(), rel)
             pj.counters[cname] = CounterDef(table=rel)
             self.save(pj, name=config_path.stem)
             logger.info(
@@ -1078,6 +1196,37 @@ class ProjectStore:
                 f"{config_path.stem}"
             )
             return rel
+
+    def remove_source(self, ref: str | Path, file: str) -> None:
+        """Detach a data source and its counters (025). The xlsx file stays on disk.
+
+        Refused for the last source, and while a template field still reads one
+        of its counters: the user changes those fields first.
+        """
+        with self._lock:
+            pj, config_path = self.resolve_project(ref)
+            if not any(ds.file == file for ds in pj.data_sources):
+                raise StorageError("data", [f"data source not found: {file}"])
+            if len(pj.data_sources) == 1:
+                raise StorageError("data", [STRINGS.STORAGE_SOURCE_LAST])
+            counters = {name for name, c in pj.counters.items() if c.table == file}
+            users = [
+                f"{tname}: {fname}"
+                for tname, tdef in pj.templates.items()
+                for fname, fdef in tdef.fields.items()
+                if (fdef.source == FieldSource.TABLE and fdef.counter_name in counters)
+                or (fdef.source == FieldSource.COUNTER and fdef.value in counters)
+            ]
+            if users:
+                raise StorageError(
+                    "data",
+                    [STRINGS.STORAGE_SOURCE_IN_USE.format(file=file, fields=", ".join(users))],
+                )
+            pj.data_sources = [ds for ds in pj.data_sources if ds.file != file]
+            for name in counters:
+                del pj.counters[name]
+            self.save(pj, name=config_path.stem)
+            logger.info(f"removed data source {file} from {config_path.stem}")
 
     @staticmethod
     def _remove_project_folder(folder: Path) -> None:

@@ -31,14 +31,15 @@ def make_project(
     mode="sequential",
     pos=None,
     with_counter=True,
-    limit=0,
+    limit=100,
     resume=1,
 ) -> Path:
     """Build minimal project folder: Данные/data.xlsx + Шаблоны/tpl.docx + legacy PJ.
 
-    A counter at position 0 generates nothing. A sequential counter therefore
-    starts at pos 1, so the sheet gets a placeholder row 0 in front of `rows`.
-    A circular counter starts at pos len(rows), which wraps to row 0.
+    A limit of 0 generates nothing; the default limit is large, so tests get
+    every row. A sequential counter defaults to pos 1, so the sheet gets a
+    placeholder row 0 in front of `rows`. A circular counter starts at
+    pos len(rows), which wraps to row 0.
     """
     if pos is None:
         pos = {"sequential": 1, "circular": len(rows), "constant": 0}[mode]
@@ -180,13 +181,22 @@ def test_resume_0_keeps_cursor(tmp_path, store):
     assert saved.counters["num"].pos == 2
 
 
-def test_counter_at_zero_generates_nothing(tmp_path, store):
-    folder = make_project(tmp_path / "proj", pos=0)
+def test_counter_at_zero_generates_from_first_row_when_limit_set(tmp_path, store):
+    # Position 0 is the sheet's placeholder row; limit 1 makes exactly one document.
+    folder = make_project(tmp_path / "proj", pos=0, limit=1)
+    report = generate_documents(GenerateCommand(project_ref=folder), store=store)
+    assert report.created == 1
+    saved = _load_saved(store, "proj")
+    assert saved.counters["data"].pos == 1
+
+
+def test_limit_zero_generates_nothing(tmp_path, store):
+    folder = make_project(tmp_path / "proj", limit=0)
     report = generate_documents(GenerateCommand(project_ref=folder), store=store)
     assert report.created == 0
     assert report.output_paths == []
     saved = _load_saved(store, "proj")
-    assert saved.counters["data"].pos == 0
+    assert saved.counters["data"].pos == 1
     assert saved.counters["num"].pos == 0
 
 
@@ -332,6 +342,102 @@ def test_config_name_without_folder_fails(tmp_path, store):
     store.save(pj, name="nofolder")
     with pytest.raises(StorageError, match="project folder not found"):
         generate_documents(GenerateCommand(project_ref="nofolder"), store=store)
+
+
+def _set_result_dirs(folder: Path, dirs: list[str], filename: str | None = None) -> None:
+    data = json.loads((folder / "project.stanok").read_text())
+    data["result_dirs"] = dirs
+    if filename is not None:
+        data["filename_template"] = filename
+    _write_pj(folder, data)
+
+
+def test_result_copies_go_to_every_folder(tmp_path, store):
+    folder = make_project(tmp_path / "proj", rows=(("Иван", 100),))
+    first, second = tmp_path / "copy1", tmp_path / "copy2"
+    _set_result_dirs(folder, [str(first), str(second)])
+    report = generate_documents(GenerateCommand(project_ref=folder), store=store)
+    assert report.created == 1
+    assert report.errors == []
+    name = report.output_paths[0].name
+    assert (first / name).read_bytes() == report.output_paths[0].read_bytes()
+    assert (second / name).is_file()
+
+
+def test_result_copies_keep_subfolders_of_dist(tmp_path, store):
+    folder = make_project(tmp_path / "proj", rows=(("Иван", 100),))
+    copy = tmp_path / "copy"
+    _set_result_dirs(folder, [str(copy)], filename="Акты/Договор_{ФИО}_{i}.docx")
+    report = generate_documents(GenerateCommand(project_ref=folder), store=store)
+    assert report.created == 1
+    assert (copy / "Акты" / "Договор_Иван_1.docx").is_file()
+
+
+def test_result_copy_failure_is_reported_and_keeps_document(tmp_path, store):
+    folder = make_project(tmp_path / "proj", rows=(("Иван", 100),))
+    blocked = tmp_path / "blocked"
+    blocked.write_text("a file, not a folder")
+    _set_result_dirs(folder, [str(blocked)])
+    report = generate_documents(GenerateCommand(project_ref=folder), store=store)
+    assert report.created == 1
+    assert report.output_paths[0].is_file()
+    assert len(report.errors) == 1
+    assert report.errors[0][0] == 1
+    assert "blocked" in report.errors[0][1]
+
+
+def test_result_copy_skips_own_result_folder(tmp_path, store):
+    folder = make_project(tmp_path / "proj", rows=(("Иван", 100),))
+    _set_result_dirs(folder, [str(folder / "Результат")])
+    report = generate_documents(GenerateCommand(project_ref=folder), store=store)
+    assert report.errors == []
+    assert [p.name for p in (folder / "Результат").iterdir()] == [
+        report.output_paths[0].name
+    ]
+
+
+def _use_shared_counter(folder: Path, name: str) -> None:
+    data = json.loads((folder / "project.stanok").read_text())
+    data["templates"]["Договор"]["fields"]["Номер"] = {"source": "counter", "value": name}
+    data["counters"].pop("num", None)
+    _write_pj(folder, data)
+
+
+def test_shared_counter_numbers_documents_and_persists(tmp_path, store):
+    folder = make_project(tmp_path / "proj", rows=(("Иван", 100), ("Петр", 200)))
+    store.add_global_counter("shared_num", "1", 5)
+    _use_shared_counter(folder, "shared_num")
+    report = generate_documents(GenerateCommand(project_ref=folder), store=store)
+    assert report.created == 2
+    assert [_doc_text(p) for p in report.output_paths] == [
+        "Договор Иван на сумму 100 №5",
+        "Договор Петр на сумму 200 №6",
+    ]
+    assert store.global_counters()["shared_num"].pos == 7
+    saved = json.loads((store.home_dir / "proj.stanok").read_text())
+    assert "shared_num" not in saved["counters"]
+
+
+def test_shared_counter_clash_with_project_counter_refused(tmp_path, store):
+    folder = make_project(tmp_path / "proj")
+    data = json.loads((folder / "project.stanok").read_text())
+    data["templates"]["Договор"]["fields"]["Номер"]["value"] = "num"
+    _write_pj(folder, data)
+    # Created directly in settings: the clash check in storage would refuse it.
+    from stanok.engine.schema import CounterDef, validate_aj
+
+    aj = validate_aj({"version": "0.0.0"})
+    aj.counters["num"] = CounterDef(pos=0, format="1")
+    store._write_settings(aj)
+    with pytest.raises(TemplateError, match="и в проекте, и среди сквозных"):
+        generate_documents(GenerateCommand(project_ref=folder), store=store)
+
+
+def test_unknown_counter_reference_fails_resolve(tmp_path, store):
+    folder = make_project(tmp_path / "proj")
+    _use_shared_counter(folder, "ghost")
+    with pytest.raises(ResolveError, match="counter not defined"):
+        generate_documents(GenerateCommand(project_ref=folder), store=store)
 
 
 def test_unique_path_helper(tmp_path):
@@ -525,3 +631,16 @@ def test_dist_without_extension_gets_docx(tmp_path, store):
     assert report.created == 1
     assert report.output_paths[0].suffix == ".docx"
     assert report.output_paths[0].name == "Договор_Иван_1.docx"
+
+
+def test_shared_counter_continues_across_projects(tmp_path, store):
+    first = make_project(tmp_path / "first", rows=(("Иван", 100),))
+    second = make_project(tmp_path / "second", rows=(("Петр", 200),))
+    store.add_global_counter("shared_num", "1", 5)
+    _use_shared_counter(first, "shared_num")
+    _use_shared_counter(second, "shared_num")
+    r1 = generate_documents(GenerateCommand(project_ref=first), store=store)
+    r2 = generate_documents(GenerateCommand(project_ref=second), store=store)
+    assert _doc_text(r1.output_paths[0]).endswith("№5")
+    assert _doc_text(r2.output_paths[0]).endswith("№6")
+    assert store.global_counters()["shared_num"].pos == 7

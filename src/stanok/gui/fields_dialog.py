@@ -42,7 +42,7 @@ from ..services.storage import ProjectStore, project_folder
 from ..engine.schema import CounterDef, FieldDef, FieldSource, ProjectJSON, validate_pj
 from ..engine.resolve import COUNTER_WIDTHS, TODAY_PRESETS, format_today
 from ..tables.excel import ExcelReader
-from .dialogs import ask_save_discard_cancel, ask_text
+from .dialogs import ask_save_discard_cancel, ask_text, ask_yes_no
 from .strings import STRINGS
 from .theme import set_button_role
 from .table_picker import eye_icon, open_picker, picker_available
@@ -110,6 +110,7 @@ class FieldsDialog(QDialog):
         self._recovery_dir: Path | None = None
         pj, config_path = self._store.resolve_project(project_ref)
         self._pj = pj
+        self._shared = self._store.global_counters()  # 026
         self._config_name = config_path.stem
         self._folder = project_folder(project_ref, pj, config_path, self._store)
         try:
@@ -369,7 +370,7 @@ class FieldsDialog(QDialog):
         definition.setWordWrap(True)
         layout.addWidget(definition)
         self.ctable = QTableWidget(self)
-        self.ctable.setColumnCount(5)
+        self.ctable.setColumnCount(6)
         self.ctable.setAlternatingRowColors(True)
         self.ctable.setShowGrid(False)
         header_tips = [
@@ -386,6 +387,7 @@ class FieldsDialog(QDialog):
                 STRINGS.FLD_CNT_FORMAT,
                 STRINGS.FLD_CNT_POS,
                 STRINGS.FLD_CNT_RESUME,
+                "",
             ]
         )
         for col, tip in enumerate(header_tips):
@@ -394,6 +396,9 @@ class FieldsDialog(QDialog):
         self.ctable.horizontalHeader().setSectionResizeMode(
             QHeaderView.ResizeToContents
         )
+        # ResizeToContents ignores cell widgets, so the remove button column gets a fixed width.
+        self.ctable.horizontalHeader().setSectionResizeMode(5, QHeaderView.Fixed)
+        self.ctable.horizontalHeader().resizeSection(5, 120)
         self._build_counters_table()
         layout.addWidget(self.ctable)
         layout.addWidget(QLabel(STRINGS.FLD_CNT_HINT, self))
@@ -487,6 +492,13 @@ class FieldsDialog(QDialog):
             name_combo = QComboBox(box)
             for cname in self._pj.counters:
                 name_combo.addItem(cname, cname)
+            for cname in self._shared:
+                if cname in self._pj.counters:
+                    # Same name as a project counter: a field could not tell them apart.
+                    name_combo.addItem(f"{cname} ({STRINGS.GCNT_CLASH_TAG})", cname)
+                    name_combo.model().item(name_combo.count() - 1).setEnabled(False)
+                else:
+                    name_combo.addItem(f"{cname} ({STRINGS.GCNT_SHARED_TAG})", cname)
             wanted = (
                 str(stored.value)
                 if stored.source.value == "counter" and stored.value
@@ -537,7 +549,7 @@ class FieldsDialog(QDialog):
         cname = text.strip()
         if not ok or not cname:
             return
-        if cname in self._pj.counters:
+        if cname in self._pj.counters or cname in self._shared:
             QMessageBox.warning(
                 self,
                 STRINGS.MAIN_ERROR_TITLE,
@@ -621,6 +633,12 @@ class FieldsDialog(QDialog):
                 lambda _s=0, counter=cname: self._mark_counter_touched(counter)
             )
             self.ctable.setCellWidget(row, 4, resume_check)
+            remove_btn = QPushButton(STRINGS.FLD_CNT_REMOVE, self.ctable)
+            remove_btn.setToolTip(STRINGS.FLD_CNT_REMOVE_TIP)
+            remove_btn.clicked.connect(
+                lambda _checked=False, counter=cname: self._on_counter_remove(counter)
+            )
+            self.ctable.setCellWidget(row, 5, remove_btn)
             self._crows[cname] = {
                 "table": table_combo,
                 "pos": pos_edit,
@@ -631,6 +649,58 @@ class FieldsDialog(QDialog):
                 "touched": False,
             }
             self._update_counter_row_state(cname)
+
+    def _counter_users(self, cname: str) -> list[str]:
+        """Fields that read counter `cname`: saved templates and this dialog's rows."""
+        users: list[str] = []
+        for tname, tdef in self._pj.templates.items():
+            if tname == self._template_name:
+                continue  # this template's rows are read from the widgets below
+            for fname, fdef in tdef.fields.items():
+                if (fdef.source == FieldSource.TABLE and fdef.counter_name == cname) or (
+                    fdef.source == FieldSource.COUNTER and fdef.value == cname
+                ):
+                    users.append(f"{tname}: {fname}")
+        for name, st in self._rows.items():
+            if "cname" not in st:
+                continue  # constant and date rows have no counter
+            if st["cname"].currentData() == cname:
+                users.append(f"{self._template_name}: {name}")
+        return users
+
+    @_counter_action("remove counter")
+    def _on_counter_remove(self, cname: str) -> None:
+        if cname not in self._pj.counters:
+            return
+        if self._pj.counters[cname].table is not None:
+            QMessageBox.information(self, STRINGS.FLD_CNT_REMOVE, STRINGS.FLD_CNT_REMOVE_BOUND)
+            return
+        users = self._counter_users(cname)
+        if users:
+            QMessageBox.information(
+                self,
+                STRINGS.FLD_CNT_REMOVE,
+                STRINGS.FLD_CNT_REMOVE_USED.format(name=cname, fields=", ".join(users)),
+            )
+            return
+        if not ask_yes_no(
+            self, STRINGS.FLD_CNT_REMOVE, STRINGS.FLD_CNT_REMOVE_ASK.format(name=cname)
+        ):
+            return
+        logger.debug(f"counter removed: {cname} in {self._template_name}")
+        del self._pj.counters[cname]
+        for st in self._rows.values():
+            combo = st.get("cname")
+            if combo is None:
+                continue
+            idx = combo.findData(cname)
+            if idx >= 0:
+                combo.blockSignals(True)
+                combo.removeItem(idx)
+                combo.blockSignals(False)
+        self._build_counters_table()
+        self._fit_tables()
+        self._mark_dirty()
 
     def _on_insert_field(self) -> None:
         menu = QMenu(self)
@@ -757,7 +827,7 @@ class FieldsDialog(QDialog):
                 return int(cst["pos"].text())
             except (ValueError, TypeError):
                 return None
-        cdef = self._pj.counters.get(cname)
+        cdef = self._pj.counters.get(cname) or self._shared.get(cname)
         return cdef.pos if cdef is not None else 0
 
     def _counter_format(self, cname: str | None) -> str:
@@ -766,7 +836,7 @@ class FieldsDialog(QDialog):
         cst = self._crows.get(cname)
         if cst is not None:
             return cst["fmt"].currentData() or "1"
-        cdef = self._pj.counters.get(cname)
+        cdef = self._pj.counters.get(cname) or self._shared.get(cname)
         return cdef.format if cdef is not None else "1"
 
     def _update_counter_preview(self, name: str) -> None:
@@ -894,7 +964,8 @@ class FieldsDialog(QDialog):
                 cname = self._selected_counter(name)
                 if cname is None:
                     raise _FieldError(name, "FLD_NO_COUNTER")
-                if cname not in self._pj.counters:
+                # A shared counter lives in settings: never copy its name into the project.
+                if cname not in self._pj.counters and cname not in self._shared:
                     self._pj.counters[cname] = CounterDef()
                 f.source = FieldSource.COUNTER
                 f.value = cname

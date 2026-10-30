@@ -24,6 +24,10 @@ class STRINGS:
         "разработчиком и приложите файл лога."
     )
     APP_DONE = "Готово: создано {created}, ошибок {errors} за {elapsed} с"
+    APP_DONE_NO_LIMIT = (
+        "Готово: документы не созданы, лимит шаблона 0. "
+        "Укажите лимит больше 0, ошибок {errors} за {elapsed} с"
+    )
     APP_DONE_SHORT = (
         "Готово: создано {created} из {limit} (строки закончились), "
         "ошибок {errors} за {elapsed} с"
@@ -31,6 +35,7 @@ class STRINGS:
 
     # Schema/validation (engine/schema.py)
     SCH_FORMAT_TOO_NEW = "Формат версии {version} новее программы — обновите программу"
+    SCH_RESULT_DIR_RELATIVE = "Папка копий результата должна быть абсолютной: {value}"
     SCH_NO_MIGRATION = "Нет пути миграции формата {source} → {target}"
     SCH_MIGRATION_STALLED = "Миграция {source} не обновила версию (шаг → {target})"
     SCH_DIST_TRAVERSAL = "{field}: путь должен быть относительным без '..': {value}"
@@ -38,10 +43,16 @@ class STRINGS:
     # Generation (services/generate.py)
     GEN_RESULT_DIR = "Результат"
     GEN_SKIPPED_COLUMNS = "Пропущены столбцы без заголовков:\n{items}"
+    GEN_COPY_FAILED = "Не удалось скопировать результат в {dest}: {cause}"
 
     # Storage (services/storage.py)
     STORAGE_DEFAULT_TPL = (
         "Нельзя убрать шаблон по умолчанию: сначала смените шаблон по умолчанию."
+    )
+
+    STORAGE_SOURCE_LAST = "Нельзя убрать последний источник проекта"
+    STORAGE_SOURCE_IN_USE = (
+        "Источник «{file}» нужен полям: {fields}. Сначала измените эти поля"
     )
 
     # Tables (tables/excel.py)
@@ -61,10 +72,11 @@ class STRINGS:
     )
     MAIN_OPEN = "Открыть проект"
     MAIN_GENERATE = "Сгенерировать"
+    MAIN_EDIT = "Редактировать"
     MAIN_GENERATE_ALL = "Сгенерировать все"
     MAIN_TPL = "Шаблон: «{name}»"
     MAIN_TPL_UNAVAILABLE = "Шаблон: —"
-    MAIN_TPL_LIMIT_TIP = "Лимит документов шаблона по умолчанию (0 — без лимита)"
+    MAIN_TPL_LIMIT_TIP = "Сколько документов создать по шаблону (0 — не создавать)"
     MAIN_REMOVE = "Убрать"
     MAIN_SETTINGS = "Настройки"
     MAIN_CREATE = "Создать проект"
@@ -122,7 +134,15 @@ class STRINGS:
     CRT_SAVE = "Сохранить"
     CRT_CANCEL = "Отмена"
     CRT_SAVE_ERR_TITLE = "Не удалось сохранить настройки"
-    CRT_PATH = "Файлы проекта:\n{path}"
+    CRT_SECTION_DATA = "Данные"
+    CRT_SECTION_TPL = "Шаблоны"
+    CRT_SECTION_RESULTS = "Результаты"
+    CRT_RESULT_COPY_TIP = "Дублировать результат в другую папку"
+    CRT_RESULT_COPY_PICK = "Папка для копий результата"
+    CRT_RESULT_COPY_OWN = "Это папка результатов самого проекта"
+    CRT_RESULT_COPY_DUP = "Эта папка уже в списке"
+    CRT_RESULT_REMOVE_TIP = "Убрать папку из списка"
+    CRT_COPIES_NONE = "Копии результата не настроены"
     CRT_MKDIR_ASK = "Папки «{path}» нет. Создать её?"
     # 024: окно старта создания проекта
     START_TITLE = "Создание проекта"
@@ -187,6 +207,41 @@ class STRINGS:
     PCHK_FOLDER_BUSY = "Папка «{path}» уже не пустая"
     PCHK_CREATE_FAILED = "Не удалось создать проект: {cause}"
 
+    # 026: shared (сквозные) counters (services/storage.py, gui/global_counters_dialog.py)
+    GCNT_BUTTON = "Счётчики..."
+    GCNT_TITLE = "Сквозные счётчики"
+    GCNT_HINT = (
+        "Общие для всех проектов. В шаблоне поле «Счётчик» может ссылаться на них. "
+        "Двойной клик по имени — переименовать."
+    )
+    GCNT_NAME = "Имя:"
+    GCNT_FORMAT = "Формат:"
+    GCNT_START = "Начальное значение:"
+    GCNT_ADD = "Добавить"
+    GCNT_ADD_TITLE = "Новый сквозной счётчик"
+    GCNT_COL_NAME = "Имя"
+    GCNT_COL_FORMAT = "Формат"
+    GCNT_COL_VALUE = "Текущее значение"
+    GCNT_COL_USERS = "Используют"
+    GCNT_NO_USERS = "—"
+    GCNT_REMOVE = "Убрать"
+    GCNT_REMOVE_ASK = "Убрать сквозной счётчик «{name}»?"
+    GCNT_IN_USE = "Счётчик «{name}» используют проекты: {projects}. Сначала уберите его из полей."
+    GCNT_NAME_EMPTY = "Введите имя счётчика"
+    GCNT_NAME_BAD = "Имя не должно содержать «/» или «\»"
+    GCNT_NAME_TAKEN = "Счётчик «{name}» уже есть: сквозной или в проекте"
+    GCNT_FORMAT_BAD = "Неизвестный формат: {fmt}"
+    GCNT_UNKNOWN = "Сквозной счётчик не найден: {name}"
+    GCNT_SHARED_TAG = "сквозной"
+    GCNT_CLASH_TAG = "имя занято счётчиком проекта"
+    GCNT_RENAME = "Переименовать сквозной счётчик"
+    GEN_SHARED_COLLISION = (
+        "Счётчик «{name}» есть и в проекте, и среди сквозных. "
+        "Переименуйте сквозной счётчик в окне «Счётчики»"
+    )
+    GEN_SHARED_UNKNOWN = "Счётчик «{name}» не найден ни в проекте, ни среди сквозных"
+    MAIN_COUNTERS = "Счётчики..."
+
     # Project folder layout (shared, NFR-3: no Cyrillic literals in code)
     DATA_DIR = "Данные"
     TPL_DIR = "Шаблоны"
@@ -209,9 +264,13 @@ class STRINGS:
         "«Одна строка» — всегда одна и та же строка, счётчик не меняется."
     )
     PROJ_SRC_ADD = "Добавить источник..."
+    PROJ_SRC_REMOVE = "Убрать"
+    PROJ_SRC_REMOVE_ASK = (
+        "Убрать источник «{name}»? Файл останется в папке «Данные»."
+    )
     PROJ_TPL_COL = "Шаблон"
     PROJ_COUNT_COL = "Лимит"
-    PROJ_COUNT_TIP = "Сколько документов создать (0 — без лимита, все строки)"
+    PROJ_COUNT_TIP = "Сколько документов создать за прогон (0 — не создавать)"
     PROJ_DEFAULT_COL = "По умолчанию"
     PROJ_DEFAULT_TIP = "Шаблон для запуска из главного окна"
     PROJ_RUN = "Сгенерировать"
@@ -249,7 +308,7 @@ class STRINGS:
     FLD_CNT_NAME = "Название"
     FLD_CNT_SOURCE = "Источник данных"
     FLD_CNT_POS = "Позиция"
-    FLD_CNT_RESUME = "Начинать заново"
+    FLD_CNT_RESUME = "Заново"
     FLD_CNT_FORMAT = "Формат"
     FLD_CNT_NAME_TIP = "Имя счётчика. На него ссылаются поля и поля-счётчики."
     FLD_CNT_SOURCE_TIP = (
@@ -263,7 +322,7 @@ class STRINGS:
     FLD_POS_TIP = (
         "Строка файла (с нуля) и одновременно число, которое печатается "
         "в полях-счётчиках. Генерация сдвигает её на число документов, "
-        "если не отмечено «Начинать заново»."
+        "если не отмечено «Заново»."
     )
     FLD_CNT_RESUME_TIP = (
         "Снято: после генерации позиция сохраняется — следующий прогон "
@@ -307,6 +366,13 @@ class STRINGS:
     PICK_CHOOSE = "Выбрать"
     FLD_NONE = "отсутствует"
     FLD_COUNTER_CREATE = "Создать счётчик"
+    FLD_CNT_REMOVE = "Убрать"
+    FLD_CNT_REMOVE_TIP = "Удалить счётчик проекта. Доступно, если ни одно поле его не читает"
+    FLD_CNT_REMOVE_BOUND = (
+        "Счётчик привязан к источнику. Уберите источник в окне проекта, счётчик уйдёт с ним"
+    )
+    FLD_CNT_REMOVE_USED = "Счётчик «{name}» читают поля: {fields}. Сначала измените эти поля"
+    FLD_CNT_REMOVE_ASK = "Удалить счётчик «{name}»?"
     FLD_COUNTER_NAME = "Имя счётчика:"
     FLD_DUP_COUNTER = "Счётчик «{name}» уже существует"
     FLD_DATE_KEEP = "как в проекте"

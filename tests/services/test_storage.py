@@ -489,6 +489,161 @@ def test_load_relabel_write_failure_still_loads(store, sample_pj, monkeypatch):
     assert json.loads(path.read_text())["version"] != current_version()
 
 
+def test_set_result_dirs_persists_and_rejects_relative(store, sample_pj, tmp_path):
+    from stanok.engine.schema import PJValidationError
+
+    store.save(sample_pj, name="proj")
+    copy = tmp_path / "copy"
+    store.set_result_dirs("proj", [str(copy)])
+    assert store.load("proj").result_dirs == [str(copy)]
+    with pytest.raises(PJValidationError):
+        store.set_result_dirs("proj", ["relative/copy"])
+    assert store.load("proj").result_dirs == [str(copy)]
+
+
+def _add_extra_source(store, tmp_path):
+    from openpyxl import Workbook
+
+    xlsx = tmp_path / "extra.xlsx"
+    wb = Workbook()
+    wb.active.append(["Город"])
+    wb.active.append(["Москва"])
+    wb.save(xlsx)
+    return store.add_source("proj", xlsx)
+
+
+def test_remove_source_drops_source_and_its_counters(store, tmp_path):
+    _migrated(store, tmp_path)
+    rel = _add_extra_source(store, tmp_path)
+    store.remove_source("proj", rel)
+    pj = store.load("proj")
+    assert [ds.file for ds in pj.data_sources] == ["Данные/data.xlsx"]
+    assert all(c.table != rel for c in pj.counters.values())
+
+
+def test_remove_last_source_refused(store, tmp_path):
+    _migrated(store, tmp_path)
+    with pytest.raises(StorageError, match="последний"):
+        store.remove_source("proj", "Данные/data.xlsx")
+
+
+def test_remove_source_refused_while_field_uses_its_counter(store, tmp_path):
+    from stanok.engine.schema import FieldDef, FieldSource
+
+    _migrated(store, tmp_path)
+    rel = _add_extra_source(store, tmp_path)
+    pj = store.load("proj")
+    counter = next(n for n, c in pj.counters.items() if c.table == rel)
+    pj.templates["Договор"].fields["Город"] = FieldDef(
+        source=FieldSource.TABLE, value="Город", counter_name=counter
+    )
+    store.save(pj, name="proj")
+    with pytest.raises(StorageError, match="нужен полям"):
+        store.remove_source("proj", rel)
+    assert rel in [ds.file for ds in store.load("proj").data_sources]
+
+
+def test_add_global_counter_stores_format_and_value(store):
+    store.add_global_counter("invoice", "001", 7)
+    counter = store.global_counters()["invoice"]
+    assert (counter.format, counter.pos, counter.table) == ("001", 7, None)
+
+
+def test_add_global_counter_rejects_bad_input(store):
+    with pytest.raises(StorageError, match="Введите имя"):
+        store.add_global_counter("  ")
+    with pytest.raises(StorageError, match="«/»"):
+        store.add_global_counter("a/b")
+    with pytest.raises(StorageError, match="Неизвестный формат"):
+        store.add_global_counter("x", "month")
+    store.add_global_counter("x")
+    with pytest.raises(StorageError, match="уже есть"):
+        store.add_global_counter("x")
+
+
+def test_add_global_counter_rejects_project_counter_name(store, tmp_path):
+    from tests.services.test_generate import make_project
+
+    folder = make_project(tmp_path / "proj")
+    store.migrate_from_project(folder)  # project has a counter named "num"
+    with pytest.raises(StorageError, match="уже есть"):
+        store.add_global_counter("num")
+
+
+def test_remove_global_counter_refused_while_a_project_uses_it(store, tmp_path):
+    from stanok.engine.schema import FieldSource
+    from tests.services.test_generate import make_project
+
+    folder = make_project(tmp_path / "proj")
+    store.migrate_from_project(folder)
+    store.add_global_counter("shared_num", "1", 3)
+    pj = store.load("proj")
+    pj.templates["Договор"].fields["Номер"].value = "shared_num"
+    pj.templates["Договор"].fields["Номер"].source = FieldSource.COUNTER
+    store.save(pj, name="proj")
+    assert store.global_counter_users("shared_num") == ["proj"]
+    with pytest.raises(StorageError, match="используют проекты"):
+        store.remove_global_counter("shared_num")
+    pj.templates["Договор"].fields["Номер"].value = "num"
+    store.save(pj, name="proj")
+    store.remove_global_counter("shared_num")
+    assert "shared_num" not in store.global_counters()
+
+
+def test_set_global_counter_pos_persists_and_rejects_unknown(store):
+    store.add_global_counter("n", "1", 0)
+    store.set_global_counter_pos("n", 12)
+    assert store.global_counters()["n"].pos == 12
+    with pytest.raises(StorageError, match="не найден"):
+        store.set_global_counter_pos("ghost", 1)
+
+
+def test_source_counter_name_avoids_shared_name(store, tmp_path):
+    from openpyxl import Workbook
+
+    from tests.services.test_generate import make_project
+
+    folder = make_project(tmp_path / "proj")
+    store.migrate_from_project(folder)
+    store.add_global_counter("v_num", "1", 0)
+    xlsx = tmp_path / "v_num.xlsx"
+    wb = Workbook()
+    wb.active.append(["Город"])
+    wb.save(xlsx)
+    rel = store.add_source("proj", xlsx)
+    counters = store.load("proj").counters
+    bound = [n for n, c in counters.items() if c.table == rel]
+    assert bound == ["v_num_2"]
+
+
+def test_rename_global_counter_updates_project_fields(store, tmp_path):
+    from stanok.engine.schema import FieldSource
+
+    from tests.services.test_generate import make_project
+
+    folder = make_project(tmp_path / "proj")
+    store.migrate_from_project(folder)
+    store.add_global_counter("old_name", "1", 2)
+    pj = store.load("proj")
+    pj.templates["Договор"].fields["Номер"].source = FieldSource.COUNTER
+    pj.templates["Договор"].fields["Номер"].value = "old_name"
+    store.save(pj, name="proj")
+    store.rename_global_counter("old_name", "new_name")
+    assert "new_name" in store.global_counters()
+    assert "old_name" not in store.global_counters()
+    assert store.load("proj").templates["Договор"].fields["Номер"].value == "new_name"
+
+
+def test_rename_global_counter_refused_when_name_taken(store, tmp_path):
+    from tests.services.test_generate import make_project
+
+    folder = make_project(tmp_path / "proj")
+    store.migrate_from_project(folder)
+    store.add_global_counter("one", "1", 0)
+    with pytest.raises(StorageError, match="уже есть"):
+        store.rename_global_counter("one", "num")
+
+
 def test_save_updates_existing(store, sample_pj):
     """Test that save updates existing config."""
     path1 = store.save(sample_pj)

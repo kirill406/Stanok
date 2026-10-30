@@ -27,6 +27,7 @@ from PyQt5.QtWidgets import (
 from ..services.generate import GenerateCommand, GenerateReport
 from ..engine.schema import SchemaError
 from ..services.storage import ProjectStore, StorageError
+from .global_counters_dialog import GlobalCountersDialog
 from .dialogs import ask_yes_no
 from .project_dialog import ProjectDialog
 from .report_text import done_text
@@ -51,6 +52,7 @@ class MainWindow(QMainWindow):
         self._queue_results: list[tuple[str, GenerateReport | str]] = []
         self._cancel_requested = False
         self._last_started = ""
+        self._busy = False
         self._build_ui()
         self.refresh_recent()
 
@@ -96,6 +98,9 @@ class MainWindow(QMainWindow):
         self.create_btn = QPushButton(STRINGS.MAIN_CREATE, group)
         self.create_btn.clicked.connect(self._on_create)
         buttons.addWidget(self.create_btn)
+        self.counters_btn = QPushButton(STRINGS.GCNT_BUTTON, group)
+        self.counters_btn.clicked.connect(self._on_counters)
+        buttons.addWidget(self.counters_btn)
         self.settings_btn = QPushButton(STRINGS.MAIN_SETTINGS, group)
         self.settings_btn.clicked.connect(self._on_settings)
         buttons.addWidget(self.settings_btn)
@@ -132,6 +137,11 @@ class MainWindow(QMainWindow):
                 lambda _checked=False, ref=item.config: self._on_generate_one(ref)
             )
             row_layout.addWidget(btn)
+            edit_btn = QPushButton(STRINGS.MAIN_EDIT, row)
+            edit_btn.clicked.connect(
+                lambda _checked=False, ref=item.config: self._on_edit_project(ref)
+            )
+            row_layout.addWidget(edit_btn)
             rm_btn = QPushButton(STRINGS.MAIN_REMOVE, row)
             rm_btn.clicked.connect(
                 lambda _checked=False, folder=item.folder, config=item.config: self._on_remove_recent(
@@ -139,6 +149,8 @@ class MainWindow(QMainWindow):
                 )
             )
             row_layout.addWidget(rm_btn)
+            for row_btn in (btn, edit_btn, rm_btn):
+                row_btn.setEnabled(not self._busy)
             entry.setSizeHint(row.sizeHint())
             self.recent_list.addItem(entry)
             self.recent_list.setItemWidget(entry, row)
@@ -209,6 +221,12 @@ class MainWindow(QMainWindow):
     def _on_row_clicked(self, item: QListWidgetItem) -> None:
         self._open_project_dialog(item.data(Qt.UserRole))
 
+    def _on_edit_project(self, ref: str) -> None:
+        """Same as a click on the project name: open window 2 for editing."""
+        if self._busy:
+            return
+        self._open_project_dialog(ref)
+
     def _on_remove_recent(self, folder: str, config: str) -> None:
         """Drop one entry from recent list (project itself untouched)."""
         self._store.remove_recent(folder, config)
@@ -261,6 +279,13 @@ class MainWindow(QMainWindow):
             return
         self.refresh_recent()
         self._open_project_dialog(ref)
+
+    def _on_counters(self) -> None:
+        """Shared (сквозные) counters: create, set, remove (026)."""
+        if self._busy:
+            return
+        GlobalCountersDialog(self._store, self).exec_()
+        self.refresh_recent()
 
     def _on_settings(self) -> None:
         """Open settings dialog (018); keeps import lazy like create (tests)."""
@@ -373,9 +398,19 @@ class MainWindow(QMainWindow):
             )
 
     def _set_busy(self, busy: bool) -> None:
+        """Block starting another run: row buttons, Убрать and Настройки included."""
+        self._busy = busy
         self.generate_all_btn.setEnabled(not busy)
         self.browse_btn.setEnabled(not busy)
         self.create_btn.setEnabled(not busy)
+        self.settings_btn.setEnabled(not busy)
+        self.counters_btn.setEnabled(not busy)
+        for index in range(self.recent_list.count()):
+            row = self.recent_list.itemWidget(self.recent_list.item(index))
+            if row is None:
+                continue
+            for row_btn in row.findChildren(QPushButton):
+                row_btn.setEnabled(not busy)
 
     def _show_error(self, message: str) -> None:
         QMessageBox.critical(self, STRINGS.MAIN_ERROR_TITLE, message)

@@ -24,6 +24,10 @@ class STRINGS:
         "разработчиком и приложите файл лога."
     )
     APP_DONE = "Готово: создано {created}, ошибок {errors} за {elapsed} с"
+    APP_DONE_NO_LIMIT = (
+        "Готово: документы не созданы, лимит шаблона 0. "
+        "Укажите лимит больше 0, ошибок {errors} за {elapsed} с"
+    )
     APP_DONE_SHORT = (
         "Готово: создано {created} из {limit} (строки закончились), "
         "ошибок {errors} за {elapsed} с"
@@ -72,7 +76,7 @@ class STRINGS:
     MAIN_GENERATE_ALL = "Сгенерировать все"
     MAIN_TPL = "Шаблон: «{name}»"
     MAIN_TPL_UNAVAILABLE = "Шаблон: —"
-    MAIN_TPL_LIMIT_TIP = "Лимит документов шаблона по умолчанию (0 — без лимита)"
+    MAIN_TPL_LIMIT_TIP = "Сколько документов создать по шаблону (0 — не создавать)"
     MAIN_REMOVE = "Убрать"
     MAIN_SETTINGS = "Настройки"
     MAIN_CREATE = "Создать проект"
@@ -214,6 +218,7 @@ class STRINGS:
     GCNT_FORMAT = "Формат:"
     GCNT_START = "Начальное значение:"
     GCNT_ADD = "Добавить"
+    GCNT_ADD_TITLE = "Новый сквозной счётчик"
     GCNT_COL_NAME = "Имя"
     GCNT_COL_FORMAT = "Формат"
     GCNT_COL_VALUE = "Текущее значение"
@@ -265,7 +270,7 @@ class STRINGS:
     )
     PROJ_TPL_COL = "Шаблон"
     PROJ_COUNT_COL = "Лимит"
-    PROJ_COUNT_TIP = "Сколько документов создать (0 — без лимита, все строки)"
+    PROJ_COUNT_TIP = "Сколько документов создать за прогон (0 — не создавать)"
     PROJ_DEFAULT_COL = "По умолчанию"
     PROJ_DEFAULT_TIP = "Шаблон для запуска из главного окна"
     PROJ_RUN = "Сгенерировать"
@@ -303,7 +308,7 @@ class STRINGS:
     FLD_CNT_NAME = "Название"
     FLD_CNT_SOURCE = "Источник данных"
     FLD_CNT_POS = "Позиция"
-    FLD_CNT_RESUME = "Начинать заново"
+    FLD_CNT_RESUME = "Заново"
     FLD_CNT_FORMAT = "Формат"
     FLD_CNT_NAME_TIP = "Имя счётчика. На него ссылаются поля и поля-счётчики."
     FLD_CNT_SOURCE_TIP = (
@@ -317,7 +322,7 @@ class STRINGS:
     FLD_POS_TIP = (
         "Строка файла (с нуля) и одновременно число, которое печатается "
         "в полях-счётчиках. Генерация сдвигает её на число документов, "
-        "если не отмечено «Начинать заново»."
+        "если не отмечено «Заново»."
     )
     FLD_CNT_RESUME_TIP = (
         "Снято: после генерации позиция сохраняется — следующий прогон "
@@ -361,6 +366,13 @@ class STRINGS:
     PICK_CHOOSE = "Выбрать"
     FLD_NONE = "отсутствует"
     FLD_COUNTER_CREATE = "Создать счётчик"
+    FLD_CNT_REMOVE = "Убрать"
+    FLD_CNT_REMOVE_TIP = "Удалить счётчик проекта. Доступно, если ни одно поле его не читает"
+    FLD_CNT_REMOVE_BOUND = (
+        "Счётчик привязан к источнику. Уберите источник в окне проекта, счётчик уйдёт с ним"
+    )
+    FLD_CNT_REMOVE_USED = "Счётчик «{name}» читают поля: {fields}. Сначала измените эти поля"
+    FLD_CNT_REMOVE_ASK = "Удалить счётчик «{name}»?"
     FLD_COUNTER_NAME = "Имя счётчика:"
     FLD_DUP_COUNTER = "Счётчик «{name}» уже существует"
     FLD_DATE_KEEP = "как в проекте"

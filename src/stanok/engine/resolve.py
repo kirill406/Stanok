@@ -6,8 +6,8 @@
 a counter (`counter_name`); the counter is bound to a source (`table`) and holds
 one position (`pos`) that is both the source row and the printed number.
 Number of documents N = min(limit, available rows of sequential counters);
-with no sequential counters — one circle of circular ones. Position 0 is the
-first row, not a stop signal.
+with no sequential counters — one circle of circular ones. A template limit of 0
+gives N = 0; counters at position 0 do not stop generation (they start at row 0).
 """
 
 import logging
@@ -140,6 +140,9 @@ def _document_count(
     *,
     ignore_limit: bool = False,
 ) -> int:
+    if not ignore_limit and tdef.limit <= 0:
+        logger.debug(f"document count: limit is {tdef.limit}, nothing to generate")
+        return 0
     seq_avail: list[int] = []
     circ_lens: list[int] = []
     for name in names:

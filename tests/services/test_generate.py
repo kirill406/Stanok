@@ -31,14 +31,15 @@ def make_project(
     mode="sequential",
     pos=None,
     with_counter=True,
-    limit=0,
+    limit=100,
     resume=1,
 ) -> Path:
     """Build minimal project folder: Данные/data.xlsx + Шаблоны/tpl.docx + legacy PJ.
 
-    A sequential counter defaults to pos 1, so the sheet gets a placeholder
-    row 0 in front of `rows` that is skipped. Pass pos=0 to start at it.
-    A circular counter defaults to pos len(rows), which wraps to row 0.
+    A limit of 0 generates nothing; the default limit is large, so tests get
+    every row. A sequential counter defaults to pos 1, so the sheet gets a
+    placeholder row 0 in front of `rows`. A circular counter starts at
+    pos len(rows), which wraps to row 0.
     """
     if pos is None:
         pos = {"sequential": 1, "circular": len(rows), "constant": 0}[mode]
@@ -180,13 +181,23 @@ def test_resume_0_keeps_cursor(tmp_path, store):
     assert saved.counters["num"].pos == 2
 
 
-def test_counter_at_zero_starts_at_first_row(tmp_path, store):
-    # Position 0 is row 0: the sheet's placeholder row is the first one generated.
-    folder = make_project(tmp_path / "proj", pos=0)
+def test_counter_at_zero_generates_from_first_row_when_limit_set(tmp_path, store):
+    # Position 0 is the sheet's placeholder row; limit 1 makes exactly one document.
+    folder = make_project(tmp_path / "proj", pos=0, limit=1)
     report = generate_documents(GenerateCommand(project_ref=folder), store=store)
-    assert report.created == 3
+    assert report.created == 1
     saved = _load_saved(store, "proj")
-    assert saved.counters["data"].pos == 3
+    assert saved.counters["data"].pos == 1
+
+
+def test_limit_zero_generates_nothing(tmp_path, store):
+    folder = make_project(tmp_path / "proj", limit=0)
+    report = generate_documents(GenerateCommand(project_ref=folder), store=store)
+    assert report.created == 0
+    assert report.output_paths == []
+    saved = _load_saved(store, "proj")
+    assert saved.counters["data"].pos == 1
+    assert saved.counters["num"].pos == 0
 
 
 def test_empty_source_returns_empty_report(tmp_path, store):

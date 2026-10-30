@@ -820,7 +820,7 @@ def test_init_project_writes_app_version(store, tmp_path):
 
 
 def test_init_project_counter_starts_at_zero(store, tmp_path):
-    """A new counter starts at position 0, the first row of its source."""
+    """A new counter starts at 0 and generates nothing until set by the user."""
     xlsx, tpl = _src_files(tmp_path)
     pj = store.init_project(tmp_path / "proj", "zero", [xlsx], [tpl])
     assert pj.counters["data"].pos == 0

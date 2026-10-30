@@ -48,7 +48,7 @@ def test_open_lists_templates(qapp, tmp_path, store):
     dlg = ProjectDialog(str(folder), store=store)
     assert dlg.table.rowCount() == 1
     assert dlg.table.item(0, 0).text() == "Договор"
-    assert dlg.table.cellWidget(0, 2).value() == 0
+    assert dlg.table.cellWidget(0, 2).value() == 100  # make_project's large test limit
     assert "proj" in dlg.windowTitle()
     dlg.close()
 

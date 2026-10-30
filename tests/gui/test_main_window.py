@@ -89,7 +89,7 @@ def test_recent_row_shows_default_template_and_limit(qapp, tmp_path, store):
     labels = [w.text() for w in row.findChildren(QLabel)]
     assert STRINGS.MAIN_TPL.format(name="Договор") in labels
     spin = row.findChild(QSpinBox)
-    assert spin is not None and spin.value() == 0
+    assert spin is not None and spin.value() == 100  # make_project's large test limit
     buttons = [w for w in row.findChildren(QPushButton) if w.text() == STRINGS.MAIN_GENERATE]
     assert buttons and row.layout().indexOf(spin) < row.layout().indexOf(buttons[0])
     win.close()

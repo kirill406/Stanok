@@ -85,6 +85,8 @@ class Paragraph:
     page_break_before: bool = False
     base: Style = field(default_factory=Style)  # paragraph style: height of an empty line
     pieces: list[Piece] = field(default_factory=list)
+    # The w:p element in the document: the window edits the text through it (027).
+    element: object = field(default=None, repr=False, compare=False)
 
 
 @dataclass
@@ -142,16 +144,25 @@ class _Context:
     default_after_pt: float
 
 
-def load_template_layout(path: Path) -> Layout:
-    """Read a .docx template and lay it out; raise TemplateLayoutError on failure."""
+def open_document(path: Path):
+    """Open a .docx template as a python-docx Document; TemplateLayoutError on failure."""
     try:
-        doc = Document(str(path))
+        return Document(str(path))
     except (OSError, ValueError, KeyError) as e:
         logger.warning(f"layout open {path}: {e}", exc_info=True)
         raise TemplateLayoutError(f"cannot open template {path.name}: {e}") from e
     except Exception as e:
         logger.critical(f"unexpected layout open {path}: {e}", exc_info=True)
         raise TemplateLayoutError(f"cannot open template {path.name}: {e}") from e
+
+
+def load_template_layout(path: Path) -> Layout:
+    """Read a .docx template and lay it out; raise TemplateLayoutError on failure."""
+    return layout_of(open_document(path), path)
+
+
+def layout_of(doc, path: Path) -> Layout:
+    """Layout of an open document; `path` names the file in error messages."""
     try:
         return build_layout(doc)
     except Exception as e:
@@ -219,6 +230,7 @@ def _paragraph(p_el, parent, ctx: _Context) -> Paragraph:
     base = _style(None, chain, ctx)
     atoms = _atoms(p_el, p, chain, ctx)
     return Paragraph(
+        element=p_el,
         align=_align(_first(formats, "alignment")),
         left_pt=_pt(_first(formats, "left_indent")),
         right_pt=_pt(_first(formats, "right_indent")),
@@ -234,22 +246,22 @@ def _paragraph(p_el, parent, ctx: _Context) -> Paragraph:
 def _atoms(p_el, p: DocxParagraph, chain, ctx: _Context) -> list[tuple[str, Style]]:
     """One (char, style) pair per character; breaks and tabs are control chars."""
     atoms: list[tuple[str, Style]] = []
-    for r_el in _run_elements(p_el):
+    for r_el in iter_run_elements(p_el):
         style = _style(Run(r_el, p), chain, ctx)
-        for char in _run_chars(r_el):
+        for char in run_chars(r_el):
             atoms.append((char, style))
     return atoms
 
 
-def _run_elements(parent_el) -> Iterator:
+def iter_run_elements(parent_el) -> Iterator:
     for child in parent_el:
         if child.tag == qn("w:r"):
             yield child
         elif child.tag in _WRAPPERS:
-            yield from _run_elements(child)
+            yield from iter_run_elements(child)
 
 
-def _run_chars(r_el) -> Iterator[str]:
+def run_chars(r_el) -> Iterator[str]:
     for child in r_el:
         tag = child.tag
         if tag == qn("w:t"):

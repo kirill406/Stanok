@@ -9,12 +9,13 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from docx import Document
 from docx.enum.text import WD_BREAK
 from PyQt5.QtCore import QRect
+from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QApplication, QLabel, QWidget
 
 import pytest
 
 from stanok.gui.strings import STRINGS
-from stanok.gui.template_sheet import FlowLayout, TemplateSheet
+from stanok.gui.template_sheet import FlowWidget, TemplateSheet
 from stanok.services.template_layout import load_template_layout
 
 
@@ -167,47 +168,69 @@ def test_template_sheet_empty_paragraph_keeps_a_line(qapp, tmp_path):
     assert " " in texts  # the empty paragraph's placeholder label
 
 
-def test_flow_layout_wraps_words_when_narrow(qapp):
-    host = QWidget()
-    flow = FlowLayout(host)
-    labels = [QLabel(f"слово{i}", host) for i in range(6)]
-    for label in labels:
-        flow.addWidget(label)
+def test_flow_widget_wraps_words_when_narrow(qapp):
+    host = FlowWidget()
+    for i in range(6):
+        QLabel(f"слово{i}", host)
 
-    wide = flow.heightForWidth(2000)
-    narrow = flow.heightForWidth(60)
+    wide = host.heightForWidth(2000)
+    narrow = host.heightForWidth(60)
 
     assert narrow > wide
 
 
-def test_flow_layout_right_alignment_puts_last_item_at_edge(qapp):
-    host = QWidget()
-    flow = FlowLayout(host, align="right")
+def test_flow_widget_right_alignment_puts_last_item_at_edge(qapp):
+    host = FlowWidget(align="right")
     label = QLabel("конец", host)
-    flow.addWidget(label)
 
-    flow.setGeometry(QRect(0, 0, 400, 40))
+    host.resize(400, 40)
+    host.relayout()
 
     assert label.geometry().right() == 399
 
 
-def test_flow_layout_center_alignment_centers_the_line(qapp):
-    host = QWidget()
-    flow = FlowLayout(host, align="center")
+def test_flow_widget_center_alignment_centers_the_line(qapp):
+    host = FlowWidget(align="center")
     label = QLabel("х", host)
-    flow.addWidget(label)
 
-    flow.setGeometry(QRect(0, 0, 400, 40))
+    host.resize(400, 40)
+    host.relayout()
 
     assert abs(label.geometry().center().x() - 200) <= 2
 
 
-def test_flow_layout_first_indent_applies_to_first_line_only(qapp):
-    host = QWidget()
-    flow = FlowLayout(host, first_indent=50)
+def test_flow_widget_first_indent_applies_to_first_line_only(qapp):
+    host = FlowWidget(first_indent=50)
     first = QLabel("а", host)
-    flow.addWidget(first)
 
-    flow.setGeometry(QRect(0, 0, 400, 40))
+    host.resize(400, 40)
+    host.relayout()
 
     assert first.geometry().x() == 50
+
+
+def test_flow_widget_removed_child_is_not_placed(qapp):
+    host = FlowWidget()
+    kept = QLabel("оставить", host)
+    gone = QLabel("убрать", host)
+    gone.setParent(None)
+    gone.deleteLater()
+
+    host.resize(400, 40)
+    host.relayout()
+
+    assert kept.geometry().x() == 0
+    assert host._items() == [kept]
+
+
+def test_template_sheet_double_click_elsewhere_commits_open_edit(qapp, tmp_path):
+    sheet = _sheet(qapp, _layout(tmp_path, lambda d: d.add_paragraph("один")))
+    edited, asked = [], []
+    sheet.paragraphEdited.connect(lambda p, t: edited.append(t))
+    sheet.paragraphActivated.connect(asked.append)
+    sheet.begin_edit(sheet._layout_model.body[0], "один, правка")
+
+    sheet._activate(sheet._layout_model.body[0])
+
+    assert edited == ["один, правка"]
+    assert asked == []

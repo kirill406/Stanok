@@ -27,12 +27,13 @@ from PyQt5.QtWidgets import (
 from ..engine.schema import FieldSource, validate_pj
 from ..services.generate import TemplateError
 from ..services.storage import ProjectStore, project_folder
-from ..services.template_layout import Layout, TemplateLayoutError, load_template_layout
+from ..services.template_edit import TemplateDocument, TemplateEditError, is_editable, paragraph_text
+from ..services.template_layout import Layout, Paragraph, TemplateLayoutError
 from .dialogs import ask_save_discard_cancel
 from .field_editor import FieldEditDialog
 from .source_data import SourceData
 from .strings import STRINGS
-from .template_sheet import FlowLayout, TemplateSheet
+from .template_sheet import FlowWidget, TemplateSheet, from_display, to_display
 from .theme import set_button_role
 
 logger = logging.getLogger(__name__)
@@ -55,6 +56,7 @@ class FieldsDialog(QDialog):
         self._dirty = False
         self._sheet: TemplateSheet | None = None
         self._layout_error = ""
+        self._document: TemplateDocument | None = None
         pj, config_path = self._store.resolve_project(project_ref)
         self._pj = pj
         self._config_name = config_path.stem
@@ -64,15 +66,15 @@ class FieldsDialog(QDialog):
         except KeyError:
             raise TemplateError(f"template not found: {template_name}") from None
         self._sources = SourceData(pj, self._folder, self._store, self._config_name, self)
-        self._layout = self._load_layout()
+        self._layout = self._open_document()
         self._build_ui()
         # Window 3 works on the whole screen: the page is long, the fields are many.
         self.setWindowState(self.windowState() | Qt.WindowMaximized)
         logger.debug(f"window 3 opened: {self._config_name}/{template_name}")
 
     # -- template ---------------------------------------------------------------
-    def _load_layout(self) -> Layout | None:
-        """The page model of the template file; a failure leaves the page empty."""
+    def _open_document(self) -> Layout | None:
+        """Open the template file for the page and text edits; a failure leaves the page empty."""
         path = self._folder / self._template_def.file
         if not path.is_file():
             self._layout_error = STRINGS.TPL_LOAD_FAILED.format(
@@ -81,7 +83,8 @@ class FieldsDialog(QDialog):
             logger.warning(f"template file missing: {path}")
             return None
         try:
-            return load_template_layout(path)
+            self._document = TemplateDocument.load(path)
+            return self._document.layout()
         except TemplateLayoutError as e:
             self._layout_error = STRINGS.TPL_LOAD_FAILED.format(error=e)
             return None
@@ -138,6 +141,8 @@ class FieldsDialog(QDialog):
         if self._layout is not None:
             self._sheet = TemplateSheet(self._layout, self._describe, self._is_configured, self)
             self._sheet.fieldClicked.connect(self._open_field)
+            self._sheet.paragraphActivated.connect(self._begin_text_edit)
+            self._sheet.paragraphEdited.connect(self._on_text_edited)
             layout.addWidget(self._sheet, 1)
         else:
             error = QLabel(self._layout_error, self)
@@ -147,9 +152,7 @@ class FieldsDialog(QDialog):
             layout.addStretch(1)
             QMessageBox.warning(self, STRINGS.MAIN_ERROR_TITLE, self._layout_error)
 
-        self._unused = QWidget(self)
-        self._unused_flow = FlowLayout(self._unused)
-        self._unused_flow.setContentsMargins(0, 0, 0, 0)
+        self._unused = FlowWidget(self)
         self._unused_title = QLabel(STRINGS.FLD_UNUSED_TITLE, self)
         self._unused_title.setObjectName("sectionTitle")
         layout.addWidget(self._unused_title)
@@ -175,10 +178,11 @@ class FieldsDialog(QDialog):
         names = self._unused_names()
         self._unused_title.setVisible(bool(names))
         self._unused.setVisible(bool(names))
-        while self._unused_flow.count():
-            item = self._unused_flow.takeAt(0)
-            if item.widget() is not None:
-                item.widget().deleteLater()
+        for child in list(self._unused.children()):
+            if isinstance(child, QWidget):
+                child.hide()
+                child.setParent(None)
+                child.deleteLater()
         for name in names:
             button = QPushButton(name, self._unused)
             button.setObjectName("fieldButton")
@@ -186,7 +190,7 @@ class FieldsDialog(QDialog):
             button.setProperty("state", "set" if self._is_configured(name) else "unset")
             button.setFocusPolicy(Qt.NoFocus)
             button.clicked.connect(lambda _c=False, n=name: self._open_field(n))
-            self._unused_flow.addWidget(button)
+        self._unused.relayout()
 
     # -- slots ------------------------------------------------------------------
     def _open_field(self, name: str) -> None:
@@ -201,6 +205,33 @@ class FieldsDialog(QDialog):
         self._mark_dirty()
         if self._sheet is not None:
             self._sheet.refresh()
+        self._refresh_unused()
+
+    def _begin_text_edit(self, para: Paragraph) -> None:
+        """Open the paragraph text in the editor; a paragraph with a link or a tracked change is refused."""
+        if self._document is None or self._sheet is None:
+            return
+        if not is_editable(para.element):
+            QMessageBox.information(self, STRINGS.MAIN_ERROR_TITLE, STRINGS.TPL_EDIT_UNSUPPORTED)
+            return
+        logger.debug(f"paragraph edit started in {self._template_name}")
+        self._sheet.begin_edit(para, to_display(paragraph_text(para.element)))
+
+    def _on_text_edited(self, para: Paragraph, text: str) -> None:
+        """Apply an edited paragraph to the template in memory; the file is written on Save."""
+        try:
+            changed = self._document.set_paragraph_text(para.element, from_display(text))
+        except TemplateEditError as e:
+            logger.warning(f"paragraph edit failed: {e}")
+            QMessageBox.warning(self, STRINGS.MAIN_ERROR_TITLE, STRINGS.TPL_EDIT_FAILED.format(error=e))
+            self._sheet.end_edit()
+            return
+        if not changed:
+            self._sheet.end_edit()
+            return
+        self._layout = self._document.layout()
+        self._sheet.set_layout(self._layout)
+        self._mark_dirty()
         self._refresh_unused()
 
     def _mark_dirty(self) -> None:
@@ -240,12 +271,16 @@ class FieldsDialog(QDialog):
             return
         self._pj.filename_template = fname
         validate_pj(self._pj.model_dump(mode="json"))
+        if self._document is not None and self._document.dirty:
+            self._document.save()
         self._store.save(self._pj, name=self._config_name)
         self._dirty = False
         self.save_btn.setVisible(False)
         logger.info(f"saved fields of {self._template_name} to {self._config_name}")
 
     def reject(self) -> None:
+        if self._sheet is not None:
+            self._sheet.commit_edit()  # an open paragraph editor applies its text first
         if not self._dirty:
             super().reject()
             return

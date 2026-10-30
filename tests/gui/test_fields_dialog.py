@@ -276,3 +276,90 @@ def test_fields_dialog_insert_menu_offers_page_and_saved_fields(qapp, tmp_path, 
 
     assert dlg._field_names() == ["ФИО", "Сумма", "Номер", "Лишнее"]
     dlg.close()
+
+
+def _first_paragraph(dlg):
+    return dlg._layout.body[0]
+
+
+def test_fields_dialog_text_edit_is_kept_in_memory_until_save(qapp, tmp_path, store, messages):
+    dlg, folder = _window(tmp_path, store)
+    para = _first_paragraph(dlg)
+    before = (folder / "Шаблоны" / "tpl.docx").read_bytes()
+
+    dlg._on_text_edited(para, "Договор {{ФИО}} на сумму {{Сумма}} №{{Номер}} ДОП")
+
+    assert dlg._dirty is True
+    assert (folder / "Шаблоны" / "tpl.docx").read_bytes() == before
+    assert "ДОП" in dlg._layout.body[0].pieces[-1].text
+    dlg.close()
+
+
+def test_fields_dialog_save_writes_template_and_keeps_backup(qapp, tmp_path, store):
+    from docx import Document as DocxDocument
+
+    dlg, folder = _window(tmp_path, store)
+    dlg._on_text_edited(_first_paragraph(dlg), "новый текст {{ФИО}}")
+
+    dlg._on_save()
+
+    tpl = folder / "Шаблоны" / "tpl.docx"
+    assert DocxDocument(str(tpl)).paragraphs[0].text == "новый текст {{ФИО}}"
+    assert DocxDocument(str(tpl.with_name("tpl.docx.bak"))).paragraphs[0].text.startswith("Договор")
+    assert dlg._dirty is False
+    dlg.close()
+
+
+def test_fields_dialog_text_edit_unchanged_text_not_dirty(qapp, tmp_path, store):
+    dlg, _ = _window(tmp_path, store)
+    para = _first_paragraph(dlg)
+
+    dlg._on_text_edited(para, "Договор {{ФИО}} на сумму {{Сумма}} №{{Номер}}")
+
+    assert dlg._dirty is False
+    dlg.close()
+
+
+def test_fields_dialog_new_placeholder_gets_unset_button(qapp, tmp_path, store):
+    dlg, _ = _window(tmp_path, store)
+
+    dlg._on_text_edited(_first_paragraph(dlg), "Договор {{ФИО}} {{Новое}}")
+
+    assert "Новое" in dlg._sheet.field_names
+    assert dlg._sheet._buttons["Новое"][0].property("state") == "unset"
+    dlg.close()
+
+
+def test_fields_dialog_removed_placeholder_moves_to_unused(qapp, tmp_path, store):
+    dlg, _ = _window(tmp_path, store)
+
+    dlg._on_text_edited(_first_paragraph(dlg), "Договор {{ФИО}}")
+
+    assert "Сумма" in dlg._unused_names()
+    dlg.close()
+
+
+def test_fields_dialog_paragraph_with_hyperlink_is_refused(qapp, tmp_path, store, messages):
+    from docx.oxml import OxmlElement
+
+    dlg, _ = _window(tmp_path, store)
+    para = _first_paragraph(dlg)
+    para.element.append(OxmlElement("w:hyperlink"))
+
+    dlg._begin_text_edit(para)
+
+    assert messages == [STRINGS.TPL_EDIT_UNSUPPORTED]
+    assert dlg._sheet._editing_para is None
+    dlg.close()
+
+
+def test_fields_dialog_double_click_opens_editor_with_paragraph_text(qapp, tmp_path, store):
+    from PyQt5.QtWidgets import QPlainTextEdit
+
+    dlg, _ = _window(tmp_path, store)
+
+    dlg._begin_text_edit(_first_paragraph(dlg))
+
+    editor = dlg._sheet.findChild(QPlainTextEdit, "paragraphEditor")
+    assert editor.toPlainText() == "Договор {{ФИО}} на сумму {{Сумма}} №{{Номер}}"
+    dlg.close()

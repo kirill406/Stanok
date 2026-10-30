@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Template page for window 3 (027): draws a TemplateLayout, fields as buttons.
 
-Each paragraph line is a FlowLayout of word labels, spacers and field
+Each paragraph line is a FlowWidget of word labels, spacers and field
 buttons, so a field sits in the text where it is in the document. Lines
 wrap at word boundaries; alignment and the first-line indent are applied
 per line.
@@ -14,21 +14,19 @@ import logging
 import re
 from collections.abc import Callable
 
-from PyQt5.QtCore import QPoint, QRect, QSize, Qt, pyqtSignal
+from PyQt5.QtCore import QRect, QSize, Qt, QTimer, pyqtSignal
 from PyQt5.QtGui import QFont, QFontMetricsF
 from PyQt5.QtWidgets import (
     QFrame,
     QGridLayout,
     QHBoxLayout,
     QLabel,
-    QLayout,
-    QLayoutItem,
+    QPlainTextEdit,
     QPushButton,
     QScrollArea,
     QSizePolicy,
     QVBoxLayout,
     QWidget,
-    QWidgetItem,
 )
 
 from ..services.template_layout import (
@@ -67,75 +65,59 @@ def _font(style: Style) -> QFont:
     return font
 
 
-def _is_spacer(item: QLayoutItem) -> bool:
-    widget = item.widget()
-    return widget is not None and bool(widget.property("spacer"))
+class FlowWidget(QWidget):
+    """Children flow left to right and wrap; alignment and first indent apply per line.
 
+    A plain widget, not a QLayout: the children are the widgets created with this
+    widget as parent, in creation order. A deleted child leaves the list by itself,
+    so there is no item bookkeeping that Qt could touch after a page is removed.
+    """
 
-class FlowLayout(QLayout):
-    """Left-to-right items with wrapping; alignment and first indent per line."""
-
-    def __init__(
-        self,
-        parent: QWidget | None = None,
-        align: str = "left",
-        first_indent: int = 0,
-    ) -> None:
+    def __init__(self, parent: QWidget | None = None, align: str = "left", first_indent: int = 0) -> None:
         super().__init__(parent)
-        self._items: list[QLayoutItem] = []
         self._align = align
         self._first_indent = first_indent
 
-    def addItem(self, item: QLayoutItem) -> None:
-        self._items.append(item)
-
-    def addWidget(self, widget: QWidget) -> None:
-        self.addChildWidget(widget)
-        self._items.append(QWidgetItem(widget))
-
-    def count(self) -> int:
-        return len(self._items)
-
-    def itemAt(self, index: int) -> QLayoutItem | None:
-        return self._items[index] if 0 <= index < len(self._items) else None
-
-    def takeAt(self, index: int) -> QLayoutItem | None:
-        return self._items.pop(index) if 0 <= index < len(self._items) else None
-
-    def expandingDirections(self) -> Qt.Orientations:
-        return Qt.Orientations(Qt.Orientation(0))
+    def _items(self) -> list[QWidget]:
+        return [w for w in self.children() if isinstance(w, QWidget) and not w.isWindow()]
 
     def hasHeightForWidth(self) -> bool:
         return True
 
     def heightForWidth(self, width: int) -> int:
-        return self._place(QRect(0, 0, width, 0), test_only=True)
-
-    def setGeometry(self, rect: QRect) -> None:
-        super().setGeometry(rect)
-        self._place(rect, test_only=False)
+        return self._place(width, apply=False)
 
     def sizeHint(self) -> QSize:
-        width = sum(item.sizeHint().width() for item in self._items)
-        height = max((item.sizeHint().height() for item in self._items), default=0)
-        return QSize(width + self._first_indent, height)
-
-    def minimumSize(self) -> QSize:
-        width = max((item.minimumSize().width() for item in self._items), default=0)
-        height = max((item.minimumSize().height() for item in self._items), default=0)
+        items = self._items()
+        width = sum(w.sizeHint().width() for w in items) + self._first_indent
+        height = max((w.sizeHint().height() for w in items), default=0)
         return QSize(width, height)
 
-    def _rows(self, width: int) -> list[list[tuple[QLayoutItem, QSize]]]:
-        """Split items into lines; a line never starts with a spacer after a wrap."""
-        rows: list[list[tuple[QLayoutItem, QSize]]] = [[]]
+    def minimumSizeHint(self) -> QSize:
+        items = self._items()
+        width = max((w.minimumSizeHint().width() for w in items), default=0)
+        height = max((w.minimumSizeHint().height() for w in items), default=0)
+        return QSize(width, height)
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._place(self.width(), apply=True)
+
+    def relayout(self) -> None:
+        """Place the children again, after children were added or removed."""
+        self._place(self.width(), apply=True)
+
+    def _rows(self, width: int) -> list[list[tuple[QWidget, QSize]]]:
+        """Split children into lines; a line never starts with a spacer after a wrap."""
+        rows: list[list[tuple[QWidget, QSize]]] = [[]]
         used = 0
         limit = max(0, width - self._first_indent)
-        for item in self._items:
+        for item in self._items():
             size = item.sizeHint()
+            spacer = bool(item.property("spacer"))
             row = rows[-1]
-            spacer = _is_spacer(item)
             if not spacer and row and used + size.width() > limit:
-                while row and _is_spacer(row[-1][0]):
+                while row and row[-1][0].property("spacer"):
                     row.pop()
                 rows.append([])
                 used = 0
@@ -147,28 +129,105 @@ class FlowLayout(QLayout):
             used += size.width()
         return rows
 
-    def _place(self, rect: QRect, test_only: bool) -> int:
-        y = rect.y()
-        for index, row in enumerate(self._rows(rect.width())):
+    def _place(self, width: int, apply: bool) -> int:
+        """Lay out the lines for `width`; returns the height, moves children if `apply`."""
+        y = 0
+        for index, row in enumerate(self._rows(width)):
             indent = self._first_indent if index == 0 else 0
             row_width = sum(size.width() for _, size in row)
             row_height = max((size.height() for _, size in row), default=0)
-            free = max(0, rect.width() - indent - row_width)
+            free = max(0, width - indent - row_width)
             shift = {"center": free // 2, "right": free}.get(self._align, 0)
-            x = rect.x() + indent + shift
+            x = indent + shift
             for item, size in row:
-                if not test_only:
-                    top = y + (row_height - size.height()) // 2
-                    item.setGeometry(QRect(QPoint(x, top), size))
+                if apply:
+                    item.setGeometry(QRect(x, y + (row_height - size.height()) // 2, size.width(), size.height()))
                 x += size.width()
             y += row_height
-        return y - rect.y()
+        return y
+
+
+PAGE_BREAK = "\f"
+
+
+def to_display(text: str) -> str:
+    """Document text -> editor text: a page break is shown as a readable token."""
+    return text.replace(PAGE_BREAK, STRINGS.TPL_PAGE_BREAK_TOKEN)
+
+
+def from_display(text: str) -> str:
+    """Editor text -> document text: the token becomes a page break again."""
+    return text.replace(STRINGS.TPL_PAGE_BREAK_TOKEN, PAGE_BREAK)
+
+
+class ParagraphEditor(QPlainTextEdit):
+    """Plain editor for one paragraph's text; Esc cancels, leaving the field applies."""
+
+    ended = pyqtSignal(bool, str)  # committed, text
+
+    def __init__(self, text: str, font: QFont, parent: QWidget) -> None:
+        super().__init__(text, parent)
+        self._done = False
+        self.setObjectName("paragraphEditor")
+        self.setFont(font)
+        self.setLineWrapMode(QPlainTextEdit.WidgetWidth)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.textChanged.connect(self._fit)
+        self._fit()
+        self.setFocus()
+
+    def _fit(self) -> None:
+        """Grow with the text so the paragraph keeps its height on the page."""
+        height = int(self.document().size().height()) + 2 * self.frameWidth() + 8
+        self.setFixedHeight(max(height, self.fontMetrics().lineSpacing() + 8))
+
+    def finish(self, commit: bool) -> None:
+        if self._done:
+            return
+        self._done = True
+        self.ended.emit(commit, self.toPlainText())
+
+    def keyPressEvent(self, event) -> None:
+        if event.key() == Qt.Key_Escape:
+            self.finish(False)
+            return
+        super().keyPressEvent(event)
+
+    def focusOutEvent(self, event) -> None:
+        super().focusOutEvent(event)
+        # Deferred: the owner may rebuild the page, which must not happen inside this event.
+        # The timer is a child of the editor: if the editor is gone, the commit never fires.
+        timer = QTimer(self)
+        timer.setSingleShot(True)
+        timer.timeout.connect(lambda: self.finish(True))
+        timer.start(0)
+
+
+class _ParagraphBox(QWidget):
+    """Paragraph block; a double click asks the sheet to edit it."""
+
+    def __init__(self, para: Paragraph, parent: QWidget, on_activate) -> None:
+        super().__init__(parent)
+        self._para = para
+        self._on_activate = on_activate
+
+    def mouseDoubleClickEvent(self, event) -> None:
+        self._on_activate(self._para)
+        event.accept()
 
 
 class TemplateSheet(QScrollArea):
-    """Scrollable white page with the template text; field buttons emit fieldClicked."""
+    """Scrollable white page with the template text; field buttons emit fieldClicked.
+
+    A double click on a paragraph emits paragraphActivated. The owner answers with
+    begin_edit (shows the editor), then with set_layout (text changed) or end_edit.
+    Esc in the editor restores the page by itself.
+    """
 
     fieldClicked = pyqtSignal(str)
+    paragraphActivated = pyqtSignal(object)  # Paragraph
+    paragraphEdited = pyqtSignal(object, str)  # Paragraph, editor text
 
     def __init__(
         self,
@@ -182,29 +241,51 @@ class TemplateSheet(QScrollArea):
         self._describe = describe
         self._is_configured = is_configured
         self._buttons: dict[str, list[QPushButton]] = {}
+        self._editing_para: Paragraph | None = None
+        self._editing_text = ""
+        self._editor: ParagraphEditor | None = None
         self.setObjectName("sheetScroll")
         self.setWidgetResizable(True)
         self.setFrameShape(QFrame.NoFrame)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        self._page = self._build_page()
         area = QWidget(self)
         area.setObjectName("sheetArea")
-        row = QHBoxLayout(area)
-        row.setContentsMargins(16, 16, 16, 16)
-        row.addStretch(1)
-        row.addWidget(self._page)
-        row.addStretch(1)
+        self._row = QHBoxLayout(area)
+        self._row.setContentsMargins(16, 16, 16, 16)
+        self._row.addStretch(1)
+        self._page: QWidget | None = None
+        self._row.addStretch(1)
         self.setWidget(area)
-        self.refresh()
-        logger.debug(
-            f"template sheet built: {len(self._buttons)} fields, "
-            f"{len(layout.body)} body blocks"
-        )
+        self._show_page()
+        logger.debug(f"template sheet built: {len(self._buttons)} fields")
 
     @property
     def field_names(self) -> list[str]:
         """Names of the fields drawn on the page, in document order."""
         return list(self._buttons)
+
+    def set_layout(self, layout: Layout) -> None:
+        """Replace the page with a new layout (after a text change); ends any edit."""
+        self._layout_model = layout
+        self._editing_para = None
+        self._editor = None
+        self._show_page()
+
+    def begin_edit(self, para: Paragraph, text: str) -> None:
+        """Show the paragraph as an editor holding `text` (editor form)."""
+        self._editing_para = para
+        self._editing_text = text
+        self._show_page()
+
+    def end_edit(self) -> None:
+        self._editing_para = None
+        self._editor = None
+        self._show_page()
+
+    def commit_edit(self) -> None:
+        """Apply the open paragraph editor, if any (used when the window closes)."""
+        if self._editor is not None:
+            self._editor.finish(True)
 
     def refresh(self) -> None:
         """Re-read state of every field button (after the user changed a field)."""
@@ -216,6 +297,21 @@ class TemplateSheet(QScrollArea):
                 button.setToolTip(tip)
                 button.style().unpolish(button)
                 button.style().polish(button)
+
+    def _show_page(self) -> None:
+        """Build the page for the current layout and keep the scroll position."""
+        scroll = self.verticalScrollBar().value()
+        old = self._page
+        self._buttons = {}
+        self._page = self._build_page()
+        self._row.insertWidget(1, self._page)
+        if old is not None:
+            self._row.removeWidget(old)
+            old.hide()
+            old.setParent(None)
+            old.deleteLater()
+        self.refresh()
+        self.verticalScrollBar().setValue(scroll)
 
     # -- page -------------------------------------------------------------------
     def _build_page(self) -> QWidget:
@@ -258,7 +354,7 @@ class TemplateSheet(QScrollArea):
 
     # -- paragraphs -------------------------------------------------------------
     def _paragraph(self, para: Paragraph, parent: QWidget) -> QWidget:
-        box = QWidget(parent)
+        box = _ParagraphBox(para, parent, self._activate)
         box.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
         column = QVBoxLayout(box)
         column.setContentsMargins(
@@ -267,6 +363,13 @@ class TemplateSheet(QScrollArea):
         column.setSpacing(0)
         if para.page_break_before:
             column.addWidget(self._page_break(box))
+        if self._editing_para is not None and para.element is self._editing_para.element:
+            self._editor = ParagraphEditor(self._editing_text, _font(para.base), box)
+            self._editor.ended.connect(
+                lambda commit, text, p=para: self._on_ended(p, commit, text)
+            )
+            column.addWidget(self._editor)
+            return box
         # A line is a list of pieces; None is a page separator between two lines.
         entries: list[list[Piece] | None] = [[]]
         for piece in para.pieces:
@@ -287,26 +390,34 @@ class TemplateSheet(QScrollArea):
             first = False
         return box
 
+    def _activate(self, para: Paragraph) -> None:
+        if self._editing_para is not None:
+            self.commit_edit()  # a double click elsewhere first applies the open edit
+            return
+        self.paragraphActivated.emit(para)
+
+    def _on_ended(self, para: Paragraph, commit: bool, text: str) -> None:
+        """Esc restores the page here; a commit waits for the owner to rebuild it."""
+        if commit:
+            self.paragraphEdited.emit(para, text)
+        else:
+            self.end_edit()
+
     def _line(
         self, pieces: list[Piece], para: Paragraph, indent: int, parent: QWidget
     ) -> QWidget:
-        line = QWidget(parent)
-        flow = FlowLayout(line, align=para.align, first_indent=indent)
-        flow.setContentsMargins(0, 0, 0, 0)
+        line = FlowWidget(parent, align=para.align, first_indent=indent)
         added = False
         for piece in pieces:
             if isinstance(piece, Field):
-                flow.addWidget(self._field_button(piece, line))
+                self._field_button(piece, line)
                 added = True
             elif isinstance(piece, Text):
-                for word in self._words(piece, line):
-                    flow.addWidget(word)
-                    added = True
+                added = bool(self._words(piece, line)) or added
         if not added:
             # An empty line keeps the height of the paragraph font.
             empty = QLabel(" ", line)
             empty.setFont(_font(para.base))
-            flow.addWidget(empty)
         return line
 
     def _words(self, piece: Text, parent: QWidget) -> list[QWidget]:

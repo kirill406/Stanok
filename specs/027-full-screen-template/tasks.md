@@ -24,4 +24,4 @@
 17. [x] `gui/template_sheet.py`: двойной щелчок → редактор абзаца (`QPlainTextEdit`), Esc отменяет, уход фокуса применяет; `set_layout` перестраивает страницу с сохранением прокрутки.
 18. [x] `gui/fields_dialog.py`: держит `TemplateDocument`, применяет правку, помечает окно изменённым, Save пишет `.docx` и проект.
 19. [x] Тесты: services (оформление, дифф, сохранение, `.bak`), gui (двойной щелчок, Esc, применение), окно (Save пишет docx).
-20. [ ] Строки (`TPL_*`), подсказка окна, `CHANGELOG`, `docs/architecture.md`, пересборка exe.
+20. [x] Строки (`TPL_*`), подсказка окна, `CHANGELOG`, `docs/architecture.md`, пересборка exe.

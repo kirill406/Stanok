@@ -303,6 +303,11 @@ class TemplateSheet(QScrollArea):
         if self._editor is not None:
             self._editor.finish(True)
 
+    def cancel_edit(self) -> None:
+        """Drop the open paragraph editor without applying its text."""
+        if self._editor is not None:
+            self._editor.finish(False)
+
     def refresh(self) -> None:
         """Re-read state of every field button (after the user changed a field)."""
         for name, buttons in self._buttons.items():

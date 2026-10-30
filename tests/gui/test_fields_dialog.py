@@ -392,3 +392,41 @@ def test_fields_dialog_double_click_keeps_window_open_with_editor(qapp, tmp_path
     assert dlg.isVisible()
     assert dlg._sheet.findChild(QPlainTextEdit, "paragraphEditor") is not None
     dlg.close()
+
+
+def test_fields_dialog_apply_button_applies_then_next_paragraph_opens(qapp, tmp_path, store):
+    from docx import Document as DocxDocument
+
+    folder = make_project(tmp_path / "proj")
+    tpl = folder / "Шаблоны" / "tpl.docx"
+    doc = DocxDocument(str(tpl))
+    doc.add_paragraph("Второй абзац")
+    doc.save(str(tpl))
+    store.migrate_from_project(folder)
+    dlg = FieldsDialog(str(folder), "Договор", store=store)
+
+    dlg._begin_text_edit(dlg._layout.body[0])
+    assert not dlg.para_apply_btn.isHidden()
+    dlg._sheet._editor.insertPlainText(" правка")
+    dlg.para_apply_btn.click()
+
+    assert dlg._sheet._editor is None
+    assert dlg.para_apply_btn.isHidden()
+    assert dlg._dirty is True
+    dlg._begin_text_edit(dlg._layout.body[1])
+    assert dlg._sheet._editor is not None
+    dlg._cancel_paragraph()
+    dlg.close()
+
+
+def test_fields_dialog_cancel_button_drops_paragraph_text(qapp, tmp_path, store):
+    dlg, _ = _window(tmp_path, store)
+    dlg._begin_text_edit(_first_paragraph(dlg))
+    dlg._sheet._editor.insertPlainText(" лишнее")
+
+    dlg.para_cancel_btn.click()
+
+    assert dlg._sheet._editor is None
+    assert dlg.para_cancel_btn.isHidden()
+    assert dlg._dirty is False
+    dlg.close()

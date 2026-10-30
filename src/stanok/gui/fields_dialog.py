@@ -168,7 +168,18 @@ class FieldsDialog(QDialog):
         close_btn.clicked.connect(self.reject)
         # Hide AFTER all buttons are added: QDialogButtonBox unhides on add.
         self.save_btn.setEnabled(False)  # visible always; active only with unsaved changes
-        layout.addWidget(buttons)
+        # Paragraph actions sit outside the page: pressing them rebuilds the page safely.
+        bottom = QHBoxLayout()
+        self.para_apply_btn = QPushButton(STRINGS.FLD_PARA_APPLY, self)
+        self.para_apply_btn.clicked.connect(self._apply_paragraph)
+        self.para_cancel_btn = QPushButton(STRINGS.FLD_PARA_CANCEL, self)
+        self.para_cancel_btn.clicked.connect(self._cancel_paragraph)
+        bottom.addWidget(self.para_apply_btn)
+        bottom.addWidget(self.para_cancel_btn)
+        bottom.addStretch(1)
+        bottom.addWidget(buttons)
+        self._show_paragraph_bar(False)
+        layout.addLayout(bottom)
         hint = QLabel(STRINGS.FLD_HINT, self)
         hint.setObjectName("muted")
         layout.addWidget(hint)
@@ -216,9 +227,26 @@ class FieldsDialog(QDialog):
             return
         logger.debug(f"paragraph edit started in {self._template_name}")
         self._sheet.begin_edit(para, to_display(paragraph_text(para.element)))
+        self._show_paragraph_bar(True)
+
+    def _show_paragraph_bar(self, on: bool) -> None:
+        self.para_apply_btn.setVisible(on)
+        self.para_cancel_btn.setVisible(on)
+
+    def _apply_paragraph(self) -> None:
+        """Apply the open paragraph text; the next paragraph can be opened after this."""
+        if self._sheet is not None:
+            self._sheet.commit_edit()
+        self._show_paragraph_bar(False)
+
+    def _cancel_paragraph(self) -> None:
+        if self._sheet is not None:
+            self._sheet.cancel_edit()
+        self._show_paragraph_bar(False)
 
     def _on_text_edited(self, para: Paragraph, text: str) -> None:
         """Apply an edited paragraph to the template in memory; the file is written on Save."""
+        self._show_paragraph_bar(False)
         try:
             changed = self._document.set_paragraph_text(para.element, from_display(text))
         except TemplateEditError as e:

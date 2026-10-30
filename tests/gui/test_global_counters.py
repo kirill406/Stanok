@@ -5,7 +5,7 @@
 import json
 
 import pytest
-from PyQt5.QtWidgets import QApplication, QMessageBox, QSpinBox
+from PyQt5.QtWidgets import QApplication, QMessageBox, QPushButton, QSpinBox
 
 from stanok.gui.fields_dialog import FieldsDialog
 from stanok.gui.global_counters_dialog import GlobalCountersDialog
@@ -25,16 +25,51 @@ def store(tmp_path):
     return ProjectStore(tmp_path / ".stanok")
 
 
-def test_dialog_adds_and_lists_shared_counter(qapp, store):
+def test_dialog_adds_and_lists_shared_counter(qapp, store, monkeypatch):
+    import stanok.gui.global_counters_dialog as gcd
+
+    class FakeAdd:
+        def __init__(self, parent=None):
+            pass
+
+        def exec_(self):
+            return 1
+
+        def name(self):
+            return "invoice"
+
+        def fmt(self):
+            return "0001"
+
+        def start(self):
+            return 41
+
+    monkeypatch.setattr(gcd, "AddSharedCounterDialog", FakeAdd)
     dlg = GlobalCountersDialog(store)
-    dlg.name_edit.setText("invoice")
-    dlg.format_combo.setCurrentIndex(dlg.format_combo.findData("0001"))
-    dlg.start_spin.setValue(41)
     dlg._on_add()
     assert store.global_counters()["invoice"].format == "0001"
     assert dlg.table.rowCount() == 1
     assert dlg.table.item(0, 0).text() == "invoice"
     assert dlg.table.cellWidget(0, 2).findChild(QSpinBox).value() == 41
+    dlg.close()
+
+
+def test_add_button_sits_at_bottom_next_to_close(qapp, store):
+    dlg = GlobalCountersDialog(store)
+    texts = [b.text() for b in dlg.findChildren(QPushButton)]
+    assert STRINGS.GCNT_ADD in texts and STRINGS.START_CLOSE in texts
+    assert not hasattr(dlg, "name_edit")  # the add form lives in its own dialog
+    dlg.close()
+
+
+def test_add_dialog_collects_name_format_and_start(qapp):
+    from stanok.gui.global_counters_dialog import AddSharedCounterDialog
+
+    dlg = AddSharedCounterDialog()
+    dlg.name_edit.setText("cnt")
+    dlg.format_combo.setCurrentIndex(dlg.format_combo.findData("01"))
+    dlg.start_spin.setValue(5)
+    assert (dlg.name(), dlg.fmt(), dlg.start()) == ("cnt", "01", 5)
     dlg.close()
 
 

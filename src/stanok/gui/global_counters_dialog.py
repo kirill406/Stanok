@@ -10,6 +10,7 @@ from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtWidgets import (
     QComboBox,
     QDialog,
+    QDialogButtonBox,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -27,10 +28,52 @@ from ..engine.resolve import COUNTER_WIDTHS
 from ..services.storage import ProjectStore, StorageError
 from .dialogs import ask_text, ask_yes_no
 from .strings import STRINGS
+from .theme import set_button_role
 
 logger = logging.getLogger(__name__)
 
 MAX_VALUE = 1_000_000_000
+
+
+class AddSharedCounterDialog(QDialog):
+    """Name, format and start value of a new shared counter."""
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle(STRINGS.GCNT_ADD_TITLE)
+        self.setMinimumWidth(420)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(22, 20, 22, 20)
+        layout.setSpacing(9)
+        layout.addWidget(QLabel(STRINGS.GCNT_NAME, self))
+        self.name_edit = QLineEdit(self)
+        layout.addWidget(self.name_edit)
+        layout.addWidget(QLabel(STRINGS.GCNT_FORMAT, self))
+        self.format_combo = QComboBox(self)
+        for width in COUNTER_WIDTHS:
+            self.format_combo.addItem(width, width)
+        layout.addWidget(self.format_combo)
+        layout.addWidget(QLabel(STRINGS.GCNT_START, self))
+        self.start_spin = QSpinBox(self)
+        self.start_spin.setRange(0, MAX_VALUE)
+        layout.addWidget(self.start_spin)
+
+        buttons = QDialogButtonBox(self)
+        ok_btn = buttons.addButton(STRINGS.BTN_OK, QDialogButtonBox.AcceptRole)
+        set_button_role(ok_btn, "primary")
+        cancel_btn = buttons.addButton(STRINGS.CRT_CANCEL, QDialogButtonBox.RejectRole)
+        ok_btn.clicked.connect(self.accept)
+        cancel_btn.clicked.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def name(self) -> str:
+        return self.name_edit.text()
+
+    def fmt(self) -> str:
+        return self.format_combo.currentData()
+
+    def start(self) -> int:
+        return self.start_spin.value()
 
 
 class GlobalCountersDialog(QDialog):
@@ -52,24 +95,6 @@ class GlobalCountersDialog(QDialog):
         hint.setObjectName("muted")
         hint.setWordWrap(True)
         layout.addWidget(hint)
-
-        form = QHBoxLayout()
-        form.addWidget(QLabel(STRINGS.GCNT_NAME, self))
-        self.name_edit = QLineEdit(self)
-        form.addWidget(self.name_edit, 1)
-        form.addWidget(QLabel(STRINGS.GCNT_FORMAT, self))
-        self.format_combo = QComboBox(self)
-        for width in COUNTER_WIDTHS:
-            self.format_combo.addItem(width, width)
-        form.addWidget(self.format_combo)
-        form.addWidget(QLabel(STRINGS.GCNT_START, self))
-        self.start_spin = QSpinBox(self)
-        self.start_spin.setRange(0, MAX_VALUE)
-        form.addWidget(self.start_spin)
-        add_btn = QPushButton(STRINGS.GCNT_ADD, self)
-        add_btn.clicked.connect(self._on_add)
-        form.addWidget(add_btn)
-        layout.addLayout(form)
 
         self.table = QTableWidget(self)
         self.table.setColumnCount(5)
@@ -95,9 +120,15 @@ class GlobalCountersDialog(QDialog):
             header.resizeSection(col, width)
         layout.addWidget(self.table, 1)
 
+        buttons = QHBoxLayout()
+        buttons.addStretch(1)
+        add_btn = QPushButton(STRINGS.GCNT_ADD, self)
+        add_btn.clicked.connect(self._on_add)
+        buttons.addWidget(add_btn)
         close_btn = QPushButton(STRINGS.START_CLOSE, self)
         close_btn.clicked.connect(self.accept)
-        layout.addWidget(close_btn, 0, Qt.AlignRight)
+        buttons.addWidget(close_btn)
+        layout.addLayout(buttons)
         self._reload()
 
     def _reload(self) -> None:
@@ -153,16 +184,14 @@ class GlobalCountersDialog(QDialog):
         QMessageBox.warning(self, STRINGS.GCNT_TITLE, str(error))
 
     def _on_add(self) -> None:
+        dialog = AddSharedCounterDialog(self)
+        if not dialog.exec_():
+            return
         try:
-            self._store.add_global_counter(
-                self.name_edit.text(),
-                self.format_combo.currentData(),
-                self.start_spin.value(),
-            )
+            self._store.add_global_counter(dialog.name(), dialog.fmt(), dialog.start())
         except StorageError as e:
             self._warn(e)
             return
-        self.name_edit.clear()
         self._reload()
 
     def _on_value_changed(self, name: str, value: int) -> None:

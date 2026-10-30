@@ -218,6 +218,7 @@ class STRINGS:
     GCNT_FORMAT = "Формат:"
     GCNT_START = "Начальное значение:"
     GCNT_ADD = "Добавить"
+    GCNT_ADD_TITLE = "Новый сквозной счётчик"
     GCNT_COL_NAME = "Имя"
     GCNT_COL_FORMAT = "Формат"
     GCNT_COL_VALUE = "Текущее значение"

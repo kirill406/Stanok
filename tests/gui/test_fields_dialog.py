@@ -376,7 +376,7 @@ def test_counter_create_via_table(qapp, tmp_path, store, monkeypatch):
 
 
 def test_resume_checkbox_inverted_label(qapp, tmp_path, store):
-    """Column «Начинать заново»: checked means resume=0 (start over)."""
+    """Column «Заново»: checked means resume=0 (start over)."""
     folder = make_project(tmp_path / "proj")
     dlg = FieldsDialog(str(folder), "Договор", store=store)
     box = dlg._crows["data"]["resume"]
@@ -881,8 +881,10 @@ def test_counters_table_fits_text(qapp, tmp_path, store):
     dlg = FieldsDialog(str(folder), "Договор", store=store)
     header = dlg.ctable.horizontalHeader()
     assert header.stretchLastSection() is False
-    for col in range(dlg.ctable.columnCount()):
+    for col in range(dlg.ctable.columnCount() - 1):
         assert header.sectionResizeMode(col) == QHeaderView.ResizeToContents
+    # The last column holds the remove button: ResizeToContents would ignore it.
+    assert header.sectionResizeMode(dlg.ctable.columnCount() - 1) == QHeaderView.Fixed
     dlg.close()
 
 

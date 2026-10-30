@@ -396,6 +396,9 @@ class FieldsDialog(QDialog):
         self.ctable.horizontalHeader().setSectionResizeMode(
             QHeaderView.ResizeToContents
         )
+        # ResizeToContents ignores cell widgets, so the remove button column gets a fixed width.
+        self.ctable.horizontalHeader().setSectionResizeMode(5, QHeaderView.Fixed)
+        self.ctable.horizontalHeader().resizeSection(5, 120)
         self._build_counters_table()
         layout.addWidget(self.ctable)
         layout.addWidget(QLabel(STRINGS.FLD_CNT_HINT, self))

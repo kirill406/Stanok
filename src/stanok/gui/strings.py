@@ -24,9 +24,9 @@ class STRINGS:
         "разработчиком и приложите файл лога."
     )
     APP_DONE = "Готово: создано {created}, ошибок {errors} за {elapsed} с"
-    APP_DONE_ZERO_COUNTER = (
-        "Готово: документы не созданы, счётчик «{names}» стоит на 0. "
-        "Выставьте позицию счётчика, ошибок {errors} за {elapsed} с"
+    APP_DONE_NO_LIMIT = (
+        "Готово: документы не созданы, лимит шаблона 0. "
+        "Укажите лимит больше 0, ошибок {errors} за {elapsed} с"
     )
     APP_DONE_SHORT = (
         "Готово: создано {created} из {limit} (строки закончились), "
@@ -76,7 +76,7 @@ class STRINGS:
     MAIN_GENERATE_ALL = "Сгенерировать все"
     MAIN_TPL = "Шаблон: «{name}»"
     MAIN_TPL_UNAVAILABLE = "Шаблон: —"
-    MAIN_TPL_LIMIT_TIP = "Лимит документов шаблона по умолчанию (0 — без лимита)"
+    MAIN_TPL_LIMIT_TIP = "Сколько документов создать по шаблону (0 — не создавать)"
     MAIN_REMOVE = "Убрать"
     MAIN_SETTINGS = "Настройки"
     MAIN_CREATE = "Создать проект"
@@ -269,7 +269,7 @@ class STRINGS:
     )
     PROJ_TPL_COL = "Шаблон"
     PROJ_COUNT_COL = "Лимит"
-    PROJ_COUNT_TIP = "Лимит документов за прогон (0 — без лимита). Счётчик на 0 документы не создаёт"
+    PROJ_COUNT_TIP = "Сколько документов создать за прогон (0 — не создавать)"
     PROJ_DEFAULT_COL = "По умолчанию"
     PROJ_DEFAULT_TIP = "Шаблон для запуска из главного окна"
     PROJ_RUN = "Сгенерировать"

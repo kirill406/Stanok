@@ -23,6 +23,7 @@ def _pj(**overrides) -> dict:
         "templates": {
             "Д": {
                 "file": "Шаблоны/Д.docx",
+                "limit": 100,
                 "fields": {
                     "ФИО": {"source": "table", "value": "fio", "counter_name": "emp"},
                     "Номер": {"source": "counter", "value": "n"},
@@ -81,18 +82,26 @@ def test_used_counters_and_sources():
     assert participating_sources(pj, "Д") == [SRC]
 
 
-def test_resolve_counter_at_zero_gives_no_documents():
+def test_resolve_counter_at_zero_starts_at_row_zero():
     pj = _pj()
     pj.counters["emp"].pos = 0
-    fjs, _ = resolve_rows({SRC: ROWS}, pj, "Д", today=TODAY)
-    assert fjs == []
+    fjs, _ = resolve_rows({SRC: ROWS[1:3]}, pj, "Д", today=TODAY)
+    assert [f.fields["ФИО"] for f in fjs] == ["Иванов", "Петров"]
 
 
-def test_resolve_circular_counter_at_zero_gives_no_documents():
+def test_resolve_circular_counter_at_zero_starts_at_row_zero():
     pj = _pj()
     pj.data_sources[0].mode = "circular"
     pj.counters["emp"].pos = 0
+    pj.templates["Д"].limit = 2
     fjs, _ = resolve_rows({SRC: CYCLE}, pj, "Д", today=TODAY)
+    assert [f.fields["ФИО"] for f in fjs] == ["Иванов", "Петров"]
+
+
+def test_resolve_limit_zero_gives_no_documents():
+    pj = _pj()
+    pj.templates["Д"].limit = 0
+    fjs, _ = resolve_rows({SRC: ROWS}, pj, "Д", today=TODAY)
     assert fjs == []
 
 
@@ -109,6 +118,7 @@ def test_mode_constant_repeats_counter_row_and_number():
 def test_mode_circular_single_lap():
     pj = _pj()
     pj.data_sources[0].mode = "circular"
+    pj.templates["Д"].limit = 2
     pj.counters["emp"].pos = 2
     fjs, _ = resolve_rows({SRC: CYCLE}, pj, "Д", today=TODAY)
     assert len(fjs) == 2
@@ -154,6 +164,7 @@ def test_multi_source_composition():
             "templates": {
                 "Д": {
                     "file": "Шаблоны/Д.docx",
+                    "limit": 100,
                     "fields": {
                         "ФИО": {"source": "table", "value": "fio", "counter_name": "ea"},
                         "Город": {"source": "table", "value": "city", "counter_name": "eb"},

@@ -11,9 +11,8 @@ from .strings import STRINGS
 
 def done_text(report: GenerateReport) -> str:
     """Final run message; notes when the data ended before the template limit."""
-    if report.zero_counters and report.planned == 0:
-        text = STRINGS.APP_DONE_ZERO_COUNTER.format(
-            names=", ".join(report.zero_counters),
+    if report.limit == 0 and report.planned == 0:
+        text = STRINGS.APP_DONE_NO_LIMIT.format(
             errors=len(report.errors),
             elapsed=f"{report.elapsed:.1f}",
         )

@@ -63,8 +63,6 @@ class GenerateReport:
     skipped_limit: int = 0  # available rows not taken because of the limit
     skipped_exhausted: int = 0  # limit not reached because data ended
     skipped_columns: dict[str, list[str]] = field(default_factory=dict)
-    # Row-driven counters at position 0 that gave N = 0: not "data ended".
-    zero_counters: list[str] = field(default_factory=list)
     output_dir: Path | None = None
 
 
@@ -280,14 +278,6 @@ def generate_documents(
 
     report.planned = total
     report.resolved = total
-    if total == 0:
-        report.zero_counters = [
-            name
-            for name in used
-            if origin[name] == 0
-            and pj.counters[name].table is not None
-            and modes.get(pj.counters[name].table, "sequential") in ("sequential", "circular")
-        ]
     report.limit = template_def.limit
     if template_def.limit > 0:
         report.skipped_limit = max(0, available - total)

@@ -5,7 +5,7 @@
 import json
 
 import pytest
-from PyQt5.QtWidgets import QApplication, QMessageBox
+from PyQt5.QtWidgets import QApplication, QMessageBox, QSpinBox
 
 from stanok.gui.fields_dialog import FieldsDialog
 from stanok.gui.global_counters_dialog import GlobalCountersDialog
@@ -34,14 +34,14 @@ def test_dialog_adds_and_lists_shared_counter(qapp, store):
     assert store.global_counters()["invoice"].format == "0001"
     assert dlg.table.rowCount() == 1
     assert dlg.table.item(0, 0).text() == "invoice"
-    assert dlg.table.cellWidget(0, 2).value() == 41
+    assert dlg.table.cellWidget(0, 2).findChild(QSpinBox).value() == 41
     dlg.close()
 
 
 def test_dialog_value_change_persists(qapp, store):
     store.add_global_counter("n", "1", 0)
     dlg = GlobalCountersDialog(store)
-    spin = dlg.table.cellWidget(0, 2)
+    spin = dlg.table.cellWidget(0, 2).findChild(QSpinBox)
     spin.setValue(9)
     dlg._on_value_changed("n", 9)
     assert store.global_counters()["n"].pos == 9

@@ -14,8 +14,8 @@ import logging
 import re
 from collections.abc import Callable
 
-from PyQt5.QtCore import QRect, QSize, Qt, QTimer, pyqtSignal
-from PyQt5.QtGui import QFont, QFontMetricsF
+from PyQt5.QtCore import QRect, QSize, Qt, pyqtSignal
+from PyQt5.QtGui import QFont, QFontMetricsF, QTextCursor
 from PyQt5.QtWidgets import (
     QFrame,
     QGridLayout,
@@ -63,6 +63,20 @@ def _font(style: Style) -> QFont:
     font.setItalic(style.italic)
     font.setUnderline(style.underline)
     return font
+
+
+class _Spacer(QWidget):
+    """A horizontal gap of fixed width between two words (a space or a tab)."""
+
+    def __init__(self, width: int, parent: QWidget) -> None:
+        super().__init__(parent)
+        self._gap = max(1, width)
+
+    def sizeHint(self) -> QSize:
+        return QSize(self._gap, 0)
+
+    def minimumSizeHint(self) -> QSize:
+        return QSize(self._gap, 0)
 
 
 class FlowWidget(QWidget):
@@ -114,10 +128,10 @@ class FlowWidget(QWidget):
         limit = max(0, width - self._first_indent)
         for item in self._items():
             size = item.sizeHint()
-            spacer = bool(item.property("spacer"))
+            spacer = isinstance(item, _Spacer)
             row = rows[-1]
             if not spacer and row and used + size.width() > limit:
-                while row and row[-1][0].property("spacer"):
+                while row and isinstance(row[-1][0], _Spacer):
                     row.pop()
                 rows.append([])
                 used = 0
@@ -161,7 +175,7 @@ def from_display(text: str) -> str:
 
 
 class ParagraphEditor(QPlainTextEdit):
-    """Plain editor for one paragraph's text; Esc cancels, leaving the field applies."""
+    """Plain editor for one paragraph's text. Esc cancels; the owner commits the rest."""
 
     ended = pyqtSignal(bool, str)  # committed, text
 
@@ -171,16 +185,18 @@ class ParagraphEditor(QPlainTextEdit):
         self.setObjectName("paragraphEditor")
         self.setFont(font)
         self.setLineWrapMode(QPlainTextEdit.WidgetWidth)
-        self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.textChanged.connect(self._fit)
         self._fit()
-        self.setFocus()
+        cursor = self.textCursor()
+        cursor.movePosition(QTextCursor.End)
+        self.setTextCursor(cursor)
 
     def _fit(self) -> None:
-        """Grow with the text so the paragraph keeps its height on the page."""
+        """Height of the text, at least three lines; longer text scrolls."""
+        lines = self.fontMetrics().lineSpacing()
         height = int(self.document().size().height()) + 2 * self.frameWidth() + 8
-        self.setFixedHeight(max(height, self.fontMetrics().lineSpacing() + 8))
+        self.setFixedHeight(max(height, 3 * lines + 8))
 
     def finish(self, commit: bool) -> None:
         if self._done:
@@ -193,15 +209,6 @@ class ParagraphEditor(QPlainTextEdit):
             self.finish(False)
             return
         super().keyPressEvent(event)
-
-    def focusOutEvent(self, event) -> None:
-        super().focusOutEvent(event)
-        # Deferred: the owner may rebuild the page, which must not happen inside this event.
-        # The timer is a child of the editor: if the editor is gone, the commit never fires.
-        timer = QTimer(self)
-        timer.setSingleShot(True)
-        timer.timeout.connect(lambda: self.finish(True))
-        timer.start(0)
 
 
 class _ParagraphBox(QWidget):
@@ -305,6 +312,11 @@ class TemplateSheet(QScrollArea):
         self._buttons = {}
         self._page = self._build_page()
         self._row.insertWidget(1, self._page)
+        # A page built under the scroll area is not shown by the layout; show it explicitly,
+        # otherwise a new paragraph editor stays hidden and loses focus at once.
+        self._page.show()
+        if self._editor is not None:
+            self._editor.setFocus()
         if old is not None:
             self._row.removeWidget(old)
             old.hide()
@@ -391,10 +403,9 @@ class TemplateSheet(QScrollArea):
         return box
 
     def _activate(self, para: Paragraph) -> None:
-        if self._editing_para is not None:
-            self.commit_edit()  # a double click elsewhere first applies the open edit
-            return
-        self.paragraphActivated.emit(para)
+        # While a paragraph is open, the page stays as it is: Save or Close applies the edit.
+        if self._editing_para is None:
+            self.paragraphActivated.emit(para)
 
     def _on_ended(self, para: Paragraph, commit: bool, text: str) -> None:
         """Esc restores the page here; a commit waits for the owner to rebuild it."""
@@ -439,10 +450,7 @@ class TemplateSheet(QScrollArea):
 
     @staticmethod
     def _spacer(width: float, parent: QWidget) -> QWidget:
-        spacer = QWidget(parent)
-        spacer.setFixedWidth(max(1, round(width)))
-        spacer.setProperty("spacer", True)
-        return spacer
+        return _Spacer(round(width), parent)
 
     def _field_button(self, piece: Field, parent: QWidget) -> QPushButton:
         button = QPushButton(piece.name, parent)

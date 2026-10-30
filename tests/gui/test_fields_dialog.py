@@ -22,6 +22,17 @@ from stanok.services.storage import ProjectStore, StorageError
 from tests.services.test_generate import make_project
 
 
+def _double_click(widget):
+    """Deliver a double click as a plain event: QTest's mouse state leaks between tests."""
+    from PyQt5.QtCore import QEvent, QPointF, Qt
+    from PyQt5.QtGui import QMouseEvent
+    from PyQt5.QtWidgets import QApplication
+
+    pos = QPointF(widget.rect().center())
+    event = QMouseEvent(QEvent.MouseButtonDblClick, pos, Qt.LeftButton, Qt.LeftButton, Qt.NoModifier)
+    QApplication.sendEvent(widget, event)
+
+
 @pytest.fixture(scope="session")
 def qapp():
     app = QApplication.instance() or QApplication([])
@@ -362,4 +373,22 @@ def test_fields_dialog_double_click_opens_editor_with_paragraph_text(qapp, tmp_p
 
     editor = dlg._sheet.findChild(QPlainTextEdit, "paragraphEditor")
     assert editor.toPlainText() == "Договор {{ФИО}} на сумму {{Сумма}} №{{Номер}}"
+    dlg.close()
+
+
+def test_fields_dialog_double_click_keeps_window_open_with_editor(qapp, tmp_path, store):
+    from PyQt5.QtWidgets import QPlainTextEdit
+
+    from stanok.gui.template_sheet import _ParagraphBox
+
+    dlg, _ = _window(tmp_path, store)
+    dlg.show()
+    qapp.processEvents()
+    box = dlg._sheet.findChildren(_ParagraphBox)[0]
+
+    _double_click(box)
+    qapp.processEvents()
+
+    assert dlg.isVisible()
+    assert dlg._sheet.findChild(QPlainTextEdit, "paragraphEditor") is not None
     dlg.close()

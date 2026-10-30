@@ -19,6 +19,17 @@ from stanok.gui.template_sheet import FlowWidget, TemplateSheet
 from stanok.services.template_layout import load_template_layout
 
 
+def _double_click(widget):
+    """Deliver a double click as a plain event: QTest's mouse state leaks between tests."""
+    from PyQt5.QtCore import QEvent, QPointF, Qt
+    from PyQt5.QtGui import QMouseEvent
+    from PyQt5.QtWidgets import QApplication
+
+    pos = QPointF(widget.rect().center())
+    event = QMouseEvent(QEvent.MouseButtonDblClick, pos, Qt.LeftButton, Qt.LeftButton, Qt.NoModifier)
+    QApplication.sendEvent(widget, event)
+
+
 @pytest.fixture(scope="session")
 def qapp():
     app = QApplication.instance() or QApplication([])
@@ -223,7 +234,9 @@ def test_flow_widget_removed_child_is_not_placed(qapp):
     assert host._items() == [kept]
 
 
-def test_template_sheet_double_click_elsewhere_commits_open_edit(qapp, tmp_path):
+def test_template_sheet_double_click_during_edit_is_ignored(qapp, tmp_path):
+    from PyQt5.QtWidgets import QPlainTextEdit
+
     sheet = _sheet(qapp, _layout(tmp_path, lambda d: d.add_paragraph("один")))
     edited, asked = [], []
     sheet.paragraphEdited.connect(lambda p, t: edited.append(t))
@@ -232,5 +245,119 @@ def test_template_sheet_double_click_elsewhere_commits_open_edit(qapp, tmp_path)
 
     sheet._activate(sheet._layout_model.body[0])
 
-    assert edited == ["один, правка"]
-    assert asked == []
+    assert edited == [] and asked == []
+    assert sheet.findChild(QPlainTextEdit, "paragraphEditor") is not None
+
+
+
+def test_template_sheet_words_keep_space_between_them(qapp, tmp_path):
+    sheet = _sheet(qapp, _layout(tmp_path, lambda d: d.add_paragraph("раз два")))
+    first = next(w for w in sheet.findChildren(QLabel) if w.text() == "раз")
+    second = next(w for w in sheet.findChildren(QLabel) if w.text() == "два")
+
+    gap = second.mapTo(sheet, second.rect().topLeft()).x() - first.mapTo(sheet, first.rect().topLeft()).x() - first.width()
+
+    assert gap > 0
+
+
+def test_template_sheet_editor_stays_visible_and_focused_after_events(qapp, tmp_path):
+    from PyQt5.QtWidgets import QPlainTextEdit
+
+    sheet = _sheet(qapp, _layout(tmp_path, lambda d: d.add_paragraph("текст")))
+    sheet.begin_edit(sheet._layout_model.body[0], "текст")
+    qapp.processEvents()
+
+    editor = sheet.findChild(QPlainTextEdit, "paragraphEditor")
+    assert editor is not None and editor.isVisible()
+    assert sheet._editing_para is not None  # not ended by a focus change
+
+
+def test_template_sheet_editor_cursor_starts_at_end(qapp, tmp_path):
+    from PyQt5.QtWidgets import QPlainTextEdit
+
+    sheet = _sheet(qapp, _layout(tmp_path, lambda d: d.add_paragraph("старый")))
+    sheet.begin_edit(sheet._layout_model.body[0], "старый")
+
+    editor = sheet.findChild(QPlainTextEdit, "paragraphEditor")
+    assert editor.textCursor().position() == len("старый")
+
+
+def test_template_sheet_double_click_on_paragraph_requests_edit(qapp, tmp_path):
+    from stanok.gui.template_sheet import _ParagraphBox
+
+    sheet = _sheet(qapp, _layout(tmp_path, lambda d: d.add_paragraph("правка меня")))
+    asked = []
+    sheet.paragraphActivated.connect(asked.append)
+    box = sheet.findChildren(_ParagraphBox)[0]
+
+    _double_click(box)
+    qapp.processEvents()  # the request is handed over on the next event-loop turn
+
+    assert len(asked) == 1
+    assert asked[0].element is not None
+
+
+def test_template_sheet_begin_edit_shows_editor_with_text(qapp, tmp_path):
+    from PyQt5.QtWidgets import QPlainTextEdit
+
+    sheet = _sheet(qapp, _layout(tmp_path, lambda d: d.add_paragraph("старый")))
+    para = sheet._layout_model.body[0]
+
+    sheet.begin_edit(para, "новый текст")
+
+    editor = sheet.findChild(QPlainTextEdit, "paragraphEditor")
+    assert editor is not None
+    assert editor.toPlainText() == "новый текст"
+
+
+def test_template_sheet_escape_cancels_edit_without_change(qapp, tmp_path):
+    from PyQt5.QtTest import QTest
+    from PyQt5.QtWidgets import QPlainTextEdit
+
+    sheet = _sheet(qapp, _layout(tmp_path, lambda d: d.add_paragraph("старый")))
+    edited = []
+    sheet.paragraphEdited.connect(lambda p, t: edited.append(t))
+    sheet.begin_edit(sheet._layout_model.body[0], "старый")
+    editor = sheet.findChild(QPlainTextEdit, "paragraphEditor")
+    editor.setPlainText("черновик")
+
+    QTest.keyClick(editor, Qt.Key_Escape)
+    qapp.processEvents()
+
+    assert edited == []
+    assert sheet._editing_para is None
+
+
+def test_template_sheet_commit_emits_editor_text(qapp, tmp_path):
+    from PyQt5.QtWidgets import QPlainTextEdit
+
+    sheet = _sheet(qapp, _layout(tmp_path, lambda d: d.add_paragraph("старый")))
+    edited = []
+    sheet.paragraphEdited.connect(lambda p, t: edited.append(t))
+    sheet.begin_edit(sheet._layout_model.body[0], "старый")
+    editor = sheet.findChild(QPlainTextEdit, "paragraphEditor")
+    editor.setPlainText("новый\nабзац")
+
+    editor.finish(True)
+
+    assert edited == ["новый\nабзац"]
+
+
+def test_template_sheet_display_token_round_trips_page_break():
+    from stanok.gui.template_sheet import from_display, to_display
+
+    text = "до\fпосле"
+
+    assert "\f" not in to_display(text)
+    assert from_display(to_display(text)) == text
+
+
+def test_template_sheet_set_layout_rebuilds_buttons(qapp, tmp_path):
+    sheet = _sheet(qapp, _layout(tmp_path, lambda d: d.add_paragraph("{{А}}")))
+    second = tmp_path / "second"
+    second.mkdir()
+    new = _layout(second, lambda d: d.add_paragraph("{{Б}} {{В}}"))
+
+    sheet.set_layout(new)
+
+    assert sheet.field_names == ["Б", "В"]

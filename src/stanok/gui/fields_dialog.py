@@ -261,6 +261,8 @@ class FieldsDialog(QDialog):
             QMessageBox.critical(self, STRINGS.MAIN_ERROR_TITLE, str(e))
 
     def _save(self) -> None:
+        if self._sheet is not None:
+            self._sheet.commit_edit()  # an open paragraph editor applies its text first
         fname = self.fname_edit.text().strip()
         if not fname:
             QMessageBox.warning(

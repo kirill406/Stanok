@@ -119,8 +119,8 @@ Style(bold, italic, underline, size_pt, font)
 ` (перенос), `	`, `` (разрыв страницы).
   - `set_paragraph_text(p_el, text)`: `difflib.SequenceMatcher` по символам. Равные символы сохраняют свой `w:r`; новые берут `w:rPr` левого соседа (или правого в начале). Текстовые run'ы пересобираются на месте первого текстового run'а; run'ы без текста (картинки) остаются.
   - `TemplateDocument`: `layout()`, `set_paragraph_text()`, `save()` — копия старого файла в `.bak`, запись во временный файл, `os.replace`.
-- `gui/template_sheet.py`: двойной щелчок по абзацу → сигнал `paragraphActivated(Paragraph)`; `begin_edit(para, text)` заменяет абзац на `QPlainTextEdit`; Esc — `editCancelled`; уход фокуса — `paragraphEdited` (через `QTimer.singleShot(0)`, чтобы не перестраивать страницу внутри обработчика фокуса).
-- `gui/fields_dialog.py`: применяет правку к `TemplateDocument`, перестраивает страницу, помечает окно изменённым. Save: сначала `validate_pj`, затем запись `.docx`, затем проект.
+- `gui/template_sheet.py`: двойной щелчок по абзацу → сигнал `paragraphActivated(Paragraph)`; `begin_edit(para, text)` заменяет абзац на `QPlainTextEdit`; Esc → `end_edit`; «Сохранить»/«Закрыть» → `commit_edit` → `paragraphEdited`. Потери фокуса и таймеров редактора нет: на них падало.
+- `gui/fields_dialog.py`: применяет правку к `TemplateDocument`, перестраивает страницу, помечает окно изменённым. Save: сначала `commit_edit`, затем `validate_pj`, запись `.docx`, затем проект.
 
 ## 10. Этапы
 

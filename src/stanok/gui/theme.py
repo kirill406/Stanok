@@ -261,6 +261,33 @@ QPushButton#glyphButton {
     font-weight: 700;
     padding: 0px;
 }
+/* Template page (027): the sheet keeps paper-white with a grey work area. */
+QWidget#sheetArea { background-color: #d9dde3; }
+QFrame#page {
+    background-color: #ffffff;
+    border: 1px solid #b8bec8;
+}
+QFrame#pagePart { background-color: #f3f4f6; }
+QLabel#partCaption { color: #6b7280; font-size: 8pt; }
+QLabel#pageBreak {
+    color: #8a8f98;
+    font-size: 8pt;
+    border-top: 1px dashed #b0b4bb;
+    padding: 6px 0px;
+}
+QPushButton#fieldButton {
+    background-color: #e7f0fb;
+    color: #1d4f91;
+    border: 1px solid #7fa6d6;
+    border-radius: 4px;
+    padding: 1px 6px;
+}
+QPushButton#fieldButton:hover { background-color: #d4e4f8; }
+QPushButton#fieldButton[state="unset"] {
+    background-color: #fff3dc;
+    color: #8a5a00;
+    border: 1px dashed #d59b3d;
+}
 QMenu {
     background-color: #ffffff;
     border: 1px solid #dfe6ec;

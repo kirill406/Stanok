@@ -287,6 +287,12 @@ class STRINGS:
     PROJ_DELETE_FOLDER = "Удалить папку с файлами"
     PROJ_DELETED = "Проект «{name}» удалён"
 
+    # Template page (gui/template_sheet.py, 027)
+    TPL_PART_HEADER = "Верхний колонтитул"
+    TPL_PART_FOOTER = "Нижний колонтитул"
+    TPL_PAGE_BREAK = "Разрыв страницы"
+    TPL_LOAD_FAILED = "Не удалось открыть шаблон: {error}"
+
     # Fields dialog (gui/fields_dialog.py, window 3)
     FLD_TITLE = "Шаблон: {name}"
     FLD_FNAME_TITLE = "Имя файла:"

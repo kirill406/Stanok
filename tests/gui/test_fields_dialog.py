@@ -843,6 +843,7 @@ def test_counters_table_column_order(qapp, tmp_path, store, monkeypatch):
         STRINGS.FLD_CNT_FORMAT,
         STRINGS.FLD_CNT_POS,
         STRINGS.FLD_CNT_RESUME,
+        "",
     ]
     st = dlg._crows["data"]
     assert dlg.ctable.cellWidget(0, 1) is st["table"]
@@ -862,6 +863,7 @@ def test_counters_table_column_order(qapp, tmp_path, store, monkeypatch):
         STRINGS.FLD_CNT_FORMAT_TIP,
         STRINGS.FLD_POS_TIP,
         STRINGS.FLD_CNT_RESUME_TIP,
+        "",
     ]
     assert st["table"].toolTip() == STRINGS.FLD_CNT_SOURCE_TIP
     assert st["fmt"].toolTip() == STRINGS.FLD_CNT_FORMAT_TIP
@@ -1073,4 +1075,47 @@ def test_counter_pick_works_for_constant_source(
     st["pick"].click()
     assert st["pos"].text() == "1"
     assert dlg._rows["ФИО"]["clabel"].text() == "Петр"
+    dlg.close()
+
+
+def test_remove_unused_numeric_counter(qapp, tmp_path, store, monkeypatch):
+    import json
+
+    import stanok.gui.fields_dialog as fd
+
+    folder = make_project(tmp_path / "proj")
+    data = json.loads((folder / "project.stanok").read_text())
+    data["counters"]["extra"] = {"pos": 0, "format": "1"}
+    (folder / "project.stanok").write_text(json.dumps(data, ensure_ascii=False))
+    monkeypatch.setattr(fd, "ask_yes_no", lambda *a, **k: True)
+    dlg = FieldsDialog(str(folder), "Договор", store=store)
+    dlg._on_counter_remove("extra")
+    assert "extra" not in dlg._pj.counters
+    assert "extra" not in dlg._crows
+    dlg.close()
+
+
+def test_remove_counter_refused_while_field_reads_it(qapp, tmp_path, store, monkeypatch):
+    import stanok.gui.fields_dialog as fd
+
+    folder = make_project(tmp_path / "proj")
+    info = []
+    monkeypatch.setattr(fd.QMessageBox, "information", lambda *a: info.append(a[-1]))
+    dlg = FieldsDialog(str(folder), "Договор", store=store)
+    dlg._on_counter_remove("num")  # the Номер field reads "num"
+    assert "num" in dlg._pj.counters
+    assert info and "Номер" in info[0]
+    dlg.close()
+
+
+def test_remove_counter_refused_for_source_bound(qapp, tmp_path, store, monkeypatch):
+    import stanok.gui.fields_dialog as fd
+
+    folder = make_project(tmp_path / "proj")
+    info = []
+    monkeypatch.setattr(fd.QMessageBox, "information", lambda *a: info.append(a[-1]))
+    dlg = FieldsDialog(str(folder), "Договор", store=store)
+    dlg._on_counter_remove("data")  # bound to Данные/data.xlsx
+    assert "data" in dlg._pj.counters
+    assert info == [STRINGS.FLD_CNT_REMOVE_BOUND]
     dlg.close()

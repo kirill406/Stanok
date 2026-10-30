@@ -365,6 +365,13 @@ class STRINGS:
     PICK_CHOOSE = "Выбрать"
     FLD_NONE = "отсутствует"
     FLD_COUNTER_CREATE = "Создать счётчик"
+    FLD_CNT_REMOVE = "Убрать"
+    FLD_CNT_REMOVE_TIP = "Удалить счётчик проекта. Доступно, если ни одно поле его не читает"
+    FLD_CNT_REMOVE_BOUND = (
+        "Счётчик привязан к источнику. Уберите источник в окне проекта, счётчик уйдёт с ним"
+    )
+    FLD_CNT_REMOVE_USED = "Счётчик «{name}» читают поля: {fields}. Сначала измените эти поля"
+    FLD_CNT_REMOVE_ASK = "Удалить счётчик «{name}»?"
     FLD_COUNTER_NAME = "Имя счётчика:"
     FLD_DUP_COUNTER = "Счётчик «{name}» уже существует"
     FLD_DATE_KEEP = "как в проекте"

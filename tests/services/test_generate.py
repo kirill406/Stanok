@@ -36,9 +36,9 @@ def make_project(
 ) -> Path:
     """Build minimal project folder: Данные/data.xlsx + Шаблоны/tpl.docx + legacy PJ.
 
-    A sequential counter defaults to pos 1, so the sheet gets a placeholder
-    row 0 in front of `rows` that is skipped. Pass pos=0 to start at it.
-    A circular counter defaults to pos len(rows), which wraps to row 0.
+    A counter at position 0 generates nothing. A sequential counter therefore
+    starts at pos 1, so the sheet gets a placeholder row 0 in front of `rows`.
+    A circular counter starts at pos len(rows), which wraps to row 0.
     """
     if pos is None:
         pos = {"sequential": 1, "circular": len(rows), "constant": 0}[mode]
@@ -180,13 +180,21 @@ def test_resume_0_keeps_cursor(tmp_path, store):
     assert saved.counters["num"].pos == 2
 
 
-def test_counter_at_zero_starts_at_first_row(tmp_path, store):
-    # Position 0 is row 0: the sheet's placeholder row is the first one generated.
+def test_counter_at_zero_reported_as_reason(tmp_path, store):
+    folder = make_project(tmp_path / "proj", pos=0, limit=3)
+    report = generate_documents(GenerateCommand(project_ref=folder), store=store)
+    assert report.created == 0
+    assert report.zero_counters == ["data"]
+
+
+def test_counter_at_zero_generates_nothing(tmp_path, store):
     folder = make_project(tmp_path / "proj", pos=0)
     report = generate_documents(GenerateCommand(project_ref=folder), store=store)
-    assert report.created == 3
+    assert report.created == 0
+    assert report.output_paths == []
     saved = _load_saved(store, "proj")
-    assert saved.counters["data"].pos == 3
+    assert saved.counters["data"].pos == 0
+    assert saved.counters["num"].pos == 0
 
 
 def test_empty_source_returns_empty_report(tmp_path, store):

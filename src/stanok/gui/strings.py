@@ -24,6 +24,10 @@ class STRINGS:
         "разработчиком и приложите файл лога."
     )
     APP_DONE = "Готово: создано {created}, ошибок {errors} за {elapsed} с"
+    APP_DONE_ZERO_COUNTER = (
+        "Готово: документы не созданы, счётчик «{names}» стоит на 0. "
+        "Выставьте позицию счётчика, ошибок {errors} за {elapsed} с"
+    )
     APP_DONE_SHORT = (
         "Готово: создано {created} из {limit} (строки закончились), "
         "ошибок {errors} за {elapsed} с"

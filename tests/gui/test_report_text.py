@@ -22,6 +22,16 @@ def test_report_text_shortfall_mentions_limit():
     assert "строки закончились" in done_text(report)
 
 
+def test_report_text_zero_counter_is_not_end_of_rows():
+    from stanok.gui.report_text import done_text
+    from stanok.services.generate import GenerateReport
+
+    report = GenerateReport(zero_counters=["data"], limit=3, planned=0)
+    text = done_text(report)
+    assert "стоит на 0" in text
+    assert "строки закончились" not in text
+
+
 def test_report_text_unlimited_uses_plain_done():
     report = GenerateReport(created=2, planned=2, limit=0, elapsed=1.0)
     assert "из 0" not in done_text(report)

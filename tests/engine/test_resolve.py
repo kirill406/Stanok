@@ -81,19 +81,19 @@ def test_used_counters_and_sources():
     assert participating_sources(pj, "Д") == [SRC]
 
 
-def test_resolve_counter_at_zero_starts_at_first_row():
+def test_resolve_counter_at_zero_gives_no_documents():
     pj = _pj()
     pj.counters["emp"].pos = 0
-    fjs, _ = resolve_rows({SRC: ROWS[1:3]}, pj, "Д", today=TODAY)
-    assert [f.fields["ФИО"] for f in fjs] == ["Иванов", "Петров"]
+    fjs, _ = resolve_rows({SRC: ROWS}, pj, "Д", today=TODAY)
+    assert fjs == []
 
 
-def test_resolve_circular_counter_at_zero_starts_at_first_row():
+def test_resolve_circular_counter_at_zero_gives_no_documents():
     pj = _pj()
     pj.data_sources[0].mode = "circular"
     pj.counters["emp"].pos = 0
     fjs, _ = resolve_rows({SRC: CYCLE}, pj, "Д", today=TODAY)
-    assert [f.fields["ФИО"] for f in fjs] == ["Иванов", "Петров"]
+    assert fjs == []
 
 
 def test_mode_constant_repeats_counter_row_and_number():

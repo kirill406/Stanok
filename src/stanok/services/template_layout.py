@@ -22,7 +22,6 @@ from typing import Union
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_UNDERLINE
 from docx.oxml.ns import qn
-from docx.table import Table as DocxTable
 from docx.text.paragraph import Paragraph as DocxParagraph
 from docx.text.run import Run
 

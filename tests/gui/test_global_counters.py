@@ -7,6 +7,7 @@ import json
 import pytest
 from PyQt5.QtWidgets import QApplication, QMessageBox, QPushButton, QSpinBox
 
+import stanok.gui.field_editor as fe
 from stanok.gui.fields_dialog import FieldsDialog
 from stanok.gui.global_counters_dialog import GlobalCountersDialog
 from stanok.gui.strings import STRINGS
@@ -106,27 +107,30 @@ def test_dialog_remove_refused_while_used(qapp, tmp_path, store, monkeypatch):
     dlg.close()
 
 
-def test_field_counter_list_offers_shared_counter(qapp, tmp_path, store):
+def _field_editor(tmp_path, store, field="Номер"):
+    """Window 3 and the field editor for `field`, with one shared counter."""
     folder = make_project(tmp_path / "proj")
     store.migrate_from_project(folder)
     store.add_global_counter("shared_num", "1", 3)
     dlg = FieldsDialog(str(folder), "Договор", store=store)
-    combo = dlg._rows["Номер"]["cname"]
+    ed = fe.FieldEditDialog(dlg._pj, "Договор", field, dlg._sources, store, dlg)
+    return dlg, ed
+
+
+def test_field_counter_list_offers_shared_counter(qapp, tmp_path, store):
+    dlg, ed = _field_editor(tmp_path, store)
     tagged = f"shared_num ({STRINGS.GCNT_SHARED_TAG})"
-    assert combo.findText(tagged) >= 0
-    assert combo.findData("shared_num") >= 0
+    assert ed._counter_combo.findText(tagged) >= 0
+    assert ed._counter_combo.findData("shared_num") >= 0
+    ed.close()
     dlg.close()
 
 
 def test_shared_counter_preview_shows_its_value(qapp, tmp_path, store):
-    folder = make_project(tmp_path / "proj")
-    store.migrate_from_project(folder)
-    store.add_global_counter("shared_num", "1", 3)
-    dlg = FieldsDialog(str(folder), "Договор", store=store)
-    dlg._rows["Номер"]["cname"].setCurrentIndex(
-        dlg._rows["Номер"]["cname"].findData("shared_num")
-    )
-    assert dlg._current_counter_pos("shared_num") == 3
+    dlg, ed = _field_editor(tmp_path, store)
+    ed._counter_combo.setCurrentIndex(ed._counter_combo.findData("shared_num"))
+    assert ed._current_pos("shared_num") == 3
+    ed.close()
     dlg.close()
 
 
@@ -140,10 +144,12 @@ def test_clashing_shared_counter_is_disabled_in_fields_combo(qapp, tmp_path, sto
     data["counters"]["v"] = {"pos": 0, "format": "1"}
     (store.home_dir / "proj.stanok").write_text(json.dumps(data, ensure_ascii=False))
     dlg = FieldsDialog(str(folder), "Договор", store=store)
-    combo = dlg._rows["Номер"]["cname"]
+    ed = fe.FieldEditDialog(dlg._pj, "Договор", "Номер", dlg._sources, store, dlg)
+    combo = ed._counter_combo
     idx = combo.findText(f"v ({STRINGS.GCNT_CLASH_TAG})")
     assert idx >= 0
     assert not combo.model().item(idx).isEnabled()
+    ed.close()
     dlg.close()
 
 
@@ -159,14 +165,13 @@ def test_double_click_renames_shared_counter(qapp, store, monkeypatch):
 
 
 def test_saving_shared_field_does_not_copy_name_into_project(qapp, tmp_path, store):
-    folder = make_project(tmp_path / "proj")
-    store.migrate_from_project(folder)
-    store.add_global_counter("shared_num", "1", 3)
-    dlg = FieldsDialog(str(folder), "Договор", store=store)
-    combo = dlg._rows["Номер"]["cname"]
-    combo.setCurrentIndex(combo.findData("shared_num"))
-    dlg._save()
+    dlg, ed = _field_editor(tmp_path, store)
+    ed._counter_combo.setCurrentIndex(ed._counter_combo.findData("shared_num"))
+    ed._on_ok()
+    dlg._mark_dirty()
+    dlg._on_save()
     pj = store.load("proj")
     assert "shared_num" not in pj.counters
     assert pj.templates["Договор"].fields["Номер"].value == "shared_num"
+    ed.close()
     dlg.close()

@@ -193,10 +193,19 @@ class ParagraphEditor(QPlainTextEdit):
         self.setTextCursor(cursor)
 
     def _fit(self) -> None:
-        """Height of the text, at least three lines; longer text scrolls."""
+        """Height of the whole text at the current width, at least three lines."""
+        width = max(1, self.viewport().width() - 8)
+        text_rect = self.fontMetrics().boundingRect(
+            QRect(0, 0, width, 100000), Qt.TextWordWrap, self.toPlainText()
+        )
         lines = self.fontMetrics().lineSpacing()
-        height = int(self.document().size().height()) + 2 * self.frameWidth() + 8
+        height = text_rect.height() + 2 * self.frameWidth() + 12
         self.setFixedHeight(max(height, 3 * lines + 8))
+
+    def resizeEvent(self, event) -> None:
+        # The width is known only after layout: the height follows it here.
+        super().resizeEvent(event)
+        self._fit()
 
     def finish(self, commit: bool) -> None:
         if self._done:

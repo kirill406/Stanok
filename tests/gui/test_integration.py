@@ -14,6 +14,7 @@ from PyQt5.QtCore import QEventLoop, QTimer
 from PyQt5.QtWidgets import QApplication, QMessageBox
 
 from stanok.app import create_gui, main
+import stanok.gui.field_editor as fe
 from stanok.gui.fields_dialog import FieldsDialog
 from stanok.gui.main_window import MainWindow
 from stanok.gui.project_dialog import ProjectDialog
@@ -83,7 +84,11 @@ def test_window_chain_to_docx(qapp, tmp_path, store, monkeypatch):
     assert dlg2.table.rowCount() == 1
 
     dlg3 = FieldsDialog(str(folder), "Договор", store=store)
-    dlg3._rows["Город"]["const"].setText("Казань")
+    ed = fe.FieldEditDialog(dlg3._pj, "Договор", "Город", dlg3._sources, store, dlg3)
+    ed.type_combo.setCurrentIndex(ed.type_combo.findData("constant"))
+    ed._const_edit.setText("Казань")
+    ed._on_ok()
+    dlg3._mark_dirty()
     dlg3._on_save()
     assert not dlg3._dirty
     dlg3.close()

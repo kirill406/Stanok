@@ -287,30 +287,51 @@ class STRINGS:
     PROJ_DELETE_FOLDER = "Удалить папку с файлами"
     PROJ_DELETED = "Проект «{name}» удалён"
 
+    # Template page (gui/template_sheet.py, 027)
+    TPL_PART_HEADER = "Верхний колонтитул"
+    TPL_PART_FOOTER = "Нижний колонтитул"
+    TPL_PAGE_BREAK = "Разрыв страницы"
+    TPL_PAGE_BREAK_TOKEN = "[разрыв страницы]"
+    TPL_EDIT_UNSUPPORTED = "Абзац содержит ссылку или правки Word: его можно изменить только в Word"
+    TPL_EDIT_FAILED = "Не удалось применить правку текста: {error}"
+    TPL_LOAD_FAILED = "Не удалось открыть шаблон: {error}"
+    TPL_FILE_MISSING = "файл шаблона не найден: {file}"
+
     # Fields dialog (gui/fields_dialog.py, window 3)
     FLD_TITLE = "Шаблон: {name}"
     FLD_FNAME_TITLE = "Имя файла:"
-    FLD_FIELDS_TITLE = "Поля"
-    FLD_COUNTERS_TITLE = "Счётчики"
     FLD_INSERT_FIELD = "Вставить поле"
-    FLD_COL_FIELD = "Поле"
-    FLD_COL_SOURCE = "Тип"
-    FLD_COL_VALUE = "Значение"
-    FLD_COL_DATA = "Данные"
     FLD_SAVE = "Сохранить"
     FLD_CLOSE = "Закрыть"
-    FLD_HINT = "Источник меняется комбобоксом, значение — редактором по типу."
+    FLD_PARA_APPLY = "Применить абзац"
+    FLD_PARA_CANCEL = "Отменить абзац"
+    FLD_HINT = "Двойной щелчок по абзацу — правка текста. Затем «Применить абзац» или Esc. «Сохранить» записывает файл. Нажмите на поле, чтобы задать его значение и счётчик."
     FLD_DIRTY_ASK = "Есть несохранённые изменения. Сохранить?"
+    FLD_UNUSED_TITLE = "Поля проекта, которых нет в документе"
+    FLD_DESC_UNSET = "Не настроено: нажмите, чтобы задать значение"
+    FLD_DESC_CONSTANT = "Константа: {value}"
+    FLD_DESC_TABLE = "Таблица: {column}, счётчик {counter}"
+    FLD_DESC_COUNTER = "Счётчик: {counter}"
+    FLD_DESC_TODAY = "Дата: {value}"
+    FLD_EDIT_TITLE = "Поле: {name}"
+    FLD_EDIT_TYPE = "Тип:"
+    FLD_EDIT_VALUE = "Значение:"
+    FLD_EDIT_FORMAT = "Формат:"
+    FLD_EDIT_COUNTER = "Счётчик:"
+    FLD_EDIT_COLUMN = "Столбец:"
+    FLD_EDIT_RESULT = "В документе:"
+    FLD_EDIT_COUNTER_BLOCK = "Счётчик «{name}»"
+    FLD_SHARED_NOTE = (
+        "Сквозной счётчик. Позиция и формат меняются в окне «Сквозные счётчики»."
+    )
     FLD_SRC_CONSTANT = "Константа"
     FLD_SRC_TABLE = "Таблица"
     FLD_SRC_COUNTER = "Счётчик"
     FLD_SRC_TODAY = "Дата"
-    FLD_CNT_NAME = "Название"
     FLD_CNT_SOURCE = "Источник данных"
     FLD_CNT_POS = "Позиция"
     FLD_CNT_RESUME = "Заново"
     FLD_CNT_FORMAT = "Формат"
-    FLD_CNT_NAME_TIP = "Имя счётчика. На него ссылаются поля и поля-счётчики."
     FLD_CNT_SOURCE_TIP = (
         "Файл Excel, из которого берутся строки. "
         "«отсутствует» — числовой счётчик без источника."
@@ -331,22 +352,6 @@ class STRINGS:
     )
     FLD_CNT_RESUME_NA_TIP = (
         "Для этого счётчика позиция после генерации не меняется."
-    )
-    FLD_CNT_DEFINITION = (
-        "Счётчик — это число в памяти компьютера. Для каждой таблицы "
-        "создаётся свой счётчик по умолчанию. Можно создать новый счётчик "
-        "и использовать его в полях документов (например, для регистрационного "
-        "номера). При генерации счётчики сдвигаются вперёд согласно типу данных "
-        "(«Одна строка», «По порядку», «По кругу») или на 1 за каждый документ, "
-        "если привязка к таблице отсутствует."
-    )
-    FLD_CNT_HINT = (
-        "«Позиция» — это и строка источника, и печатаемое число. В режиме "
-        "«Одна строка» она не меняется."
-    )
-    FLD_CNT_CHANGE_FAILED = (
-        "Не удалось изменить счётчик: {error}\n\n"
-        "Изменение не сохранено. Проверьте данные и попробуйте снова."
     )
     FLD_POS_CONST_TIP = (
         "Для режима «Одна строка» позиция фиксирована и не меняется."

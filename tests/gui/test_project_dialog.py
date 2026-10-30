@@ -641,7 +641,7 @@ def test_open_syncs_new_fields(qapp, tmp_path, store):
     dlg = ProjectDialog(str(folder), store=store)
     dlg.close()
     fld = FieldsDialog(str(folder), "Договор", store=store)
-    assert "Штрихкод" in fld._rows
+    assert "Штрихкод" in fld._sheet.field_names
     fld.close()
 
 

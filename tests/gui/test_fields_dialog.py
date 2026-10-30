@@ -1,32 +1,36 @@
 # Copyright (C) 2026 Kirill Borovoy
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Offscreen tests for Window 3 (FieldsDialog)."""
+"""Offscreen tests for window 3 (FieldsDialog, 027): the template page."""
 
 import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import json
-import logging
-import shutil
 
 import pytest
-from openpyxl import Workbook
 from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import (
-    QApplication,
-    QDialog,
-    QFileDialog,
-    QHeaderView,
-    QLabel,
-    QLineEdit,
-    QMessageBox,
-)
+from PyQt5.QtWidgets import QApplication, QDialog, QMessageBox, QPushButton
 
+import stanok.gui.field_editor as fe
+import stanok.gui.fields_dialog as fd
+from stanok.engine.schema import FieldDef, FieldSource
 from stanok.gui.fields_dialog import FieldsDialog
 from stanok.gui.strings import STRINGS
+from stanok.services.generate import TemplateError
 from stanok.services.storage import ProjectStore, StorageError
 from tests.services.test_generate import make_project
+
+
+def _double_click(widget):
+    """Deliver a double click as a plain event: QTest's mouse state leaks between tests."""
+    from PyQt5.QtCore import QEvent, QPointF, Qt
+    from PyQt5.QtGui import QMouseEvent
+    from PyQt5.QtWidgets import QApplication
+
+    pos = QPointF(widget.rect().center())
+    event = QMouseEvent(QEvent.MouseButtonDblClick, pos, Qt.LeftButton, Qt.LeftButton, Qt.NoModifier)
+    QApplication.sendEvent(widget, event)
 
 
 @pytest.fixture(scope="session")
@@ -40,1084 +44,429 @@ def store(tmp_path):
     return ProjectStore(tmp_path / ".stanok")
 
 
-def _add_constant(folder):
-    pj_path = folder / "project.stanok"
-    data = json.loads(pj_path.read_text())
-    data["templates"]["Договор"]["fields"]["Город"] = {
-        "source": "constant",
-        "value": "Москва",
-    }
-    pj_path.write_text(json.dumps(data, ensure_ascii=False))
+@pytest.fixture
+def messages(monkeypatch):
+    """Capture warnings, information and critical boxes."""
+    shown: list[str] = []
+    for name in ("warning", "information", "critical"):
+        monkeypatch.setattr(QMessageBox, name, lambda *a, _s=shown: _s.append(a[-1]))
+    return shown
 
 
-def _saved_value(store, field="Город"):
-    raw = json.loads((store.home_dir / "proj.stanok").read_text())
-    return raw["templates"]["Договор"]["fields"][field]["value"]
-
-
-def test_open_shows_fields(qapp, tmp_path, store):
+def _window(tmp_path, store):
     folder = make_project(tmp_path / "proj")
-    _add_constant(folder)
-    dlg = FieldsDialog(str(folder), "Договор", store=store)
-    assert dlg.table.rowCount() == 4
-    names = [dlg.table.item(r, 0).text() for r in range(4)]
-    assert names == ["ФИО", "Сумма", "Номер", "Город"]
-    types = [dlg._rows[n]["type"].currentText() for n in names]
-    assert types == [
-        STRINGS.FLD_SRC_TABLE,
-        STRINGS.FLD_SRC_TABLE,
-        STRINGS.FLD_SRC_COUNTER,
-        STRINGS.FLD_SRC_CONSTANT,
-    ]
-    # Table row: file + column combos with headers
-    assert dlg._rows["ФИО"]["col"].count() == 2
-    assert dlg._rows["ФИО"]["col"].currentText() == "ФИО"
-    assert isinstance(dlg._rows["Город"]["const"], QLineEdit)
+    store.migrate_from_project(folder)
+    return FieldsDialog(str(folder), "Договор", store=store), folder
+
+
+def _edit_field(monkeypatch, change, accept=True):
+    """Stand in for the field editor: apply `change` to it, then press OK or Cancel."""
+
+    def fake_exec(self):
+        change(self)
+        if accept:
+            self._on_ok()
+        return self.result()
+
+    monkeypatch.setattr(fe.FieldEditDialog, "exec_", fake_exec)
+
+
+def _set_constant(editor):
+    editor.type_combo.setCurrentIndex(editor.type_combo.findData("constant"))
+    editor._const_edit.setText("Москва")
+
+
+def _unused_buttons(dlg):
+    return [b.text() for b in dlg._unused.findChildren(QPushButton, "fieldButton")]
+
+
+def test_fields_dialog_opens_maximized(qapp, tmp_path, store):
+    dlg, _ = _window(tmp_path, store)
+
+    assert dlg.windowState() & Qt.WindowMaximized
     dlg.close()
 
 
-def test_edit_save_persists(qapp, tmp_path, store):
-    folder = make_project(tmp_path / "proj")
-    _add_constant(folder)
-    dlg = FieldsDialog(str(folder), "Договор", store=store)
-    dlg._rows["Город"]["const"].setText("Казань")
-    assert dlg._dirty
+def test_fields_dialog_page_has_button_for_every_field_in_document(qapp, tmp_path, store):
+    dlg, _ = _window(tmp_path, store)
+
+    assert dlg._sheet.field_names == ["ФИО", "Сумма", "Номер"]
+    dlg.close()
+
+
+def test_fields_dialog_has_no_fields_or_counters_table(qapp, tmp_path, store):
+    dlg, _ = _window(tmp_path, store)
+
+    assert not hasattr(dlg, "table")
+    assert not hasattr(dlg, "ctable")
+    assert not hasattr(dlg, "counter_add_btn")
+    dlg.close()
+
+
+def test_fields_dialog_field_button_tooltip_shows_source(qapp, tmp_path, store):
+    dlg, _ = _window(tmp_path, store)
+
+    tip = dlg._sheet._buttons["ФИО"][0].toolTip()
+
+    assert tip == STRINGS.FLD_DESC_TABLE.format(column="ФИО", counter="data")
+    dlg.close()
+
+
+def test_fields_dialog_field_missing_from_project_is_unset(qapp, tmp_path, store):
+    dlg, _ = _window(tmp_path, store)
+    del dlg._template_def.fields["Сумма"]
+    dlg._sheet.refresh()
+
+    button = dlg._sheet._buttons["Сумма"][0]
+    assert button.property("state") == "unset"
+    assert button.toolTip() == STRINGS.FLD_DESC_UNSET
+    dlg.close()
+
+
+def test_fields_dialog_unused_field_gets_its_own_button(qapp, tmp_path, store):
+    dlg, _ = _window(tmp_path, store)
+    dlg._template_def.fields["Лишнее"] = FieldDef(source=FieldSource.CONSTANT, value="x")
+
+    dlg._refresh_unused()
+
+    assert dlg._unused_names() == ["Лишнее"]
+    assert _unused_buttons(dlg) == ["Лишнее"]
+    dlg.close()
+
+
+def test_fields_dialog_click_applies_edit_and_marks_dirty(qapp, tmp_path, store, monkeypatch):
+    dlg, _ = _window(tmp_path, store)
+    _edit_field(monkeypatch, _set_constant)
+
+    dlg._open_field("ФИО")
+
+    assert dlg._dirty is True
+    assert dlg.save_btn.isEnabled()
+    assert dlg._template_def.fields["ФИО"].source == FieldSource.CONSTANT
+    assert dlg._sheet._buttons["ФИО"][0].toolTip() == STRINGS.FLD_DESC_CONSTANT.format(value="Москва")
+    dlg.close()
+
+
+def test_fields_dialog_cancelled_edit_is_not_dirty(qapp, tmp_path, store, monkeypatch):
+    dlg, _ = _window(tmp_path, store)
+    _edit_field(monkeypatch, _set_constant, accept=False)
+
+    dlg._open_field("ФИО")
+
+    assert dlg._dirty is False
+    assert dlg._template_def.fields["ФИО"].source == FieldSource.TABLE
+    dlg.close()
+
+
+def test_fields_dialog_save_persists_edit(qapp, tmp_path, store, monkeypatch):
+    dlg, _ = _window(tmp_path, store)
+    _edit_field(monkeypatch, _set_constant)
+    dlg._open_field("ФИО")
+
     dlg._on_save()
-    assert not dlg._dirty
-    assert _saved_value(store) == "Казань"
+
+    assert dlg._dirty is False
+    assert not dlg.save_btn.isEnabled()
+    assert store.load("proj").templates["Договор"].fields["ФИО"].value == "Москва"
     dlg.close()
 
 
-def test_close_clean_no_question(qapp, tmp_path, store, monkeypatch):
-    def boom(*a, **k):
-        raise AssertionError("question must not appear")
+def test_fields_dialog_save_blocks_empty_filename(qapp, tmp_path, store, messages):
+    dlg, _ = _window(tmp_path, store)
+    dlg.fname_edit.setText("")
 
-    monkeypatch.setattr("stanok.gui.fields_dialog.ask_save_discard_cancel", boom)
-    folder = make_project(tmp_path / "proj")
-    dlg = FieldsDialog(str(folder), "Договор", store=store)
+    dlg._on_save()
+
+    assert messages == [STRINGS.FLD_EMPTY_VALUE.format(name="Договор")]
+    assert dlg._dirty is True
+    dlg.close()
+
+
+def test_fields_dialog_filename_change_marks_dirty(qapp, tmp_path, store):
+    dlg, _ = _window(tmp_path, store)
+    assert dlg._dirty is False
+
+    dlg.fname_edit.setText("Новое_{i}.docx")
+
+    assert dlg._dirty is True
+    dlg.close()
+
+
+def test_fields_dialog_saved_project_keeps_filename_template(qapp, tmp_path, store):
+    dlg, _ = _window(tmp_path, store)
+    dlg.fname_edit.setText("Док_{ФИО}.docx")
+
+    dlg._on_save()
+
+    saved = json.loads((store.home_dir / "proj.stanok").read_text(encoding="utf-8"))
+    assert saved["filename_template"] == "Док_{ФИО}.docx"
+    dlg.close()
+
+
+def test_fields_dialog_close_dirty_discard_closes(qapp, tmp_path, store, monkeypatch):
+    dlg, _ = _window(tmp_path, store)
+    dlg._mark_dirty()
+    monkeypatch.setattr(fd, "ask_save_discard_cancel", lambda *a: QMessageBox.Discard)
+
     dlg.reject()
+
     assert dlg.result() == QDialog.Rejected
+    dlg.close()
 
 
-def test_close_dirty_discard(qapp, tmp_path, store, monkeypatch):
-    monkeypatch.setattr(
-        "stanok.gui.fields_dialog.ask_save_discard_cancel",
-        lambda *a, **k: QMessageBox.Discard,
-    )
-    folder = make_project(tmp_path / "proj")
-    _add_constant(folder)
-    dlg = FieldsDialog(str(folder), "Договор", store=store)
-    dlg._rows["Город"]["const"].setText("Казань")
+def test_fields_dialog_close_dirty_cancel_stays_open(qapp, tmp_path, store, monkeypatch):
+    dlg, _ = _window(tmp_path, store)
+    dlg._mark_dirty()
+    monkeypatch.setattr(fd, "ask_save_discard_cancel", lambda *a: QMessageBox.Cancel)
+
     dlg.reject()
-    assert dlg.result() == QDialog.Rejected
-    assert _saved_value(store) == "Москва"
+
+    assert dlg.result() == 0
+    dlg.close()
 
 
-def test_close_dirty_save(qapp, tmp_path, store, monkeypatch):
-    monkeypatch.setattr("stanok.gui.fields_dialog.ask_save_discard_cancel", lambda *a, **k: QMessageBox.Save)
-    folder = make_project(tmp_path / "proj")
-    _add_constant(folder)
-    dlg = FieldsDialog(str(folder), "Договор", store=store)
-    dlg._rows["Город"]["const"].setText("Казань")
+def test_fields_dialog_close_dirty_save_writes_then_closes(qapp, tmp_path, store, monkeypatch):
+    dlg, _ = _window(tmp_path, store)
+    _edit_field(monkeypatch, _set_constant)
+    dlg._open_field("ФИО")
+    monkeypatch.setattr(fd, "ask_save_discard_cancel", lambda *a: QMessageBox.Save)
+
     dlg.reject()
+
+    assert store.load("proj").templates["Договор"].fields["ФИО"].value == "Москва"
     assert dlg.result() == QDialog.Accepted
-    assert _saved_value(store) == "Казань"
-
-
-def test_close_dirty_cancel_stays(qapp, tmp_path, store, monkeypatch):
-    monkeypatch.setattr("stanok.gui.fields_dialog.ask_save_discard_cancel", lambda *a, **k: QMessageBox.Cancel)
-    folder = make_project(tmp_path / "proj")
-    _add_constant(folder)
-    dlg = FieldsDialog(str(folder), "Договор", store=store)
-    dlg._rows["Город"]["const"].setText("Казань")
-    dlg.reject()
-    assert dlg.result() == 0
-    assert _saved_value(store) == "Москва"
     dlg.close()
 
 
-def test_open_missing_project_raises(qapp, tmp_path, store):
-    with pytest.raises(StorageError):
-        FieldsDialog("nope", "Договор", store=store)
-
-
-def test_open_missing_template_raises(qapp, tmp_path, store):
-    from stanok.services.generate import TemplateError
-
-    folder = make_project(tmp_path / "proj")
-    with pytest.raises(TemplateError, match="template not found"):
-        FieldsDialog(str(folder), "Чужой", store=store)
-
-
-def _add_today(folder):
-    pj_path = folder / "project.stanok"
-    data = json.loads(pj_path.read_text())
-    data["templates"]["Договор"]["fields"]["Дата"] = {"source": "today"}
-    pj_path.write_text(json.dumps(data, ensure_ascii=False))
-
-
-def test_today_preview(qapp, tmp_path, store):
-    import datetime
-
-    folder = make_project(tmp_path / "proj")
-    _add_today(folder)
-    dlg = FieldsDialog(str(folder), "Договор", store=store)
-    assert "Дата" in dlg._rows
-    assert "dlabel" in dlg._rows["Дата"]
-    assert datetime.date.today().isoformat() in dlg._rows["Дата"]["dlabel"].text()
-    dlg.close()
-
-
-def test_today_format_labels_show_current_date(qapp, tmp_path, store):
-    import datetime
-
-    folder = make_project(tmp_path / "proj")
-    _add_today(folder)
-    dlg = FieldsDialog(str(folder), "Договор", store=store)
-    dfmt = dlg._rows["Дата"]["dfmt"]
-    today = datetime.date.today()
-    assert dfmt.itemText(dfmt.findData("dmy")) == today.strftime("%d.%m.%Y")
-    assert dfmt.itemText(dfmt.findData("year")) == str(today.year)
-    dlg.close()
-
-
-def test_headers_nondir_ref(qapp, tmp_path, store):
-    from stanok.services.generate import generate_documents, GenerateCommand
-
-    folder = make_project(tmp_path / "proj")
-    generate_documents(GenerateCommand(project_ref=folder), store=store)
-    store.add_recent(str(folder), "proj")
-    dlg = FieldsDialog("proj", "Договор", store=store)
-    assert dlg._read_headers(None) == ["ФИО", "Сумма"]
-    dlg.close()
-
-
-def test_headers_no_sources(qapp, tmp_path, store):
-    import json as _json
-
-    folder = make_project(tmp_path / "proj")
-    data = _json.loads((folder / "project.stanok").read_text())
-    data["data_sources"] = []
-    data["counters"] = {}
-    data["templates"]["Договор"]["fields"] = {}
-    (folder / "project.stanok").write_text(_json.dumps(data, ensure_ascii=False))
-    dlg = FieldsDialog(str(folder), "Договор", store=store)
-    assert dlg._read_headers(None) == []
-    dlg.close()
-
-
-def test_headers_read_failure_warns(qapp, tmp_path, store, monkeypatch):
-    import stanok.gui.fields_dialog as fd
-
-    folder = make_project(tmp_path / "proj")
-    warnings = []
-    monkeypatch.setattr(
-        QMessageBox, "warning", lambda *a: warnings.append(a[-1])
-    )
-
-    def boom(self, path):
-        raise OSError("locked")
-
-    monkeypatch.setattr(fd.ExcelReader, "read", boom)
-    dlg = FieldsDialog(str(folder), "Договор", store=store)
-    assert dlg._read_headers("Данные/data.xlsx") == []
-    assert warnings and "data.xlsx" in warnings[0]
-    dlg.close()
-
-
-def test_headers_skip_blank_columns_with_warning(qapp, tmp_path, store, monkeypatch):
-    folder = make_project(
-        tmp_path / "proj",
-        headers=("ФИО", None, "Сумма"),
-        rows=(("Иван", "лишнее", 100),),
-    )
-    warnings = []
-    monkeypatch.setattr(
-        QMessageBox, "warning", lambda *a: warnings.append(a[-1])
-    )
-    dlg = FieldsDialog(str(folder), "Договор", store=store)
-    assert warnings
-    assert "B" in warnings[0]
-    assert "пропущены столбцы" in warnings[0]
-    assert dlg._rows["ФИО"]["col"].count() == 2
-    dlg.close()
-
-
-def test_save_failure_shows_critical(qapp, tmp_path, store, monkeypatch):
-    folder = make_project(tmp_path / "proj")
-    _add_constant(folder)
-    shown = []
-    monkeypatch.setattr(
-        QMessageBox, "critical", lambda *a: shown.append(a[-1])
-    )
-
-    def boom(*a, **k):
-        raise OSError("read-only")
-
-    dlg = FieldsDialog(str(folder), "Договор", store=store)
-    monkeypatch.setattr(store, "save", boom)
-    dlg._dirty = True
-    dlg._on_save()
-    assert shown
-    assert dlg._dirty
-    dlg.close()
-
-
-def test_dirty_save_failure_stays_open(qapp, tmp_path, store, monkeypatch):
-    folder = make_project(tmp_path / "proj")
-    _add_constant(folder)
-    shown = []
-    monkeypatch.setattr(
-        QMessageBox, "critical", lambda *a: shown.append(a[-1])
-    )
-    monkeypatch.setattr(
-        "stanok.gui.fields_dialog.ask_save_discard_cancel",
-        lambda *a, **k: QMessageBox.Save,
-    )
-
-    def boom(*a, **k):
-        raise OSError("read-only")
-
-    dlg = FieldsDialog(str(folder), "Договор", store=store)
-    monkeypatch.setattr(store, "save", boom)
-    dlg._dirty = True
-    dlg.reject()
-    assert shown
-    dlg.close()
-
-
-def _saved_pj(store):
-    return json.loads((store.home_dir / "proj.stanok").read_text())
-
-
-def _set_type(dlg, name, source):
-    dlg._rows[name]["type"].setCurrentIndex(["constant", "table", "counter", "today"].index(source))
-
-
-def test_switch_to_constant_prefills_and_saves(qapp, tmp_path, store):
-    folder = make_project(tmp_path / "proj")
-    dlg = FieldsDialog(str(folder), "Договор", store=store)
-    _set_type(dlg, "ФИО", "constant")
-    assert dlg._dirty
-    assert dlg._rows["ФИО"]["const"].text() == "{{ФИО}}"
-    dlg._on_save()
-    saved = _saved_pj(store)["templates"]["Договор"]["fields"]["ФИО"]
-    assert saved == {"source": "constant", "value": "{{ФИО}}", "counter_name": None}
-    dlg.close()
-
-
-def test_table_counter_and_column_saved(qapp, tmp_path, store):
-    from tests.services.test_storage import _src_files
-
-    folder = make_project(tmp_path / "proj")
-    xlsx, _ = _src_files(tmp_path, "src2")
-    (folder / "Данные").mkdir(parents=True, exist_ok=True)
-    import shutil
-
-    shutil.copy(xlsx, folder / "Данные" / "data2.xlsx")
-    pj_path = folder / "project.stanok"
-    data = json.loads(pj_path.read_text())
-    data["data_sources"].append({"file": "Данные/data2.xlsx", "mode": "sequential"})
-    data["counters"]["data2"] = {
-        "pos": 0,
-        "format": "1",
-        "table": "Данные/data2.xlsx",
-        "resume": 1,
-    }
-    pj_path.write_text(json.dumps(data, ensure_ascii=False))
-    dlg = FieldsDialog(str(folder), "Договор", store=store)
-    st = dlg._rows["ФИО"]
-    assert st["cname"].count() == 3
-    st["cname"].setCurrentIndex(st["cname"].findData("data2"))
-    assert st["col"].count() == 2
-    st["col"].setCurrentIndex(0)
-    dlg._on_save()
-    saved = _saved_pj(store)["templates"]["Договор"]["fields"]["ФИО"]
-    assert saved["counter_name"] == "data2"
-    assert saved["value"] == "ФИО"
-    dlg.close()
-
-
-def test_legacy_table_without_file(qapp, tmp_path, store):
-    folder = make_project(tmp_path / "proj")
-    dlg = FieldsDialog(str(folder), "Договор", store=store)
-    st = dlg._rows["ФИО"]
-    assert st["cname"].currentData() == "data"
-    assert st["cname"].count() == 2
-    assert st["col"].currentText() == "ФИО"
-    dlg.close()
-
-
-def test_counter_create_via_table(qapp, tmp_path, store, monkeypatch):
-    folder = make_project(tmp_path / "proj")
-    monkeypatch.setattr(
-        "stanok.gui.fields_dialog.ask_text", lambda *a, **k: ("doc", True)
-    )
-    dlg = FieldsDialog(str(folder), "Договор", store=store)
-    assert dlg.ctable.rowCount() == 2
-    dlg._on_counter_create()
-    assert dlg.ctable.rowCount() == 3
-    assert dlg._rows["Номер"]["cname"].findData("doc") >= 0
-    _set_type(dlg, "ФИО", "counter")
-    st = dlg._rows["ФИО"]
-    st["cname"].setCurrentIndex(st["cname"].findData("doc"))
-    cfmt = dlg._crows["doc"]["fmt"]
-    cfmt.setCurrentIndex(cfmt.findData("001"))
-    dlg._on_save()
-    saved = _saved_pj(store)
-    assert saved["templates"]["Договор"]["fields"]["ФИО"]["value"] == "doc"
-    assert saved["counters"]["doc"] == {
-        "pos": 0,
-        "format": "001",
-        "table": None,
-        "resume": 1,
-    }
-    dlg.close()
-
-
-def test_resume_checkbox_inverted_label(qapp, tmp_path, store):
-    """Column «Заново»: checked means resume=0 (start over)."""
-    folder = make_project(tmp_path / "proj")
-    dlg = FieldsDialog(str(folder), "Договор", store=store)
-    box = dlg._crows["data"]["resume"]
-    assert box.isChecked() is False  # resume=1 → не «начинать заново»
-    box.setChecked(True)
-    dlg._on_save()
-    assert _saved_pj(store)["counters"]["data"]["resume"] == 0
-    dlg.close()
-
-
-def test_counter_create_duplicate_warns(qapp, tmp_path, store, monkeypatch):
-    folder = make_project(tmp_path / "proj")
-    warnings = []
-    monkeypatch.setattr(
-        QMessageBox, "warning", lambda *a: warnings.append(a[-1])
-    )
-    monkeypatch.setattr("stanok.gui.fields_dialog.ask_text", lambda *a, **k: ("num", True))
-    dlg = FieldsDialog(str(folder), "Договор", store=store)
-    dlg._on_counter_create()
-    assert warnings and "num" in warnings[0]
-    assert dlg.ctable.rowCount() == 2
-    dlg.close()
-
-
-def test_empty_column_blocks_save(qapp, tmp_path, store, monkeypatch):
-    folder = make_project(tmp_path / "proj")
-    (folder / "Данные" / "data.xlsx").unlink()
-    warnings = []
-    monkeypatch.setattr(
-        QMessageBox, "warning", lambda *a: warnings.append(a[-1])
-    )
-    monkeypatch.setattr(FieldsDialog, "_ask_source_recovery", lambda self, name: None)
-    dlg = FieldsDialog(str(folder), "Договор", store=store)
-    assert dlg._rows["ФИО"]["col"].count() == 0
-    dlg._on_save()
-    assert any("ФИО" in w and "пустое" in w for w in warnings)
-    assert _saved_pj(store)["templates"]["Договор"]["fields"]["ФИО"]["value"] == "ФИО"
-    dlg.close()
-
-
-def test_type_switch_marks_dirty(qapp, tmp_path, store):
-    folder = make_project(tmp_path / "proj")
-    dlg = FieldsDialog(str(folder), "Договор", store=store)
-    assert not dlg._dirty
-    _set_type(dlg, "Номер", "today")
-    assert dlg._dirty
-    assert "dlabel" in dlg._rows["Номер"]
-    dlg.close()
-
-
-def test_counter_row_has_no_value_editor(qapp, tmp_path, store):
-    folder = make_project(tmp_path / "proj")
-    dlg = FieldsDialog(str(folder), "Договор", store=store)
-    _set_type(dlg, "ФИО", "counter")
-    st = dlg._rows["ФИО"]
-    assert "cprev" in st
-    st["cname"].setCurrentIndex(st["cname"].findData("num"))
-    assert st["cprev"].text() == "0"
-    dlg.close()
-
-
-def test_today_type_saves(qapp, tmp_path, store):
-    folder = make_project(tmp_path / "proj")
-    dlg = FieldsDialog(str(folder), "Договор", store=store)
-    _set_type(dlg, "Номер", "today")
-    dlg._on_save()
-    saved = _saved_pj(store)["templates"]["Договор"]["fields"]["Номер"]
-    assert saved == {"source": "today", "value": "dmy", "counter_name": None}
-    dlg.close()
-
-
-def test_dirty_close_save_blocked_stays_open(qapp, tmp_path, store, monkeypatch):
-    folder = make_project(tmp_path / "proj")
-    (folder / "Данные" / "data.xlsx").unlink()
-    warnings = []
-    monkeypatch.setattr(
-        QMessageBox, "warning", lambda *a: warnings.append(a[-1])
-    )
-    monkeypatch.setattr(
-        "stanok.gui.fields_dialog.ask_save_discard_cancel",
-        lambda *a, **k: QMessageBox.Save,
-    )
-    monkeypatch.setattr(FieldsDialog, "_ask_source_recovery", lambda self, name: None)
-    dlg = FieldsDialog(str(folder), "Договор", store=store)
-    dlg._dirty = True
-    dlg.reject()
-    assert any("пустое" in w for w in warnings)
-    assert dlg.result() == 0
-    dlg.close()
-
-
-def test_counter_select_existing_loads(qapp, tmp_path, store):
-    folder = make_project(tmp_path / "proj")
-    dlg = FieldsDialog(str(folder), "Договор", store=store)
-    _set_type(dlg, "ФИО", "counter")
-    st = dlg._rows["ФИО"]
-    st["cname"].setCurrentIndex(st["cname"].findData("num"))
-    cfmt = dlg._crows["num"]["fmt"]
-    cfmt.setCurrentIndex(cfmt.findData("01"))
-    dlg._crows["num"]["pos"].setText("7")
-    assert st["cprev"].text() == "07"
-    dlg._on_save()
-    saved = _saved_pj(store)
-    assert saved["counters"]["num"]["pos"] == 7
-    assert saved["counters"]["num"]["format"] == "01"
-    dlg.close()
-
-
-def test_counter_create_cancel_noop(qapp, tmp_path, store, monkeypatch):
-    folder = make_project(tmp_path / "proj")
-    monkeypatch.setattr("stanok.gui.fields_dialog.ask_text", lambda *a, **k: ("", False))
-    dlg = FieldsDialog(str(folder), "Договор", store=store)
-    dlg._on_counter_create()
-    assert dlg.ctable.rowCount() == 2
-    dlg.close()
-
-
-def test_date_format_saves_preset(qapp, tmp_path, store):
-    folder = make_project(tmp_path / "proj")
-    _add_today(folder)
-    dlg = FieldsDialog(str(folder), "Договор", store=store)
-    st = dlg._rows["Дата"]
-    assert st["dfmt"].currentData() is None
-    st["dfmt"].setCurrentIndex(st["dfmt"].findData("month_ru"))
-    assert st["dlabel"].text() == "октября"
-    dlg._on_save()
-    saved = _saved_pj(store)["templates"]["Договор"]["fields"]["Дата"]
-    assert saved == {"source": "today", "value": "month_ru", "counter_name": None}
-    dlg.close()
-
-
-def test_table_value_label(qapp, tmp_path, store):
-    folder = make_project(tmp_path / "proj")
-    dlg = FieldsDialog(str(folder), "Договор", store=store)
-    st = dlg._rows["ФИО"]
-    assert st["clabel"].text() == "Иван"
-    st["col"].setCurrentIndex(-1)
-    dlg._update_table_value("ФИО")
-    assert st["clabel"].text() == "Иван"
-    dlg.close()
-
-
-def test_counter_select_other_counter(qapp, tmp_path, store):
-    import json as _json
-
-    folder = make_project(tmp_path / "proj")
-    dlg = FieldsDialog(str(folder), "Договор", store=store)
-    dlg._pj.counters["doc2"] = __import__(
-        "stanok.engine.schema", fromlist=["CounterDef"]
-    ).CounterDef(pos=5, format="001")
-    _set_type(dlg, "ФИО", "counter")
-    st = dlg._rows["ФИО"]
-    st["cname"].setCurrentIndex(st["cname"].findData("doc2"))
-    assert st["cprev"].text() == "005"
-    dlg._on_save()
-    saved = _saved_pj(store)
-    assert saved["counters"]["doc2"]["pos"] == 5
-    assert saved["counters"]["num"]["pos"] == 0
-    dlg.close()
-
-
-def test_date_preset_reopen_selects(qapp, tmp_path, store):
-    folder = make_project(tmp_path / "proj")
-    _add_today(folder)
-    dlg = FieldsDialog(str(folder), "Договор", store=store)
-    st = dlg._rows["Дата"]
-    st["dfmt"].setCurrentIndex(st["dfmt"].findData("month_ru"))
-    dlg._on_save()
-    dlg.close()
-    dlg2 = FieldsDialog(str(folder), "Договор", store=store)
-    assert dlg2._rows["Дата"]["dfmt"].currentData() == "month_ru"
-    assert dlg2._rows["Дата"]["dlabel"].text() == "октября"
-    dlg2.close()
-
-
-def test_result_column(qapp, tmp_path, store):
-    folder = make_project(tmp_path / "proj")
-    _add_constant(folder)
-    _add_today(folder)
-    dlg = FieldsDialog(str(folder), "Договор", store=store)
-    headers = [
-        dlg.table.horizontalHeaderItem(c).text()
-        for c in range(dlg.table.columnCount())
-    ]
-    assert headers == ["Поле", "Тип", "Данные", "Значение"]
-    assert dlg._rows["ФИО"]["clabel"].text() == "Иван"
-    assert dlg._rows["Город"]["result"].text() == "Москва"
-    dlg._rows["Город"]["const"].setText("Казань")
-    assert dlg._rows["Город"]["result"].text() == "Казань"
-    assert "Дата" in dlg._rows
-    dlg.close()
-
-
-def test_save_button_visibility(qapp, tmp_path, store):
-    folder = make_project(tmp_path / "proj")
-    _add_constant(folder)
-    dlg = FieldsDialog(str(folder), "Договор", store=store)
-    assert dlg.save_btn.isHidden()
-    dlg._rows["Город"]["const"].setText("Казань")
-    assert not dlg.save_btn.isHidden()
-    assert dlg.save_btn.property("role") == "primary"
-    dlg._on_save()
-    assert dlg.save_btn.isHidden()
-    dlg.close()
-
-
-def test_headers_and_close_button(qapp, tmp_path, store):
-    from PyQt5.QtWidgets import QHeaderView
-
-    folder = make_project(tmp_path / "proj")
-    dlg = FieldsDialog(str(folder), "Договор", store=store)
-    header = dlg.table.horizontalHeader()
-    assert header.sectionResizeMode(0) == QHeaderView.ResizeToContents
-    assert header.sectionResizeMode(1) == QHeaderView.ResizeToContents
-    assert header.sectionResizeMode(2) == QHeaderView.Stretch
-    assert header.sectionResizeMode(3) == QHeaderView.ResizeToContents
-    assert dlg.findChild(type(dlg.save_btn)).text() != ""
-    close_btns = [
-        b for b in dlg.findChildren(type(dlg.save_btn))
-        if b.text() == STRINGS.FLD_CLOSE
-    ]
-    assert len(close_btns) == 1
-    dlg.close()
-
-
-def test_today_keep_only_for_legacy(qapp, tmp_path, store):
-    folder = make_project(tmp_path / "proj")
-    dlg = FieldsDialog(str(folder), "Договор", store=store)
-    _set_type(dlg, "ФИО", "today")
-    items = [
-        dlg._rows["ФИО"]["dfmt"].itemData(i)
-        for i in range(dlg._rows["ФИО"]["dfmt"].count())
-    ]
-    assert None not in items
-    assert dlg._rows["ФИО"]["dfmt"].currentData() == "dmy"
-    dlg.close()
-
-
-def test_today_empty_format_blocks_save(qapp, tmp_path, store, monkeypatch):
-    folder = make_project(tmp_path / "proj")
-    _add_today(folder)
-    warnings = []
-    monkeypatch.setattr(
-        QMessageBox, "warning", lambda *a: warnings.append(a[-1])
-    )
-    dlg = FieldsDialog(str(folder), "Договор", store=store)
-    assert dlg._rows["Дата"]["dfmt"].currentData() is None
-    dlg._on_save()
-    assert any("Дата" in w for w in warnings)
-    import json as _json
-
-    data = _json.loads((store.home_dir / "proj.stanok").read_text())
-    assert data["templates"]["Договор"]["fields"]["Дата"]["value"] is None
-    dlg.close()
-
-
-def test_counters_table_binding_saves(qapp, tmp_path, store):
-    folder = make_project(tmp_path / "proj")
-    dlg = FieldsDialog(str(folder), "Договор", store=store)
-    assert dlg.ctable.rowCount() == 2
-    assert dlg._crows["num"]["table"].currentData() is None
-    bind = dlg._crows["num"]["table"]
-    bind.setCurrentIndex(bind.findData("Данные/data.xlsx"))
-    dlg._crows["num"]["pos"].setText("9")
-    dlg._on_save()
-    saved = _saved_pj(store)["counters"]["num"]
-    assert saved["table"] == "Данные/data.xlsx"
-    assert saved["pos"] == 9
-    dlg.close()
-
-
-def test_counters_table_bad_pos_blocks(qapp, tmp_path, store, monkeypatch):
-    folder = make_project(tmp_path / "proj")
-    warnings = []
-    monkeypatch.setattr(
-        QMessageBox, "warning", lambda *a: warnings.append(a[-1])
-    )
-    dlg = FieldsDialog(str(folder), "Договор", store=store)
-    dlg._crows["num"]["pos"].setText("xx")
-    dlg._on_save()
-    assert any("num" in w for w in warnings)
-    dlg.close()
-
-
-def test_dangling_counter_resurrected(qapp, tmp_path, store):
-    """Defensive: a counter field naming a missing counter is recreated on save.
-
-    Such a PJ can no longer be loaded (schema rejects it), so simulate
-    in-memory divergence instead.
-    """
-    folder = make_project(tmp_path / "proj")
-    dlg = FieldsDialog(str(folder), "Договор", store=store)
-    del dlg._pj.counters["num"]
-    del dlg._crows["num"]
-    st = dlg._rows["Номер"]
-    assert st["cname"].currentData() == "num"
-    dlg._on_save()
-    saved = _saved_pj(store)
-    assert saved["counters"]["num"]["pos"] == 0
-    assert saved["templates"]["Договор"]["fields"]["Номер"]["value"] == "num"
-    dlg.close()
-
-
-def test_counters_table_negative_blocks(qapp, tmp_path, store, monkeypatch):
-    folder = make_project(tmp_path / "proj")
-    warnings = []
-    monkeypatch.setattr(
-        QMessageBox, "warning", lambda *a: warnings.append(a[-1])
-    )
-    dlg = FieldsDialog(str(folder), "Договор", store=store)
-    dlg._crows["num"]["pos"].setText("-1")
-    dlg._on_save()
-    assert any("num" in w for w in warnings)
-    dlg.close()
-
-
-def test_single_scroll_area(qapp, tmp_path, store):
-    from PyQt5.QtCore import Qt
-    from PyQt5.QtWidgets import QScrollArea
-
-    folder = make_project(tmp_path / "proj")
-    dlg = FieldsDialog(str(folder), "Договор", store=store)
-    areas = dlg.findChildren(QScrollArea)
-    assert len(areas) == 1
-    assert dlg.table.verticalScrollBarPolicy() == Qt.ScrollBarAlwaysOff
-    assert dlg.ctable.verticalScrollBarPolicy() == Qt.ScrollBarAlwaysOff
-    assert dlg.table.height() > 0
-    dlg.close()
-
-
-def test_filename_template_edits(qapp, tmp_path, store, monkeypatch):
-    folder = make_project(tmp_path / "proj")
-    warnings = []
-    monkeypatch.setattr(
-        QMessageBox, "warning", lambda *a: warnings.append(a[-1])
-    )
-    dlg = FieldsDialog(str(folder), "Договор", store=store)
-    assert dlg.fname_edit.text() == "Договор_{ФИО}_{i}.docx"
-    dlg.fname_edit.setText("Акт_{Номер}")
-    dlg._on_save()
-    import json as _json
-
-    data = _json.loads((store.home_dir / "proj.stanok").read_text())
-    assert data["filename_template"] == "Акт_{Номер}"
-    assert dlg.save_btn.isHidden()
-    dlg.fname_edit.setText("   ")
-    dlg._on_save()
-    assert warnings
-    dlg.close()
-
-
-def test_insert_field_menu(qapp, tmp_path, store, monkeypatch):
-    from PyQt5.QtWidgets import QMenu
-
-    folder = make_project(tmp_path / "proj")
-    dlg = FieldsDialog(str(folder), "Договор", store=store)
-    assert dlg.fname_insert_btn.text() == STRINGS.FLD_INSERT_FIELD
-    shown = []
-    monkeypatch.setattr(QMenu, "exec_", lambda self, *a: shown.append(self))
-    dlg._on_insert_field()
-    assert shown
-    actions = [a.text() for a in shown[0].actions() if a.text()]
-    assert "ФИО" in actions
-    assert "{i}" in actions and "{template}" in actions
-    fio = next(a for a in shown[0].actions() if a.text() == "ФИО")
-    dlg.fname_edit.clear()
-    fio.trigger()
-    assert dlg.fname_edit.text() == "{ФИО}"
-    dlg.close()
-
-
-def _xlsx(path, headers=("ФИО", "Сумма"), rows=(("Иван", 100),)):
-    wb = Workbook()
-    ws = wb.active
-    ws.append(list(headers))
-    for r in rows:
-        ws.append(list(r))
-    wb.save(path)
-
-
-def test_missing_source_pick_copies_into_project(qapp, tmp_path, store, monkeypatch):
-    folder = make_project(tmp_path / "proj")
-    (folder / "Данные" / "data.xlsx").unlink()
-    other = tmp_path / "elsewhere"
-    other.mkdir()
-    _xlsx(other / "data.xlsx")
-    monkeypatch.setattr(FieldsDialog, "_ask_source_recovery", lambda self, name: "pick")
-    monkeypatch.setattr(
-        QFileDialog, "getExistingDirectory", lambda *a, **k: str(other)
-    )
-    dlg = FieldsDialog(str(folder), "Договор", store=store)
-    assert (folder / "Данные" / "data.xlsx").is_file()
-    assert dlg._rows["ФИО"]["col"].count() == 2
-    dlg.close()
-
-
-def test_missing_source_pick_rebinds_relative(qapp, tmp_path, store, monkeypatch):
-    folder = make_project(tmp_path / "proj")
-    (folder / "Данные" / "data.xlsx").unlink()
-    _xlsx(folder / "data.xlsx")
-    monkeypatch.setattr(FieldsDialog, "_ask_source_recovery", lambda self, name: "pick")
-    monkeypatch.setattr(
-        QFileDialog, "getExistingDirectory", lambda *a, **k: str(folder)
-    )
-    dlg = FieldsDialog(str(folder), "Договор", store=store)
-    pj, _ = store.resolve_project(str(folder))
-    assert pj.data_sources[0].file == "data.xlsx"
-    assert pj.counters["data"].table == "data.xlsx"
-    assert dlg._rows["ФИО"]["col"].count() == 2
-    dlg.close()
-
-
-def test_missing_source_create_folders(qapp, tmp_path, store, monkeypatch):
-    folder = make_project(tmp_path / "proj")
-    shutil.rmtree(folder / "Данные")
-    infos = []
-    monkeypatch.setattr(QMessageBox, "warning", lambda *a: None)
-    monkeypatch.setattr(
-        QMessageBox, "information", lambda *a: infos.append(a[-1])
-    )
-    monkeypatch.setattr(
-        FieldsDialog, "_ask_source_recovery", lambda self, name: "create"
-    )
-    dlg = FieldsDialog(str(folder), "Договор", store=store)
-    assert (folder / "Данные").is_dir()
-    assert (folder / "Шаблоны").is_dir()
-    assert infos
-    dlg.close()
-
-
-def test_missing_source_cancel_prompts_once(qapp, tmp_path, store, monkeypatch):
-    folder = make_project(tmp_path / "proj")
-    (folder / "Данные" / "data.xlsx").unlink()
-    warnings = []
-    monkeypatch.setattr(QMessageBox, "warning", lambda *a: warnings.append(a[-1]))
-    calls = {"n": 0}
-
-    def ask(self, name):
-        calls["n"] += 1
-        return None
-
-    monkeypatch.setattr(FieldsDialog, "_ask_source_recovery", ask)
-    dlg = FieldsDialog(str(folder), "Договор", store=store)
-    assert calls["n"] == 1
-    assert len(warnings) == 1
-    dlg._resolve_source_path("Данные/data.xlsx")
-    assert calls["n"] == 1
-    dlg.close()
-
-
-def test_counters_table_column_order(qapp, tmp_path, store, monkeypatch):
-    import stanok.gui.fields_dialog as fields_module
-
-    monkeypatch.setattr(fields_module, "picker_available", lambda: False)
-    folder = make_project(tmp_path / "proj")
-    dlg = FieldsDialog(str(folder), "Договор", store=store)
-    labels = [
-        dlg.ctable.horizontalHeaderItem(c).text()
-        for c in range(dlg.ctable.columnCount())
-    ]
-    assert labels == [
-        STRINGS.FLD_CNT_NAME,
-        STRINGS.FLD_CNT_SOURCE,
-        STRINGS.FLD_CNT_FORMAT,
-        STRINGS.FLD_CNT_POS,
-        STRINGS.FLD_CNT_RESUME,
-        "",
-    ]
-    st = dlg._crows["data"]
-    assert dlg.ctable.cellWidget(0, 1) is st["table"]
-    assert dlg.ctable.cellWidget(0, 2) is st["fmt"]
-    assert dlg.ctable.cellWidget(0, 3) is st["pos_box"]
-    assert dlg.ctable.cellWidget(0, 4) is st["resume"]
-    assert st["pos_box"].findChild(QLineEdit) is st["pos"]
-    assert not st["pick"].isEnabled()
-    assert st["pick"].toolTip() == STRINGS.FLD_PICK_DISABLED_TIP
-    tips = [
-        dlg.ctable.horizontalHeaderItem(c).toolTip()
-        for c in range(dlg.ctable.columnCount())
-    ]
-    assert tips == [
-        STRINGS.FLD_CNT_NAME_TIP,
-        STRINGS.FLD_CNT_SOURCE_TIP,
-        STRINGS.FLD_CNT_FORMAT_TIP,
-        STRINGS.FLD_POS_TIP,
-        STRINGS.FLD_CNT_RESUME_TIP,
-        "",
-    ]
-    assert st["table"].toolTip() == STRINGS.FLD_CNT_SOURCE_TIP
-    assert st["fmt"].toolTip() == STRINGS.FLD_CNT_FORMAT_TIP
-    assert st["pos"].toolTip() == STRINGS.FLD_POS_TIP
-    assert st["resume"].toolTip() == STRINGS.FLD_CNT_RESUME_TIP
-    labels = [w.text() for w in dlg.findChildren(QLabel)]
-    assert STRINGS.FLD_CNT_DEFINITION in labels
-    assert "число в памяти компьютера" in STRINGS.FLD_CNT_DEFINITION
-    assert STRINGS.FLD_CNT_HINT in labels
-    dlg.close()
-
-
-def test_counters_table_fits_text(qapp, tmp_path, store):
-    folder = make_project(tmp_path / "proj")
-    dlg = FieldsDialog(str(folder), "Договор", store=store)
-    header = dlg.ctable.horizontalHeader()
-    assert header.stretchLastSection() is False
-    for col in range(dlg.ctable.columnCount() - 1):
-        assert header.sectionResizeMode(col) == QHeaderView.ResizeToContents
-    # The last column holds the remove button: ResizeToContents would ignore it.
-    assert header.sectionResizeMode(dlg.ctable.columnCount() - 1) == QHeaderView.Fixed
-    dlg.close()
-
-
-def test_counter_constant_mode_row_read_only(qapp, tmp_path, store):
-    folder = make_project(tmp_path / "proj", mode="constant")
-    dlg = FieldsDialog(str(folder), "Договор", store=store)
-    st = dlg._crows["data"]
-    assert st["pos"].isReadOnly()
-    assert st["pos"].toolTip() == STRINGS.FLD_POS_CONST_TIP
-    assert not st["resume"].isEnabled()
-    combo = st["table"]
-    combo.setCurrentIndex(combo.findData(None))
-    assert not st["pos"].isReadOnly()
-    assert st["pos"].toolTip() == STRINGS.FLD_POS_TIP
-    assert not st["pick"].isEnabled()
-    assert st["pick"].toolTip() == STRINGS.FLD_PICK_NO_SOURCE_TIP
-    dlg.close()
-
-
-def test_counter_pos_updates_field_preview(qapp, tmp_path, store):
-    folder = make_project(tmp_path / "proj")
-    dlg = FieldsDialog(str(folder), "Договор", store=store)
-    st = dlg._crows["num"]
-    st["pos"].setText("7")
-    assert dlg._rows["Номер"]["cprev"].text() == "7"
-    st["fmt"].setCurrentIndex(st["fmt"].findData("0001"))
-    assert dlg._rows["Номер"]["cprev"].text() == "0007"
-    dlg.close()
-
-
-def test_counter_change_skips_constant_field(qapp, tmp_path, store):
-    folder = make_project(tmp_path / "proj")
-    _add_constant(folder)
-    dlg = FieldsDialog(str(folder), "Договор", store=store)
-    dlg._crows["num"]["pos"].setText("7")
-    assert dlg._rows["Номер"]["cprev"].text() == "7"
-    assert dlg._rows["Город"]["const"].text() == "Москва"
-    dlg.close()
-
-
-def test_counter_change_error_logged_and_shown(
-    qapp, tmp_path, store, monkeypatch, caplog
-):
-    folder = make_project(tmp_path / "proj")
-    dlg = FieldsDialog(str(folder), "Договор", store=store)
-    shown = []
-    monkeypatch.setattr(QMessageBox, "critical", lambda *a: shown.append(a[-1]))
-
-    def boom(_cname):
-        raise RuntimeError("boom")
-
-    monkeypatch.setattr(dlg, "_update_counter_row_state", boom)
-    with caplog.at_level(logging.CRITICAL):
-        dlg._on_counter_source_changed("data")
-    assert "counter change source failed" in caplog.text
-    assert shown and "boom" in shown[0]
-    dlg.close()
-
-
-def test_counter_pos_updates_table_field_preview(qapp, tmp_path, store):
-    folder = make_project(tmp_path / "proj")
-    dlg = FieldsDialog(str(folder), "Договор", store=store)
-    st = dlg._crows["data"]
-    assert dlg._rows["ФИО"]["clabel"].text() == "Иван"
-    st["pos"].setText("2")
-    assert dlg._rows["ФИО"]["clabel"].text() == "Петр"
-    dlg.close()
-
-
-def test_counter_pick_writes_value_and_preview(qapp, tmp_path, store, monkeypatch):
-    import stanok.gui.fields_dialog as fields_module
-
-    folder = make_project(tmp_path / "proj")
-    monkeypatch.setattr(fields_module, "picker_available", lambda: True)
-    monkeypatch.setattr(fields_module, "open_picker", lambda *a, **k: 42)
-    dlg = FieldsDialog(str(folder), "Договор", store=store)
-    st = dlg._crows["data"]
-    assert st["pick"].isEnabled()
-    assert st["pick"].toolTip() == STRINGS.FLD_PICK_TIP
-    st["pick"].click()
-    assert st["pos"].text() == "42"
-    assert dlg._crows["data"]["touched"] is True
-    dlg.close()
-
-
-
-def test_ask_source_recovery_choices(qapp, tmp_path, store, monkeypatch):
-    folder = make_project(tmp_path / "proj")
-    dlg = FieldsDialog(str(folder), "Договор", store=store)
-    buttons = [object(), object(), object()]
-    monkeypatch.setattr(QMessageBox, "exec_", lambda self: 0)
-    for idx, expected in ((0, "pick"), (1, "create"), (2, None)):
-        it = iter(buttons)
-        monkeypatch.setattr(
-            QMessageBox, "addButton", lambda self, *a, **k: next(it)
-        )
-        monkeypatch.setattr(
-            QMessageBox, "clickedButton", lambda self, i=idx: buttons[i]
-        )
-        assert dlg._ask_source_recovery("x.xlsx") == expected
-    dlg.close()
-
-
-def test_restore_source_not_found(qapp, tmp_path, store):
-    folder = make_project(tmp_path / "proj")
-    dlg = FieldsDialog(str(folder), "Договор", store=store)
-    empty = tmp_path / "empty"
-    empty.mkdir()
-    assert dlg._restore_source("Данные/data.xlsx", "data.xlsx", empty) is None
-    dlg.close()
-
-
-def test_resolve_source_uses_remembered_dir(qapp, tmp_path, store, monkeypatch):
-    folder = make_project(tmp_path / "proj")
-    (folder / "Данные" / "data.xlsx").unlink()
-    donor = make_project(tmp_path / "donor")
-    monkeypatch.setattr(QMessageBox, "warning", lambda *a: None)
-    monkeypatch.setattr(FieldsDialog, "_ask_source_recovery", lambda self, name: None)
-    dlg = FieldsDialog(str(folder), "Договор", store=store)
-    dlg._recovery_dir = donor / "Данные"
-    dlg._rows_cache.clear()
-    path = dlg._resolve_source_path("Данные/data.xlsx")
-    assert path is not None and path.is_file()
-    dlg.close()
-
-
-def test_rebind_source_save_error_logged(qapp, tmp_path, store, monkeypatch):
-    folder = make_project(tmp_path / "proj")
-    dlg = FieldsDialog(str(folder), "Договор", store=store)
+def test_fields_dialog_save_failure_stays_open(qapp, tmp_path, store, monkeypatch, messages):
+    dlg, _ = _window(tmp_path, store)
+    dlg._mark_dirty()
 
     def boom(*a, **k):
         raise RuntimeError("disk full")
 
     monkeypatch.setattr(dlg._store, "save", boom)
-    dlg._rebind_source("Данные/data.xlsx", "x.xlsx")
+    monkeypatch.setattr(fd, "ask_save_discard_cancel", lambda *a: QMessageBox.Save)
+
+    dlg.reject()
+
+    assert messages == ["disk full"]
+    assert dlg.result() == 0
     dlg.close()
 
 
-def test_restore_source_copy_error_warns(qapp, tmp_path, store, monkeypatch):
-    import stanok.gui.fields_dialog as fd
-
-    folder = make_project(tmp_path / "proj")
-    (folder / "Данные" / "data.xlsx").unlink()
-    donor = make_project(tmp_path / "donor")
-    warnings = []
-    monkeypatch.setattr(QMessageBox, "warning", lambda *a: warnings.append(a[-1]))
-    monkeypatch.setattr(FieldsDialog, "_ask_source_recovery", lambda self, name: None)
-    dlg = FieldsDialog(str(folder), "Договор", store=store)
-
-    def boom(*a, **k):
-        raise OSError("nope")
-
-    monkeypatch.setattr(fd.shutil, "copy2", boom)
-    assert (
-        dlg._restore_source("Данные/data.xlsx", "data.xlsx", donor / "Данные")
-        is None
-    )
-    assert warnings
-    dlg.close()
-
-
-def test_counter_create_button_click(qapp, tmp_path, store, monkeypatch):
-    import stanok.gui.fields_dialog as fields_module
-
-    folder = make_project(tmp_path / "proj")
-    dlg = FieldsDialog(str(folder), "Договор", store=store)
-    monkeypatch.setattr(
-        fields_module, "ask_text", lambda *a, **k: ("Клиент", True)
-    )
-    shown = []
-    monkeypatch.setattr(QMessageBox, "critical", lambda *a: shown.append(a[-1]))
-    dlg.counter_add_btn.click()
-    assert "Клиент" in dlg._pj.counters
-    assert not shown
-    dlg.close()
-
-
-def test_counter_pick_works_for_constant_source(
-    qapp, tmp_path, store, monkeypatch
+def test_fields_dialog_missing_template_file_warns_and_lists_fields(
+    qapp, tmp_path, store, messages
 ):
-    import stanok.gui.fields_dialog as fields_module
+    folder = make_project(tmp_path / "proj")
+    store.migrate_from_project(folder)
+    (folder / "Шаблоны" / "tpl.docx").unlink()
 
-    folder = make_project(tmp_path / "proj", mode="constant")
-    monkeypatch.setattr(fields_module, "picker_available", lambda: True)
-    monkeypatch.setattr(fields_module, "open_picker", lambda *a, **k: 1)
     dlg = FieldsDialog(str(folder), "Договор", store=store)
-    st = dlg._crows["data"]
-    assert st["pos"].isReadOnly()
-    assert st["pick"].isEnabled()
-    st["pick"].click()
-    assert st["pos"].text() == "1"
-    assert dlg._rows["ФИО"]["clabel"].text() == "Петр"
+
+    assert dlg._sheet is None
+    assert messages and "файл шаблона не найден" in messages[0]
+    assert dlg._unused_names() == ["ФИО", "Сумма", "Номер"]
     dlg.close()
 
 
-def test_remove_unused_numeric_counter(qapp, tmp_path, store, monkeypatch):
-    import json
+def test_fields_dialog_missing_project_raises(qapp, tmp_path, store):
+    with pytest.raises(StorageError):
+        FieldsDialog("nope", "Договор", store=store)
 
-    import stanok.gui.fields_dialog as fd
 
+def test_fields_dialog_missing_template_raises(qapp, tmp_path, store):
     folder = make_project(tmp_path / "proj")
-    data = json.loads((folder / "project.stanok").read_text())
-    data["counters"]["extra"] = {"pos": 0, "format": "1"}
-    (folder / "project.stanok").write_text(json.dumps(data, ensure_ascii=False))
-    monkeypatch.setattr(fd, "ask_yes_no", lambda *a, **k: True)
-    dlg = FieldsDialog(str(folder), "Договор", store=store)
-    dlg._on_counter_remove("extra")
-    assert "extra" not in dlg._pj.counters
-    assert "extra" not in dlg._crows
+    with pytest.raises(TemplateError, match="template not found"):
+        FieldsDialog(str(folder), "Чужой", store=store)
+
+
+def test_fields_dialog_insert_menu_offers_page_and_saved_fields(qapp, tmp_path, store):
+    dlg, _ = _window(tmp_path, store)
+    dlg._template_def.fields["Лишнее"] = FieldDef(source=FieldSource.CONSTANT, value="x")
+
+    assert dlg._field_names() == ["ФИО", "Сумма", "Номер", "Лишнее"]
     dlg.close()
 
 
-def test_remove_counter_refused_while_field_reads_it(qapp, tmp_path, store, monkeypatch):
-    import stanok.gui.fields_dialog as fd
+def _first_paragraph(dlg):
+    return dlg._layout.body[0]
 
-    folder = make_project(tmp_path / "proj")
-    info = []
-    monkeypatch.setattr(fd.QMessageBox, "information", lambda *a: info.append(a[-1]))
-    dlg = FieldsDialog(str(folder), "Договор", store=store)
-    dlg._on_counter_remove("num")  # the Номер field reads "num"
-    assert "num" in dlg._pj.counters
-    assert info and "Номер" in info[0]
+
+def test_fields_dialog_text_edit_is_kept_in_memory_until_save(qapp, tmp_path, store, messages):
+    dlg, folder = _window(tmp_path, store)
+    para = _first_paragraph(dlg)
+    before = (folder / "Шаблоны" / "tpl.docx").read_bytes()
+
+    dlg._on_text_edited(para, "Договор {{ФИО}} на сумму {{Сумма}} №{{Номер}} ДОП")
+
+    assert dlg._dirty is True
+    assert (folder / "Шаблоны" / "tpl.docx").read_bytes() == before
+    assert "ДОП" in dlg._layout.body[0].pieces[-1].text
     dlg.close()
 
 
-def test_remove_counter_refused_for_source_bound(qapp, tmp_path, store, monkeypatch):
-    import stanok.gui.fields_dialog as fd
+def test_fields_dialog_save_writes_template_and_keeps_backup(qapp, tmp_path, store):
+    from docx import Document as DocxDocument
+
+    dlg, folder = _window(tmp_path, store)
+    dlg._on_text_edited(_first_paragraph(dlg), "новый текст {{ФИО}}")
+
+    dlg._on_save()
+
+    tpl = folder / "Шаблоны" / "tpl.docx"
+    assert DocxDocument(str(tpl)).paragraphs[0].text == "новый текст {{ФИО}}"
+    assert DocxDocument(str(tpl.with_name("tpl.docx.bak"))).paragraphs[0].text.startswith("Договор")
+    assert dlg._dirty is False
+    dlg.close()
+
+
+def test_fields_dialog_text_edit_unchanged_text_not_dirty(qapp, tmp_path, store):
+    dlg, _ = _window(tmp_path, store)
+    para = _first_paragraph(dlg)
+
+    dlg._on_text_edited(para, "Договор {{ФИО}} на сумму {{Сумма}} №{{Номер}}")
+
+    assert dlg._dirty is False
+    dlg.close()
+
+
+def test_fields_dialog_new_placeholder_gets_unset_button(qapp, tmp_path, store):
+    dlg, _ = _window(tmp_path, store)
+
+    dlg._on_text_edited(_first_paragraph(dlg), "Договор {{ФИО}} {{Новое}}")
+
+    assert "Новое" in dlg._sheet.field_names
+    assert dlg._sheet._buttons["Новое"][0].property("state") == "unset"
+    dlg.close()
+
+
+def test_fields_dialog_removed_placeholder_moves_to_unused(qapp, tmp_path, store):
+    dlg, _ = _window(tmp_path, store)
+
+    dlg._on_text_edited(_first_paragraph(dlg), "Договор {{ФИО}}")
+
+    assert "Сумма" in dlg._unused_names()
+    dlg.close()
+
+
+def test_fields_dialog_paragraph_with_hyperlink_is_refused(qapp, tmp_path, store, messages):
+    from docx.oxml import OxmlElement
+
+    dlg, _ = _window(tmp_path, store)
+    para = _first_paragraph(dlg)
+    para.element.append(OxmlElement("w:hyperlink"))
+
+    dlg._begin_text_edit(para)
+
+    assert messages == [STRINGS.TPL_EDIT_UNSUPPORTED]
+    assert dlg._sheet._editing_para is None
+    dlg.close()
+
+
+def test_fields_dialog_double_click_opens_editor_with_paragraph_text(qapp, tmp_path, store):
+    from PyQt5.QtWidgets import QPlainTextEdit
+
+    dlg, _ = _window(tmp_path, store)
+
+    dlg._begin_text_edit(_first_paragraph(dlg))
+
+    editor = dlg._sheet.findChild(QPlainTextEdit, "paragraphEditor")
+    assert editor.toPlainText() == "Договор {{ФИО}} на сумму {{Сумма}} №{{Номер}}"
+    dlg.close()
+
+
+def test_fields_dialog_double_click_keeps_window_open_with_editor(qapp, tmp_path, store):
+    from PyQt5.QtWidgets import QPlainTextEdit
+
+    from stanok.gui.template_sheet import _ParagraphBox
+
+    dlg, _ = _window(tmp_path, store)
+    dlg.show()
+    qapp.processEvents()
+    box = dlg._sheet.findChildren(_ParagraphBox)[0]
+
+    _double_click(box)
+    qapp.processEvents()
+
+    assert dlg.isVisible()
+    assert dlg._sheet.findChild(QPlainTextEdit, "paragraphEditor") is not None
+    dlg.close()
+
+
+def test_fields_dialog_apply_button_applies_then_next_paragraph_opens(qapp, tmp_path, store):
+    from docx import Document as DocxDocument
 
     folder = make_project(tmp_path / "proj")
-    info = []
-    monkeypatch.setattr(fd.QMessageBox, "information", lambda *a: info.append(a[-1]))
+    tpl = folder / "Шаблоны" / "tpl.docx"
+    doc = DocxDocument(str(tpl))
+    doc.add_paragraph("Второй абзац")
+    doc.save(str(tpl))
+    store.migrate_from_project(folder)
     dlg = FieldsDialog(str(folder), "Договор", store=store)
-    dlg._on_counter_remove("data")  # bound to Данные/data.xlsx
-    assert "data" in dlg._pj.counters
-    assert info == [STRINGS.FLD_CNT_REMOVE_BOUND]
+
+    dlg._begin_text_edit(dlg._layout.body[0])
+    assert not dlg.para_apply_btn.isHidden()
+    dlg._sheet._editor.insertPlainText(" правка")
+    dlg.para_apply_btn.click()
+
+    assert dlg._sheet._editor is None
+    assert dlg.para_apply_btn.isHidden()
+    assert dlg._dirty is True
+    dlg._begin_text_edit(dlg._layout.body[1])
+    assert dlg._sheet._editor is not None
+    dlg._cancel_paragraph()
+    dlg.close()
+
+
+def test_fields_dialog_cancel_button_drops_paragraph_text(qapp, tmp_path, store):
+    dlg, _ = _window(tmp_path, store)
+    dlg._begin_text_edit(_first_paragraph(dlg))
+    dlg._sheet._editor.insertPlainText(" лишнее")
+
+    dlg.para_cancel_btn.click()
+
+    assert dlg._sheet._editor is None
+    assert dlg.para_cancel_btn.isHidden()
+    assert dlg._dirty is False
+    dlg.close()
+
+
+def test_fields_dialog_no_break_space_survives_editing_another_part(qapp, tmp_path, store):
+    from docx import Document as DocxDocument
+
+    from stanok.services.template_edit import paragraph_text
+
+    folder = make_project(tmp_path / "proj")
+    tpl = folder / "Шаблоны" / "tpl.docx"
+    doc = DocxDocument(str(tpl))
+    doc.paragraphs[0].text = "Заказчик: {{ФИО}} текст"
+    doc.save(str(tpl))
+    store.migrate_from_project(folder)
+    dlg = FieldsDialog(str(folder), "Договор", store=store)
+
+    dlg._begin_text_edit(dlg._layout.body[0])
+    dlg._sheet._editor.insertPlainText(" и ещё")
+    dlg.para_apply_btn.click()
+
+    assert paragraph_text(dlg._layout.body[0].element) == "Заказчик: {{ФИО}} текст и ещё"
+    dlg.close()
+
+
+def test_fields_dialog_insert_field_button_puts_placeholder_with_cursor_inside(qapp, tmp_path, store):
+    dlg, _ = _window(tmp_path, store)
+    dlg._begin_text_edit(_first_paragraph(dlg))
+    editor = dlg._sheet._editor
+    start = len(editor.toPlainText())
+
+    assert not dlg.para_insert_btn.isHidden()
+    dlg.para_insert_btn.click()
+
+    assert editor.toPlainText() == "Договор {{ФИО}} на сумму {{Сумма}} №{{Номер}}{{}}"
+    cursor = editor.textCursor()
+    assert cursor.position() == start + 2
+    assert cursor.selectedText() == ""
+    assert editor.toPlainText()[cursor.position() - 2:cursor.position()] == "{{"
+    assert editor.toPlainText()[cursor.position():cursor.position() + 2] == "}}"
+    dlg._cancel_paragraph()
     dlg.close()

@@ -124,8 +124,9 @@ class CreateDialog(QDialog):
     def _glyph_button(self, text: str, tip: str, parent: QWidget) -> QPushButton:
         """Small square button with a one-character label, shown larger than text."""
         btn = QPushButton(text, parent)
-        # The app QSS sets the font size on QWidget, so the size is set in a stylesheet.
-        btn.setStyleSheet("font-size: 14pt; font-weight: 700; padding: 0px;")
+        # Size comes from the theme (objectName rule). A widget-level stylesheet
+        # would also change the font of the tooltip shown for this button.
+        btn.setObjectName("glyphButton")
         btn.setToolTip(tip)
         btn.setFixedSize(34, 30)
         return btn

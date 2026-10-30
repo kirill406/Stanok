@@ -29,13 +29,13 @@
 
 ## Versioning (Semantic Versioning 2.0.0, https://semver.org/)
 - Format `MAJOR.MINOR.PATCH`: MAJOR — incompatible changes, MINOR — backwards-compatible features, PATCH — bug fixes
-- `0.y.z` (current `0.4.0-alpha`): anything may change without MINOR/MAJOR bump discipline; `1.0.0` marks first stable API/GUI contract
+- `0.y.z` (current `0.5.0-alpha`): anything may change without MINOR/MAJOR bump discipline; `1.0.0` marks first stable API/GUI contract
 - Single source of truth: `pyproject.toml` version only; `src/stanok/__init__.py` reads it from installed metadata (`importlib.metadata`), no manual sync — bump the version in `pyproject.toml` alone
 - Pre-releases as `1.0.0-alpha`, `-beta`, `-rc.1` when testing exe with users before stable
 - Release flow: move `CHANGELOG.md [Unreleased]` entries under new version header with date, bump version in `pyproject.toml` and the CHANGELOG header, tag `git tag vX.Y.Z`, push tag
 - Never Bump version in feature branches — only in release commits on `main`
 
-### Development stages (current: Alpha, `0.4.0-alpha`)
+### Development stages (current: Alpha, `0.5.0-alpha`)
 - Planning — name reserved, scope outlined; usually no version yet
 - Pre-alpha — working sketch; architecture may change anytime; `0.x.y`
 - Alpha — architecture settled; inner circle can use it; testing toward product

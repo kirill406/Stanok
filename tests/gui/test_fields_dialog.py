@@ -451,3 +451,22 @@ def test_fields_dialog_no_break_space_survives_editing_another_part(qapp, tmp_pa
 
     assert paragraph_text(dlg._layout.body[0].element) == "Заказчик: {{ФИО}} текст и ещё"
     dlg.close()
+
+
+def test_fields_dialog_insert_field_button_puts_placeholder_with_cursor_inside(qapp, tmp_path, store):
+    dlg, _ = _window(tmp_path, store)
+    dlg._begin_text_edit(_first_paragraph(dlg))
+    editor = dlg._sheet._editor
+    start = len(editor.toPlainText())
+
+    assert not dlg.para_insert_btn.isHidden()
+    dlg.para_insert_btn.click()
+
+    assert editor.toPlainText() == "Договор {{ФИО}} на сумму {{Сумма}} №{{Номер}}{{}}"
+    cursor = editor.textCursor()
+    assert cursor.position() == start + 2
+    assert cursor.selectedText() == ""
+    assert editor.toPlainText()[cursor.position() - 2:cursor.position()] == "{{"
+    assert editor.toPlainText()[cursor.position():cursor.position() + 2] == "}}"
+    dlg._cancel_paragraph()
+    dlg.close()

@@ -93,7 +93,7 @@ class FlowWidget(QWidget):
         self._first_indent = first_indent
 
     def _items(self) -> list[QWidget]:
-        return [w for w in self.children() if isinstance(w, QWidget) and not w.isWindow()]
+        return [w for w in self.children() if isinstance(w, QWidget) and not w.isWindow() and not w.isHidden()]
 
     def hasHeightForWidth(self) -> bool:
         return True
@@ -213,6 +213,13 @@ class ParagraphEditor(QPlainTextEdit):
         self._done = True
         self.ended.emit(commit, self.toPlainText())
 
+    def insert_placeholder(self) -> None:
+        """Insert an empty field placeholder and put the cursor between the braces."""
+        self.insertPlainText("{{}}")
+        cursor = self.textCursor()
+        cursor.movePosition(QTextCursor.Left, QTextCursor.MoveAnchor, 2)
+        self.setTextCursor(cursor)
+
     def keyPressEvent(self, event) -> None:
         if event.key() == Qt.Key_Escape:
             self.finish(False)
@@ -303,6 +310,11 @@ class TemplateSheet(QScrollArea):
         if self._editor is not None:
             self._editor.finish(True)
 
+    def insert_placeholder(self) -> None:
+        """Insert "{{}}" into the open paragraph at the cursor."""
+        if self._editor is not None:
+            self._editor.insert_placeholder()
+
     def cancel_edit(self) -> None:
         """Drop the open paragraph editor without applying its text."""
         if self._editor is not None:
@@ -334,8 +346,7 @@ class TemplateSheet(QScrollArea):
         if old is not None:
             self._row.removeWidget(old)
             old.hide()
-            old.setParent(None)
-            old.deleteLater()
+            old.deleteLater()  # keeps its parent: Qt deletes it once; setParent(None) would hand it to Python
         self.refresh()
         self.verticalScrollBar().setValue(scroll)
 

@@ -186,7 +186,6 @@ class CreateDialog(QDialog):
             widget = item.widget()
             if widget is not None:
                 widget.hide()
-                widget.setParent(None)
                 widget.deleteLater()
         if not self._result_dirs:
             self._copies_layout.addWidget(self._muted(STRINGS.CRT_COPIES_NONE))

@@ -174,8 +174,12 @@ class FieldsDialog(QDialog):
         self.para_apply_btn.clicked.connect(self._apply_paragraph)
         self.para_cancel_btn = QPushButton(STRINGS.FLD_PARA_CANCEL, self)
         self.para_cancel_btn.clicked.connect(self._cancel_paragraph)
+        self.para_insert_btn = QPushButton(STRINGS.FLD_INSERT_FIELD, self)
+        self.para_insert_btn.setFocusPolicy(Qt.NoFocus)  # the paragraph editor keeps the focus
+        self.para_insert_btn.clicked.connect(self._insert_placeholder)
         bottom.addWidget(self.para_apply_btn)
         bottom.addWidget(self.para_cancel_btn)
+        bottom.addWidget(self.para_insert_btn)
         bottom.addStretch(1)
         bottom.addWidget(buttons)
         self._show_paragraph_bar(False)
@@ -192,8 +196,7 @@ class FieldsDialog(QDialog):
         for child in list(self._unused.children()):
             if isinstance(child, QWidget):
                 child.hide()
-                child.setParent(None)
-                child.deleteLater()
+                child.deleteLater()  # hidden children are skipped by the flow layout
         for name in names:
             button = QPushButton(name, self._unused)
             button.setObjectName("fieldButton")
@@ -232,6 +235,12 @@ class FieldsDialog(QDialog):
     def _show_paragraph_bar(self, on: bool) -> None:
         self.para_apply_btn.setVisible(on)
         self.para_cancel_btn.setVisible(on)
+        self.para_insert_btn.setVisible(on)
+
+    def _insert_placeholder(self) -> None:
+        """Insert {{}} at the cursor of the open paragraph; the cursor goes between the braces."""
+        if self._sheet is not None:
+            self._sheet.insert_placeholder()
 
     def _apply_paragraph(self) -> None:
         """Apply the open paragraph text; the next paragraph can be opened after this."""

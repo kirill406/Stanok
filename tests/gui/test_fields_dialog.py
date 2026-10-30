@@ -430,3 +430,24 @@ def test_fields_dialog_cancel_button_drops_paragraph_text(qapp, tmp_path, store)
     assert dlg.para_cancel_btn.isHidden()
     assert dlg._dirty is False
     dlg.close()
+
+
+def test_fields_dialog_no_break_space_survives_editing_another_part(qapp, tmp_path, store):
+    from docx import Document as DocxDocument
+
+    from stanok.services.template_edit import paragraph_text
+
+    folder = make_project(tmp_path / "proj")
+    tpl = folder / "Шаблоны" / "tpl.docx"
+    doc = DocxDocument(str(tpl))
+    doc.paragraphs[0].text = "Заказчик: {{ФИО}} текст"
+    doc.save(str(tpl))
+    store.migrate_from_project(folder)
+    dlg = FieldsDialog(str(folder), "Договор", store=store)
+
+    dlg._begin_text_edit(dlg._layout.body[0])
+    dlg._sheet._editor.insertPlainText(" и ещё")
+    dlg.para_apply_btn.click()
+
+    assert paragraph_text(dlg._layout.body[0].element) == "Заказчик: {{ФИО}} текст и ещё"
+    dlg.close()

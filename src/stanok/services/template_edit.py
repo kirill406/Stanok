@@ -26,6 +26,10 @@ logger = logging.getLogger(__name__)
 
 XML_SPACE = "{http://www.w3.org/XML/1998/namespace}space"
 PAGE_BREAK = "\f"
+# The editor reads some characters back in another form: a no-break space as a space,
+# a line or paragraph separator as a line break. The comparison treats them as equal,
+# so unchanged text keeps its original characters.
+_EDITOR_FORM = {"\u00a0": " ", "\u2028": "\n", "\u2029": "\n"}
 _UNSUPPORTED = {
     qn("w:hyperlink"),
     qn("w:ins"),
@@ -57,7 +61,7 @@ def set_paragraph_text(p_el, text: str) -> bool:
         (ch, run) for run in p_el if run.tag == qn("w:r") for ch in run_chars(run)
     ]
     old = "".join(ch for ch, _ in old_units)
-    if old == text:
+    if _comparable(old) == _comparable(text):
         return False
     units = _merge(old_units, text)
     runs = _runs_of(units)  # built first: they copy the formatting of the old runs
@@ -66,14 +70,19 @@ def set_paragraph_text(p_el, text: str) -> bool:
     return True
 
 
+def _comparable(text: str) -> str:
+    """Text with the editor's equivalents folded: same length, character by character."""
+    return "".join(_EDITOR_FORM.get(ch, ch) for ch in text)
+
+
 def _merge(old_units: list, text: str) -> list:
     """(char, source run) for every character of the new text."""
     old = "".join(ch for ch, _ in old_units)
-    matcher = difflib.SequenceMatcher(None, old, text, autojunk=False)
+    matcher = difflib.SequenceMatcher(None, _comparable(old), _comparable(text), autojunk=False)
     units: list = []
     for tag, i1, i2, j1, j2 in matcher.get_opcodes():
         if tag == "equal":
-            units.extend(old_units[i1:i2])
+            units.extend(old_units[i1:i2])  # the original characters, not the editor's
         elif j2 > j1:  # insert or replace: formatting of the left neighbour
             source = _neighbour(old_units, i1)
             units.extend((ch, source) for ch in text[j1:j2])

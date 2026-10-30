@@ -174,3 +174,49 @@ def test_template_document_save_failure_raises_and_keeps_file(tmp_path, monkeypa
 
     assert template.dirty is True
     assert Document(str(path)).paragraphs[0].text == "текст"
+
+
+SPECIAL_CHARS = [
+    " ",  # no-break space
+    " ",  # narrow no-break space
+    " ",  # thin space
+    " ",  # en space
+    "　",  # ideographic space
+    "​",  # zero-width space
+    "﻿",  # byte order mark
+    "­",  # soft hyphen
+    "‑",  # non-breaking hyphen
+    "—",  # em dash
+    " ",  # line separator
+    " ",  # paragraph separator
+]
+
+
+@pytest.mark.parametrize("char", SPECIAL_CHARS)
+def test_template_edit_unchanged_special_char_survives_edit(char):
+    doc = Document()
+    para = _para(doc, (f"а{char}б", {}))
+
+    set_paragraph_text(para._p, f"а{char}б в конце")
+
+    assert paragraph_text(para._p).startswith(f"а{char}б")
+    assert paragraph_text(para._p).endswith(" в конце")
+
+
+def test_template_edit_no_break_space_is_kept_when_text_is_unchanged_by_editor():
+    doc = Document()
+    para = _para(doc, ("Заказчик: {{ФИО}}", {}))
+
+    changed = set_paragraph_text(para._p, "Заказчик: {{ФИО}}")  # the editor's form of the same text
+
+    assert changed is False
+    assert paragraph_text(para._p) == "Заказчик: {{ФИО}}"
+
+
+def test_template_edit_new_space_typed_next_to_no_break_space_is_plain():
+    doc = Document()
+    para = _para(doc, ("а б", {}))
+
+    set_paragraph_text(para._p, "а б в")
+
+    assert paragraph_text(para._p) == "а б в"

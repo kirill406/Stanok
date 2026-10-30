@@ -141,7 +141,7 @@ def test_fields_dialog_click_applies_edit_and_marks_dirty(qapp, tmp_path, store,
     dlg._open_field("ФИО")
 
     assert dlg._dirty is True
-    assert not dlg.save_btn.isHidden()
+    assert dlg.save_btn.isEnabled()
     assert dlg._template_def.fields["ФИО"].source == FieldSource.CONSTANT
     assert dlg._sheet._buttons["ФИО"][0].toolTip() == STRINGS.FLD_DESC_CONSTANT.format(value="Москва")
     dlg.close()
@@ -166,7 +166,7 @@ def test_fields_dialog_save_persists_edit(qapp, tmp_path, store, monkeypatch):
     dlg._on_save()
 
     assert dlg._dirty is False
-    assert dlg.save_btn.isHidden()
+    assert not dlg.save_btn.isEnabled()
     assert store.load("proj").templates["Договор"].fields["ФИО"].value == "Москва"
     dlg.close()
 

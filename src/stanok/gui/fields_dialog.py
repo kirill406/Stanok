@@ -167,7 +167,7 @@ class FieldsDialog(QDialog):
         close_btn.setText(STRINGS.FLD_CLOSE)
         close_btn.clicked.connect(self.reject)
         # Hide AFTER all buttons are added: QDialogButtonBox unhides on add.
-        self.save_btn.setVisible(False)
+        self.save_btn.setEnabled(False)  # visible always; active only with unsaved changes
         layout.addWidget(buttons)
         hint = QLabel(STRINGS.FLD_HINT, self)
         hint.setObjectName("muted")
@@ -236,7 +236,7 @@ class FieldsDialog(QDialog):
 
     def _mark_dirty(self) -> None:
         self._dirty = True
-        self.save_btn.setVisible(True)
+        self.save_btn.setEnabled(True)
 
     def _on_insert_field(self) -> None:
         menu = QMenu(self)
@@ -277,7 +277,7 @@ class FieldsDialog(QDialog):
             self._document.save()
         self._store.save(self._pj, name=self._config_name)
         self._dirty = False
-        self.save_btn.setVisible(False)
+        self.save_btn.setEnabled(False)  # visible always; active only with unsaved changes
         logger.info(f"saved fields of {self._template_name} to {self._config_name}")
 
     def reject(self) -> None:
